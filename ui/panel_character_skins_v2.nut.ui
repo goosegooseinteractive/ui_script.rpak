@@ -1,0 +1,157 @@
+global function InitCharacterSkinsPanelV2
+global function SkinsPanel_CreateTabs
+global function SkinsPanel_DestroyTabs
+
+struct
+{
+	var panel
+
+	ItemFlavor ornull lastNewnessCharacter
+	ItemFlavor& currentTopLevelCustomizeContext
+
+	array< Newness_Query > newnessQueries
+} file
+
+void function InitCharacterSkinsPanelV2( var panel )
+{
+	file.panel = panel
+
+	SetPanelTabTitle( panel, "#SKINS" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, SkinsPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, SkinsPanel_OnHide )
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, SkinsPanel_OnCustomizeContextChanged )
+}
+
+void function SkinsPanel_CreateTabs()
+{
+	TabDef tabdef = AddTab( file.panel, Hud_GetChild( file.panel, "RTKCharacterSkinsPanel" ), "#GENERAL" )
+	tabdef.useTapHoldLogic = true
+	SetTabBaseWidth( tabdef, 210 )
+
+	if ( DigitalGarments_GetSortedGarmentsList().len() > 1 )
+	{
+		tabdef = AddTab( file.panel, Hud_GetChild( file.panel, "RTKGarmentsPanel" ), "#AURAS" )
+		tabdef.useTapHoldLogic = true
+		SetTabBaseWidth( tabdef, 210 )
+	}
+
+	TabData tabData = GetTabDataForPanel( file.panel )
+	tabData.centerTabs = true
+	SetTabBackground( tabData, Hud_GetChild( file.panel, "TabsBackground" ), eTabBackground.STANDARD )
+	SetTabDefsToSeasonal( tabData )
+	UpdateMenuTabs()
+}
+
+void function SkinsPanel_DestroyTabs()
+{
+	ClearTabs( file.panel )
+}
+
+void function SkinsPanel_OnShow( var panel )
+{
+	UI_SetPresentationType( ePresentationType.CHARACTER_SKIN )
+
+	CharacterSkinsPanel_Update()
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, SkinsPanel_CustomizeContextChanged )
+
+	file.currentTopLevelCustomizeContext = GetTopLevelCustomizeContext()
+
+	TabData tabData = GetTabDataForPanel( file.panel )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		ActivateTab( tabData, 0 )
+		thread AnimateInSmallTabBar( tabData )
+	}
+	else
+	{
+		ActivateTab( tabData, tabData.activeTabIdx )
+	}
+}
+
+
+void function SkinsPanel_OnHide( var panel )
+{
+	ClearNewnessCallbacks()
+	TabData tabData = GetTabDataForPanel( panel )
+	HideVisibleTabBodies( tabData )
+
+	RunClientScript( "ClearBattlePassItem" )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, SkinsPanel_CustomizeContextChanged )
+}
+
+void function SkinsPanel_CustomizeContextChanged( var panel )
+{
+	file.currentTopLevelCustomizeContext = GetTopLevelCustomizeContext()
+}
+
+void function SkinsPanel_OnCustomizeContextChanged( var panel )
+{
+	if ( !IsPanelActive( file.panel ) )
+		return
+
+	CharacterSkinsPanel_Update()
+}
+
+
+void function CharacterSkinsPanel_Update()
+{
+	UpdateNewnessCallbacks()
+}
+
+
+void function UpdateNewnessCallbacks()
+{
+	if ( !IsTopLevelCustomizeContextValid() )
+		return
+
+	ClearNewnessCallbacks()
+
+	ItemFlavor character = GetTopLevelCustomizeContext()
+
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.character_skin]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "RTKCharacterSkinsPanel" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.newnessQueries.append( nq )
+	}
+
+	if ( DigitalGarments_GetSortedGarmentsList().len() > 1 )
+	{
+		{
+			Newness_Query nq
+			nq.itemFlavor    = character
+			nq.itemTypeList  = [eItemType.digital_garment]
+			nq.uiCategory    = eItemTypeUICategory.CHARACTER
+			nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+			nq.panelOrButton = GetPanel( "RTKGarmentsPanel" )
+			Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+			file.newnessQueries.append( nq )
+		}
+	}
+
+	file.lastNewnessCharacter = character
+}
+
+
+void function ClearNewnessCallbacks()
+{
+	if ( file.lastNewnessCharacter == null )
+		return
+
+	ItemFlavor character = expect ItemFlavor( file.lastNewnessCharacter )
+
+	foreach ( Newness_Query nq in file.newnessQueries )
+		Newness_RemoveCallback_OnQueryUpdated( nq )
+
+	file.newnessQueries.clear()
+	file.lastNewnessCharacter = null
+}

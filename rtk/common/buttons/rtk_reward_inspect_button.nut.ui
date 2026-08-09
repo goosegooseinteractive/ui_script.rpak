@@ -1,0 +1,92 @@
+global function RTKRewardInspectButton_OnInitialize
+
+global struct RTKRewardInspectButton_Properties
+{
+	int flavGUID
+	int quantity
+
+	bool fromRankedLadder
+}
+
+void function RTKRewardInspectButton_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior button = self.GetPanel().FindBehaviorByTypeName( "Button" )
+	if ( button == null )
+		return
+
+	self.AutoSubscribe( button, "onPressed", function ( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKRewardInspectButton_OnPressed( self )
+	} )
+}
+
+void function RTKRewardInspectButton_OnPressed( rtk_behavior self )
+{
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	int quantity = self.PropGetInt( "quantity" )
+	if ( !IsValidItemFlavorGUID( flavGUID ) || quantity == 0 )
+		return
+
+	ItemFlavor rewardFlav = GetItemFlavorByGUID( flavGUID )
+	BattlePassReward bpReward = RTKRewardInspect_GetBattlePassReward( rewardFlav, quantity )
+
+	if ( self.PropGetBool( "fromRankedLadder" ) )
+	{
+
+		RTKRankedRumble_SaveLeaderboardLastViewedTier()
+
+	}
+
+	if ( ItemFlavor_GetType( bpReward.flav ) == eItemType.loadscreen )
+	{
+		LoadscreenPreviewMenu_SetLoadscreenToPreview( bpReward.flav )
+		AdvanceMenu( GetMenu( "LoadscreenPreviewMenu" ) )
+	}
+	else if ( ItemFlavor_GetType( bpReward.flav ) == eItemType.gladiator_card_badge )
+	{
+		int badgeDataInteger = bpReward.rarityOrBadgeDisplayTier
+
+		string grxRef = GetGlobalSettingsString( ItemFlavor_GetAsset( bpReward.flav ), "grxRef" )
+
+		const string MASTERY_TAG = "mastery_"
+
+		if( grxRef.len() > MASTERY_TAG.len() && grxRef.find( MASTERY_TAG ) > 0 ) 
+		{
+			entity player = GetLocalClientPlayer()
+			EHI playerEHI = ToEHI( player )
+			int tier =  GetPlayerBadgeDataInteger( playerEHI, bpReward.flav, 0, null )
+			int badgeTier = ( tier < 0 )? 0: Mastery_GetTierFromBitfield( tier )
+
+			badgeDataInteger = badgeTier
+
+			if( !bpReward.isOwned )
+				badgeDataInteger = int( min( badgeDataInteger + 1, MASTERY_TRIAL_TIERS_FOR_BADGE.len() ) ) 
+		}
+
+		SetChallengeRewardPresentationModeActive(
+			bpReward.flav,
+			bpReward.quantity,
+			badgeDataInteger,
+			"",
+			"",
+			bpReward.isOwned,
+			true
+		)
+	}
+	else if ( InspectItemTypePresentationSupported( bpReward.flav ) )
+	{
+		RunClientScript( "ClearBattlePassItem" )
+		SetBattlePassItemPresentationModeActive( bpReward )
+	}
+}
+
+BattlePassReward function RTKRewardInspect_GetBattlePassReward( ItemFlavor rewardFlav, int quantity )
+{
+	BattlePassReward bpReward
+
+	bpReward.flav                     = rewardFlav
+	bpReward.rarityOrBadgeDisplayTier = GRX_GetRarityOverrideFromQuantity( rewardFlav, ItemFlavor_GetQuality( rewardFlav, 0 ), quantity )
+	bpReward.isOwned                  = ( ItemFlavor_GetGRXMode( rewardFlav ) != GRX_ITEMFLAVORMODE_REGULAR ) || GRX_IsItemOwnedByPlayer( rewardFlav )
+	bpReward.quantity                 = quantity
+
+	return bpReward
+}

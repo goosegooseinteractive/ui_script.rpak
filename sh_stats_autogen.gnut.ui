@@ -1,0 +1,195 @@
+global function AutogenStats_Init
+global function AutogenStats_GetSlotKeyForChallengeFromPlayer
+global function AutogenStats_GetItemFlavorFromStatRefForPlayer
+global function AutogenStats_GetStatRefsForChallenge
+
+
+
+
+
+
+
+global const string AUTOGEN_NARRATIVE_ENUM_NAME = "eAutogenNarrativeStatSlot"
+global const int AUTOGEN_NARRATIVE_ENUM_SIZE = 4
+global const string AUTOGEN_META_ENUM_NAME = "eAutogenMetaStatSlot"
+global const int AUTOGEN_META_ENUM_SIZE = 32
+global const string AUTOGEN_STAT_FIELD_NAME = "progress"
+
+const string AUTOGEN_META_CHALLENGE_ARRAY_PVAR_FORMAT_STRING = "autogenMetaChallengeGUID[%s]"
+const string AUTOGEN_NARRATIVE_CHALLENGE_ARRAY_PVAR_FORMAT_STRING = "autogenNarrativeChallengeGUID[%s]"
+
+global array< string > g_metaChallengeSlots
+global array< string > g_narrativeChallengeSlots
+
+void function AutogenStats_Init()
+{
+
+	g_narrativeChallengeSlots.clear()
+	for ( int i = 0; i < AUTOGEN_NARRATIVE_ENUM_SIZE; i++ )
+		g_narrativeChallengeSlots.append( format( "SLOT_%02d", i ) )
+
+	g_metaChallengeSlots.clear()
+	for ( int i = 0; i < AUTOGEN_META_ENUM_SIZE; i++ )
+		g_metaChallengeSlots.append( format( "SLOT_%02d", i ) )
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+string function AutogenStats_GetSlotKeyForChallengeFromPlayer( entity player, ItemFlavor challenge )
+{
+
+		Assert( player == GetLocalClientPlayer() )
+
+	bool isNarrative = Challenge_IsNarrativeChallenge( challenge )
+	Assert( isNarrative || Challenge_IsMetaChallenge( challenge ) )
+
+	string persistenceArrayKey = format( "%s.%s", DYNAMIC_CHALLENGE_DATA_PERSISTENCE_STRUCT, ( isNarrative ? AUTOGEN_NARRATIVE_CHALLENGE_ARRAY_PVAR_FORMAT_STRING : AUTOGEN_META_CHALLENGE_ARRAY_PVAR_FORMAT_STRING ) )
+	int challengeGUID = ItemFlavor_GetGUID( challenge )
+	array<string> slotArray = isNarrative ? g_narrativeChallengeSlots : g_metaChallengeSlots
+	foreach( string enumKey in slotArray )
+	{
+		string persistenceKey = format( persistenceArrayKey, enumKey )
+		bool matches
+
+			matches = ( GetPersistentVarAsInt( persistenceKey ) == challengeGUID )
+
+
+
+		if ( matches )
+			return enumKey
+	}
+
+	return ""
+}
+
+ItemFlavor function AutogenStats_GetItemFlavorFromStatRefForPlayer( entity player, StatEntry stat, bool isNarrative )
+{
+
+		Assert( player == GetLocalClientPlayer() )
+
+
+	string keyToFetch
+
+	if( isNarrative )
+	{
+		foreach ( string enumKey in g_narrativeChallengeSlots )
+		{
+			if ( stat == ResolveStatEntry( CAREER_STATS.narrative_challenge_stats, enumKey ) )
+			{
+				keyToFetch  = enumKey
+				isNarrative = true
+				break
+			}
+		}
+	}
+	else
+	{
+		foreach ( string enumKey in g_metaChallengeSlots )
+		{
+			if ( stat == ResolveStatEntry( CAREER_STATS.meta_challenge_stats, enumKey ) )
+			{
+				keyToFetch = enumKey
+				break
+			}
+		}
+	}
+
+	Assert( keyToFetch != "" )
+	string persistenceArrayKey = format( "%s.%s", DYNAMIC_CHALLENGE_DATA_PERSISTENCE_STRUCT, ( isNarrative ? AUTOGEN_NARRATIVE_CHALLENGE_ARRAY_PVAR_FORMAT_STRING : AUTOGEN_META_CHALLENGE_ARRAY_PVAR_FORMAT_STRING ) )
+	string persistenceKey = format( persistenceArrayKey, keyToFetch )
+	int challengeGUID = player.GetPersistentVarAsInt( persistenceKey )
+	Assert( IsValidItemFlavorGUID( challengeGUID ) )
+	return GetItemFlavorByGUID( challengeGUID )
+}
+
+array< string > function AutogenStats_GetStatRefsForChallenge( entity player, ItemFlavor challenge, StatTemplate statSet )
+{
+	bool isNarrative = Challenge_IsNarrativeChallenge( challenge )
+	array< string > statRefs = []
+	array<string> slotArray = isNarrative ? g_narrativeChallengeSlots : g_metaChallengeSlots
+	if ( player == null ) 
+	{
+		foreach ( string enumKey in slotArray )
+			statRefs.append( StatEntry_GetRef( ResolveStatEntry( statSet, enumKey ) ) )
+	}
+	else
+	{
+		string slotKey = AutogenStats_GetSlotKeyForChallengeFromPlayer( player, challenge )
+		if ( slotKey != "" )
+			statRefs.append( StatEntry_GetRef( ResolveStatEntry( statSet, slotKey ) ) )
+	}
+
+	return statRefs
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

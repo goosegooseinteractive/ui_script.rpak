@@ -1,0 +1,129 @@
+global function InitRTKRewardCeremonyAnimationMenu
+global function ShowRewardCeremonyAnimationDialog
+global function RTKRewardCeremonyAnimation_OnInitialize
+global function RTKRewardCeremonyAnimation_OnDestroy
+
+global struct RTKRewardCeremonyAnimation_Properties
+{
+}
+
+struct
+{
+	var menu
+	var awardHeader
+	var continueButton
+	ItemFlavor& flav
+
+	bool canSkipAnimation = false
+} file
+
+const float AUTO_CLOSE_MENU_TIME = 5.0
+const float ENABLE_SKIP_TIME = 2.0
+
+void function InitRTKRewardCeremonyAnimationMenu( var menu )
+{
+	RegisterSignal( "EndAutoCloseRTKRewardCeremonyThread" )
+	RegisterSignal( "EndEnableSkipRTKRewardCeremonyThread" )
+
+	file.menu = menu
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, RewardCeremonyAnimationMenu_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, void function () : () { ContinueButton_OnActivate( null ) } )
+
+	
+	file.awardHeader = Hud_GetChild( menu, "Header" )
+	file.continueButton = Hud_GetChild( menu, "ContinueButton" )
+	Hud_AddEventHandler( file.continueButton, UIE_CLICK, ContinueButton_OnActivate )
+}
+
+void function RewardCeremonyAnimationMenu_OnOpen()
+{
+	file.canSkipAnimation = false
+	Hud_SetVisible( file.continueButton, false )
+
+	thread RankedRewardCeremonyAutoClose_Thread()
+	thread RankedRewardCeremonyEnableSkip_Thread()
+
+	if ( FeatureUnlockToken_GetCategory( file.flav ) == eFeatureUnlockTokenCategory.RANKED )
+	{
+		Remote_ServerCallFunction( "ClientCallback_SetShouldShowUnlockedRankedModeTutorial", true )
+		Remote_ServerCallFunction( "ClientCallback_SetShouldShowUnlockedRankedModeFeatured", true )
+	}
+}
+
+
+void function ShowRewardCeremonyAnimationDialog( ItemFlavor flav )
+{
+	if ( GetActiveMenu() == GetMenu( "RewardCeremonyAnimationMenu" ) )
+		return
+
+	file.flav = flav
+	AdvanceMenu( GetMenu( "RewardCeremonyAnimationMenu" ) )
+}
+
+void function RankedRewardCeremonyAutoClose_Thread()
+{
+	Signal( uiGlobal.signalDummy, "EndAutoCloseRTKRewardCeremonyThread" )
+	EndSignal( uiGlobal.signalDummy, "EndAutoCloseRTKRewardCeremonyThread" )
+
+	wait AUTO_CLOSE_MENU_TIME
+	CloseCurrentMenu()
+}
+
+void function RankedRewardCeremonyEnableSkip_Thread()
+{
+	Signal( uiGlobal.signalDummy, "EndEnableSkipRTKRewardCeremonyThread" )
+	EndSignal( uiGlobal.signalDummy, "EndEnableSkipRTKRewardCeremonyThread" )
+
+	wait ENABLE_SKIP_TIME
+	file.canSkipAnimation = true
+	Hud_SetVisible( file.continueButton, true )
+}
+
+void function RTKRewardCeremonyAnimation_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+	RunClientScript( "UIToClient_ItemPresentation", file.flav.guid, -1, 1.0, false, null, true, "battlepass_center_ref", false, false, false, true, <0, 0, 0>, true )
+	EmitUISound( FeatureUnlockToken_GetSoundAnimationEventFromItemFlav( file.flav ) )
+
+	HudElem_SetRuiArg( file.awardHeader, "titleText", Localize( FeatureUnlockToken_GetTitleFromItemFlav( file.flav ) ).toupper() )
+	HudElem_SetRuiArg( file.awardHeader, "headerText", Localize( FeatureUnlockToken_GetHeaderFromItemFlav( file.flav ) ) )
+	HudElem_SetRuiArg( file.awardHeader, "descText", Localize( FeatureUnlockToken_GetDescriptionFromItemFlav( file.flav ) ) )
+
+	RegisterButtonPressedCallback( BUTTON_A, ContinueGlobalInput_OnActivate )
+	RegisterButtonPressedCallback( KEY_SPACE, ContinueGlobalInput_OnActivate )
+}
+
+void function RTKRewardCeremonyAnimation_OnDestroy( rtk_behavior self )
+{
+	RunClientScript( "ClearBattlePassItem" )
+
+	DeregisterButtonPressedCallback( BUTTON_A, ContinueGlobalInput_OnActivate )
+	DeregisterButtonPressedCallback( KEY_SPACE, ContinueGlobalInput_OnActivate )
+
+	Signal( uiGlobal.signalDummy, "EndAutoCloseRTKRewardCeremonyThread" )
+	Signal( uiGlobal.signalDummy, "EndEnableSkipRTKRewardCeremonyThread" )
+}
+
+void function ContinueButton_OnActivate( var button )
+{
+	if ( !IsLobby() || !IsFullyConnected() )
+		return
+
+	if ( file.canSkipAnimation )
+		CloseCurrentMenu()
+}
+
+void function ContinueGlobalInput_OnActivate( var button )
+{
+	ContinueButton_OnActivate( button )
+	EmitUISound( "UI_Menu_Accept" )
+}
+
+void function CloseCurrentMenu()
+{
+	if ( file.menu == GetActiveMenu() )
+		CloseActiveMenu()
+
+	if ( FeatureUnlockToken_GetCategory( file.flav ) == eFeatureUnlockTokenCategory.RANKED )
+		OpenRankedSplitResetDialog()
+}

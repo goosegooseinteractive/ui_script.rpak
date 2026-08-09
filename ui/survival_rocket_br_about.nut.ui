@@ -1,0 +1,33 @@
+
+global function Survival_RocketBR_PopulateAboutText
+global function Survival_RocketBR_AppendAboutText
+
+
+array< featureTutorialTab > function Survival_RocketBR_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+	string playlistUiRules = GetCurrentPlaylist_UIRules()
+	if ( playlistUiRules != GAMEMODE_ROCKET_BR )
+		return tabs
+
+	Survival_RocketBR_AppendAboutText( tabs )
+	return tabs
+}
+
+void function Survival_RocketBR_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#ROCKET_BR_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ROCKET_BR_ABOUT_HEADER_1", "#ROCKET_BR_ABOUT_BODY_1", $"rui/about_images/epg_extreme/about_epg_extreme_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ROCKET_BR_ABOUT_HEADER_2", "#ROCKET_BR_ABOUT_BODY_2", $"rui/about_images/epg_extreme/about_epg_extreme_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ROCKET_BR_ABOUT_HEADER_3", "#ROCKET_BR_ABOUT_BODY_3", $"rui/about_images/epg_extreme/about_epg_extreme_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+

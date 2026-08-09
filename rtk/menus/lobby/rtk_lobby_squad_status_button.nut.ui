@@ -1,0 +1,73 @@
+global function RTKLobbySquadStatusButton_OnInitialize
+
+global function IsLobbySquadStatusButtonFocused
+
+global struct RTKLobbySquadStatusButtonModel
+{
+	int		index
+	bool 	inspect
+
+	asset	image
+	int 	level
+	array<bool> prestigePips
+	bool	partyLeader
+	bool	ready
+	string	hoverText
+
+	string	rankText
+	string	platformIconString
+
+	string	tooltipHeader
+	string	tooltipDesc
+
+
+
+
+
+
+}
+
+global struct RTKLobbySquadStatusButton_Properties
+{
+	
+	rtk_behavior buttonBehavior
+
+	
+	int index
+	bool inspect
+
+	
+	bool focused
+}
+
+struct
+{
+	bool focused
+} file
+
+void function RTKLobbySquadStatusButton_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior buttonBehavior = self.PropGetBehavior( "buttonBehavior" )
+
+	self.AutoSubscribe( buttonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		if ( self.PropGetBool( "inspect" ) )
+			SquadButton_OnActivate( null, keycode, true, self.PropGetInt( "index" ) )
+		else
+			InviteFriendsButton_OnActivate( null )
+	} )
+
+	self.AutoSubscribe( buttonBehavior, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self ) {
+		self.PropSetBool( "focused", true )
+		file.focused = true
+	} )
+
+	self.AutoSubscribe( buttonBehavior, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+		self.PropSetBool( "focused", false )
+		file.focused = false
+	} )
+}
+
+bool function IsLobbySquadStatusButtonFocused()
+{
+	return file.focused
+}

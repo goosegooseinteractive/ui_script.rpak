@@ -1,0 +1,318 @@
+
+#if DEV
+
+globalize_all_functions
+
+const array< string > BASE_ITEMFLAV_TYPES =
+[
+	"calevents",
+	"ranked2Pt0Periods",
+	"entitlements",
+	"characters",
+	"weapons",
+	"meleeWeapons",
+	"loadscreens",
+	"images2D",
+	"musicPacks",
+	"diveTrails",
+	"stickers",
+	"vouchers",
+	"packs",
+	"currencyBundles",
+	"apexCoinAmounts",
+	"pings",
+	"clubLogoElements",
+	"clubSearchTags",
+	"classes",
+	"battlepassPresaleVouchers",
+	"battlepassPurchasableXP",
+	"boostTypes",
+	"boostEvents",
+	"eventAbilities",
+	"keplerScenarios"
+] 
+
+const array< string > CHARACTER_ITEM_TYPES =
+[
+	"skins",
+	"executions",
+	"emotes",
+	"skydiveEmotes",
+	"introQuips",
+	"killQuips",
+	"gcardStances",
+	"gcardFrames",
+	"gcardBadges",
+	"gcardStatTrackers",
+	"emoteIcons",
+	"nonCombatPets",
+	"mythicBundles"
+] 
+
+const array< string > MAIN_WEAPON_ITEM_TYPES =
+[
+	"skins",
+	"charms"
+] 
+
+const array< string > MELEE_WEAPON_ITEM_TYPES =
+[
+	"skins"
+] 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function DEV_PrintItemFlavorsOfType( int itemFlavType = eItemType.account_pack )
+{
+	
+
+	array< ItemFlavor > flavs = GetAllItemFlavorsOfType( itemFlavType )
+
+	foreach ( ItemFlavor itemFlav in flavs )
+	{
+		printt( ItemFlavor_GetAssetName( itemFlav ), ItemFlavor_GetGUIDString( itemFlav ) )
+
+		if ( itemFlavType == eItemType.account_pack )
+		{
+			array< ItemFlavor > packContents = GRXPack_GetPackContents( itemFlav )
+			printt( "\tPackContentsCount", packContents.len() )
+		}
+	}
+
+	printt( format( "Found %d ItemFlavs of type %s", flavs.len(), DescribeItemFlavorType( itemFlavType ) ) )
+}
+
+ItemFlavor function gFlav( SettingsAssetGUID guid )
+{
+	
+	return GetItemFlavorByGUID( guid )
+}
+
+string function descFlav( ItemFlavor flav )
+{
+	return ItemFlavor_GetAssetName( flav )
+}
+
+string function descFlavID( SettingsAssetGUID guid )
+{
+	return descFlav( gFlav( guid ) )
+}
+
+#endif

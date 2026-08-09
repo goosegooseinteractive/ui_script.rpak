@@ -1,0 +1,383 @@
+
+
+global function IsGiftFree
+global function IsTwoFactorAuthenticationEnabled
+global function IsPlayerLeveledForGifting
+global function IsPlayerWithinGiftingLimit
+global function CanLocalPlayerGift
+global function RefreshTwoFactorAuthenticationStatus
+global function Gifting_GetRemainingDailyGifts
+global function GetGiftOfferEligibility
+global function IsGiftingEnabled
+global function IsBattlepassGiftingEnabled
+global function HasFriendshipTenureBeenLongEnough
+global function GetGiftingMaxLimitPerResetPeriod
+global function Gifting_LevelInit
+global function Gifting_LevelShutdown
+global function GetFriendNameFromNucleusPId
+global function ShowGiftErrorDialogue
+global function ShowGiftTimeOutDialogue
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct{
+	bool UIisFullyConnected = false
+} file
+
+
+
+bool function IsTwoFactorAuthenticationEnabled()
+{
+	
+	if ( GetConVarBool( "mtx_giftingForce2FA" ) )
+	{
+		return true
+	}
+
+	bool isTfaEnabled = EADP_IsTfaEnabled()
+	return isTfaEnabled
+}
+
+
+
+bool function IsPlayerLeveledForGifting_Internal( entity player )
+{
+	if ( !IsValid( player ) )
+		return false
+
+	int currentLevel = GetPlayerAccountLevel( player )
+
+	
+	if ( currentLevel < ( GetConVarInt( "mtx_giftingMinAccountLevel" ) - 1 ) )
+		return false
+
+	return true
+}
+
+
+
+bool function IsPlayerLeveledForGifting()
+{
+	return IsPlayerLeveledForGifting_Internal( GetLocalClientPlayer() )
+}
+
+
+
+bool function IsPlayerWithinGiftingLimit_Internal( entity player )
+{
+	int limitCounter = GRX_GetGiftingLimitCounter( player )
+	if  ( limitCounter <  GetGiftingMaxLimitPerResetPeriod() )
+		return true
+
+	return false
+}
+
+
+
+bool function IsPlayerWithinGiftingLimit()
+{
+	return IsPlayerWithinGiftingLimit_Internal( GetLocalClientPlayer() )
+}
+
+
+
+void function RefreshTwoFactorAuthenticationStatus()
+{
+	RefreshEaTwoFactorAuthenticationStatus()
+}
+
+
+
+
+bool function IsGiftFree( GRXScriptOffer offer )
+{
+	foreach ( ItemFlavorBag price in offer.prices )
+	{
+		ItemFlavor flavor = price.flavors[0]
+		if ( flavor == GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] )
+		{
+			return price.quantities[0] == 0
+		}
+	}
+	return false
+}
+
+bool function CanLocalPlayerGift( GRXScriptOffer ornull giftOffer = null )
+{
+	bool isGiftFree
+	if ( giftOffer == null )
+	{
+		isGiftFree = false
+	}
+	else
+	{
+		isGiftFree = IsGiftFree( expect GRXScriptOffer( giftOffer ) )
+	}
+	return PlayerAccountEligibleToGift( isGiftFree, GetLocalClientPlayer() )
+}
+
+
+
+bool function PlayerAccountEligibleToGift( bool isFreeOffer, entity player )
+{
+
+		
+		if ( !IsTwoFactorAuthenticationEnabled() )
+		{
+			return false
+		}
+
+
+	
+	
+	bool isWithinGiftingLimit = IsPlayerWithinGiftingLimit_Internal( player )
+	if ( isFreeOffer )
+	{
+		return isWithinGiftingLimit
+	}
+
+	bool isLeveled = IsPlayerLeveledForGifting_Internal( player )
+	return isLeveled && isWithinGiftingLimit
+}
+
+
+
+int function Gifting_GetRemainingDailyGifts()
+{
+	return GetGiftingMaxLimitPerResetPeriod() - GRX_GetGiftingLimitCounter( GetLocalClientPlayer() )
+}
+
+
+
+void function GetGiftOfferEligibility( string offerAlias, int hardwareId, string nucleus_pid, string nucleus_id )
+{
+	if ( !IsGiftingEnabled() )
+		return
+
+	GRX_GetOffer( offerAlias, hardwareId, nucleus_pid, nucleus_id )
+}
+
+
+
+bool function IsGiftingEnabled()
+{
+	return GetConVarBool( "mtx_giftingEnabled" )
+}
+
+
+
+bool function IsBattlepassGiftingEnabled()
+{
+	return GetConVarBool( "mtx_battlepassGiftingEnabled" ) && IsGiftingEnabled()
+}
+
+
+
+bool function HasFriendshipTenureBeenLongEnough( int friendshipCreationTime )
+{
+	if ( !IsFullyConnected() )
+		return false
+
+	int minFriendshipInDays = GetConVarInt( "mtx_giftingMinFriendshipInDays" )
+#if DEV
+		if (minFriendshipInDays == 0)
+			return true
+#endif
+	int currentTime = GetUnixTimestamp()
+	int friendshipLengthInSeconds = currentTime - friendshipCreationTime
+
+	
+	int friendshipLengthInDays = friendshipLengthInSeconds / (  60 * 60 * 24 )
+
+	return friendshipLengthInDays >= minFriendshipInDays
+}
+
+
+
+int function GetGiftingMaxLimitPerResetPeriod()
+{
+	return GetConVarInt( "mtx_giftingLimit" )
+}
+
+
+
+int function SortInboxMessagesByOldest( GRXContainerInfo a, GRXContainerInfo b )
+{
+	if ( a.timestamp < b.timestamp )
+		return 1
+
+	if ( a.timestamp > b.timestamp )
+		return -1
+
+	return 0
+}
+
+
+
+void function Gifting_LevelInit()
+{
+	file.UIisFullyConnected = true
+	MarkNewGiftedItemsAsNew()
+}
+
+
+
+void function Gifting_LevelShutdown()
+{
+	file.UIisFullyConnected = false
+}
+
+
+
+
+
+string function GetFriendNameFromNucleusPId( string id, array<EadpPeopleData> friends )
+{
+	string name = Localize( "#UNKNOWN_USER" )
+	EadpPeopleData friend
+	int platform = -1
+	foreach ( EadpPeopleData person in friends )
+	{
+		array< string > ids = [person.ea_pid, person.xbox_pid, person.psn_pid, person.switch_pid, person.steam_pid]
+		for ( int i = 0; i < ids.len(); i++ )
+		{
+			if ( id == ids[i] )
+			{
+				friend = person
+				switch ( i )
+				{
+					case 0:
+						platform = HARDWARE_PC
+						break
+					case 1:
+						platform = HARDWARE_XBOXONE
+						break
+					case 2:
+						platform = HARDWARE_PS4
+						break
+					case 3:
+						
+						platform = HARDWARE_SWITCH
+						break
+					case 4:
+						platform = HARDWARE_PC_STEAM
+						break
+				}
+			}
+		}
+		if ( platform != -1 )
+			break
+	}
+
+	foreach ( EadpPresenceData presence in friend.presences )
+	{
+		bool isPSN = platform == HARDWARE_PS4
+		bool isXboxLive = platform == HARDWARE_XBOXONE
+		if ( isPSN )
+		{
+			if ( presence.hardware == HARDWARE_PS4 || presence.hardware == HARDWARE_PS5 )
+			{
+				name = presence.name
+				return name
+			}
+		}
+		else if ( isXboxLive )
+		{
+			if ( presence.hardware == HARDWARE_XBOXONE || presence.hardware == HARDWARE_XB5 )
+			{
+				name = presence.name
+				return name
+			}
+		}
+
+		if ( presence.hardware == platform )
+		{
+			name = presence.name
+			return name
+		}
+	}
+
+	return name
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function ShowGiftTimeOutDialogue( string optionalMessage = "" )
+{
+	EmitUISound( "menu_deny" )
+
+	CloseAllDialogs()
+
+	ConfirmDialogData data
+	data.headerText = "#GIFT_WARNING_TIMEOUT_HEADER"
+	data.messageText = Localize( "#GIFT_WARNING_MESSAGE_TIMEOUT" )
+	if ( optionalMessage != "" )
+		data.messageText += "\n\n" + Localize( optionalMessage )
+	data.contextImage = $"ui/menu/common/dialog_notice"
+
+	OpenOKDialogFromData( data )
+}
+
+
+
+void function ShowGiftErrorDialogue( string optionalMessage = "" )
+{
+	EmitUISound( "menu_deny" )
+
+	CloseAllDialogs()
+
+	ConfirmDialogData data
+	data.headerText = "#GIFT_ERROR_HEADER"
+	data.messageText = Localize( "#GIFT_ERROR_GENERIC" )
+	if ( optionalMessage != "" )
+		data.messageText += "\n\n" + Localize( optionalMessage )
+	data.contextImage = $"ui/menu/common/dialog_error"
+
+	OpenOKDialogFromData( data )
+}
+
+
+
+
+
+
+

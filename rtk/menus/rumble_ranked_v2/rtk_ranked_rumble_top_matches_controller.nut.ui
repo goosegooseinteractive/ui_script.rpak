@@ -1,0 +1,559 @@
+global function InitRTKRankedRumbleTopMatches
+global function RTKRankedRumbleTopMatches_OnInitialize
+global function RTKRankedRumbleTopMatches_OnDestroy
+
+global struct RTKRankedRumbleTopMatches_Properties
+{
+	rtk_behavior topMatchesListBinder
+}
+
+global struct RTKRankedRumbleTopMatchesInfo
+{
+	bool showMatchesCount
+	bool minMatchesCompleted
+	bool isLocked
+	bool isReplacedMatch
+	string headerText
+	int top10Total
+	int numMatches
+	int currentMatchIndex
+	int totalMatchCount
+	int topMatchesCount
+
+
+
+}
+
+global struct SingleMatchInfo
+{
+	RankLadderPointsBreakdown breakdown
+	int score
+	bool isReplaced
+	int matchIndex
+
+
+
+}
+
+struct
+{
+	int replacedIndex
+	int initialIndex
+	int top10Scores
+	int numMatches
+	int totalMatchCount
+	int topMatchesCount
+	array<SingleMatchInfo> matchList
+	array<RankedMatchSummaryExtraInfo> matchsSummary
+} file
+
+void function InitRTKRankedRumbleTopMatches( var panel )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}
+
+void function RTKRankedRumbleTopMatches_OnInitialize( rtk_behavior self )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleTopMatchesInfo", "RTKRankedRumbleTopMatchesInfo" )
+	rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( panelStruct, "extraInfo", "RankedMatchSummaryExtraInfo" )
+	rtk_array top10MatchesInfoModel = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "top10Placements", "RankedEventPlacementInfo" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "rankedRumbleTopMatchesInfo", true ) )
+
+	CreateDefaultExtraInfoTemplate( summaryExtraInfoModel )
+	AutoSubscribeTopMatchesListButtons( self, panelStruct )
+
+	if ( Cups_IsInitialized() )
+	{
+		thread RTKRankedRumbleTopMatches_BuildMatchData( self )
+	}
+}
+
+void function RTKRankedRumbleTopMatches_OnDestroy( rtk_behavior self )
+{
+	file.matchList.clear()
+	file.matchsSummary.clear()
+	file.initialIndex = 0
+	file.numMatches = 0
+	file.replacedIndex = -1
+
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "rankedRumbleTopMatchesInfo" )
+}
+
+void function RTKRankedRumbleTopMatches_BuildMatchData( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+	waitthread CacheLadderPointsBreakdown()
+
+	if ( !IsFullyConnected() )
+		return
+
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleTopMatchesInfo", "RTKRankedRumbleTopMatchesInfo" )
+	SetTop10Matches( panelStruct )
+	SetExtraInfo( panelStruct )
+	SetInfo( panelStruct )
+}
+
+void function AutoSubscribeTopMatchesListButtons( rtk_behavior self, rtk_struct panelStruct )
+{
+	rtk_behavior ornull topMatchesListBinder = self.PropGetBehavior( "topMatchesListBinder" )
+	if ( topMatchesListBinder != null )
+	{
+		expect rtk_behavior( topMatchesListBinder )
+		self.AutoSubscribe( topMatchesListBinder, "onUpdatedList", function () : ( self, topMatchesListBinder, panelStruct ) {
+			rtk_panel panel = topMatchesListBinder.GetPanel()
+			array< rtk_panel > listItems = panel.GetChildren()
+
+			foreach( int index, item in listItems )
+			{
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( panelStruct, index ) {
+					if ( index < file.matchsSummary.len() )
+					{
+						rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( panelStruct, "extraInfo", "RankedMatchSummaryExtraInfo" )
+						RTKStruct_SetValue( summaryExtraInfoModel, file.matchsSummary[index] )
+						RTKStruct_SetString( panelStruct, "headerText", Localize( "#RANKED_RUMBLE_LEADERBOARD_HIGHEST_SCORE", RTKMutator_LocalizeOrdinal( index + 1 ) ) )
+
+						rtk_array top10MatchesInfoModel = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "top10Placements", "RankedEventPlacementInfo" )
+						for ( int i = 0; i < RTKArray_GetCount( top10MatchesInfoModel ); i++ )
+						{
+							rtk_struct buttonData = RTKArray_GetStruct( top10MatchesInfoModel, i )
+							RTKStruct_SetBool(buttonData, "showArrow", i == index)
+						}
+
+						RTKStruct_SetBool( panelStruct, "isReplacedMatch", index == file.replacedIndex )
+
+						if ( index < file.matchList.len() )
+						{
+							RTKStruct_SetInt( panelStruct, "currentMatchIndex", file.matchList[index].matchIndex )
+						}
+					}
+				})
+			}
+		} )
+	}
+}
+
+void function CreateDefaultExtraInfoTemplate( rtk_struct summaryExtraInfoModel )
+{
+	RankedMatchSummaryExtraInfo extraInfo
+	
+	BonusBreakdownInfo combat
+	combat.bonusName = "#RANKED_COMBAT_SUBHEADER"
+	combat.bonusValue = 0
+	combat.tooltipTitle = "#RANKED_COMBAT_SUBHEADER"
+	combat.tooltipBody = "#RANKED_COMBAT_SUBHEADER_DESC"
+	extraInfo.headers.push(combat)
+
+	BonusBreakdownInfo bonus
+	bonus.bonusName = "#RANKED_BONUS_SUBHEADER"
+	bonus.bonusValue = 0
+	bonus.tooltipTitle = "#RANKED_BONUS_SUBHEADER"
+	bonus.tooltipBody = "#RANKED_BONUS_SUBHEADER_DESC"
+	extraInfo.headers.push(bonus)
+
+	BonusBreakdownInfo placement
+	placement.bonusName = "#RANKED_PLACEMENT_SUBHEADER"
+	placement.bonusValue = 0
+	placement.tooltipTitle = "#RANKED_PLACEMENT_SUBHEADER"
+	placement.tooltipBody = "#RANKED_PLACEMENT_SUBHEADER_DESC"
+	extraInfo.headers.push(placement)
+
+	RTKStruct_SetValue( summaryExtraInfoModel, extraInfo )
+}
+
+void function CacheLadderPointsBreakdown()
+{
+	while ( !Cups_GetAllUserCupData() )
+	{
+		WaitFrame()
+	}
+
+	if ( !IsFullyConnected() || !IsPersistenceAvailable() )
+	{
+		return
+	}
+
+	CupBakeryAssetData ornull cupData = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+
+	if ( cupData == null )
+		return
+	expect CupBakeryAssetData( cupData )
+	file.topMatchesCount = cupData.topMatchesCount
+
+	SettingsAssetGUID cupId = cupData.cupID
+
+	CupEntry ornull cupEntryData = Cups_GetSquadCupData( cupId )
+	if ( cupEntryData == null )
+		return
+	expect CupEntry( cupEntryData )
+
+	array<CupMatchSummary> matchSummaries = cupEntryData.matchSummaryData
+
+	int replacedIndex = -1
+	if ( cupEntryData.outScore != MAX_RANKED_EVENT_SCORE && cupEntryData.lastMatchIndex != -1 )
+	{
+		replacedIndex = cupEntryData.lastMatchIndex
+	}
+
+	file.numMatches = matchSummaries.len()
+	file.totalMatchCount = cupEntryData.totalMatchCount
+
+	for( int i = 0; i < matchSummaries.len(); i++ )
+	{
+		CupMatchSummary cupMatchSummary = matchSummaries[i]
+		if ( cupMatchSummary.playerSummaries.len() <= 0 )
+			continue
+
+		SingleMatchInfo singleMatchInfo
+
+		array<CupsMatchStatInformation> statInformation = cupMatchSummary.playerSummaries[0].statInformation
+		if ( RankedEvent_IsCupRankedEvent( cupData ) )
+		{
+			RankedEvent_LoadLPBreakdownFromStatInformation( singleMatchInfo.breakdown, statInformation )
+		}
+
+		singleMatchInfo.score = cupMatchSummary.squadCalculatedScore
+		singleMatchInfo.isReplaced = replacedIndex == i
+		singleMatchInfo.matchIndex = cupMatchSummary.playerSummaries[0].matchIndex
+		file.matchList.append( singleMatchInfo )
+	}
+}
+
+void function SetInfo( rtk_struct panelStruct )
+{
+	int rankedRumbleState = RankedEvent_GetRumbleRankedState()
+
+	RTKRankedRumbleTopMatchesInfo info
+	info.headerText 		 = GetHeaderText( file.matchList.len(), rankedRumbleState, file.initialIndex )
+	info.isLocked            = rankedRumbleState == eRankedRumbleState.LOCKED
+	info.top10Total 		 = file.top10Scores
+	info.numMatches 		 = file.numMatches
+	info.showMatchesCount 	 = file.matchList.len() != 0
+	info.minMatchesCompleted = info.numMatches >= file.topMatchesCount
+	info.topMatchesCount	 = file.topMatchesCount
+	info.currentMatchIndex   = file.initialIndex < file.matchList.len() ? file.matchList[file.initialIndex].matchIndex : 0
+	info.totalMatchCount     = file.totalMatchCount
+	RTKStruct_SetValue( panelStruct, info )
+}
+
+string function GetHeaderText( int numMatches, int rankedRumbleState, int initialIndex )
+{
+	string headerText
+
+	if ( rankedRumbleState == eRankedRumbleState.LOCKED )
+	{
+		headerText = "#RANKED_RUMBLE_LEADERBOARD_LOCKED"
+	}
+	else if ( rankedRumbleState == eRankedRumbleState.COMING_SOON )
+	{
+		headerText = "#RANKED_RUMBLE_LEADERBOARD_START_SOON"
+	}
+	else if ( numMatches == 0 )
+	{
+		headerText = Localize( "#LADDER_LEADERBOARD_MATCHES_COMPLETED", "0" )
+	}
+	else
+	{
+		headerText = Localize( "#RANKED_RUMBLE_LEADERBOARD_HIGHEST_SCORE", RTKMutator_LocalizeOrdinal( initialIndex + 1 ) )
+	}
+
+	return headerText
+}
+
+void function SetExtraInfo( rtk_struct panelStruct )
+{
+	for ( int index = 0; index < file.topMatchesCount; index++ )
+	{
+		if ( index >= file.matchList.len() )
+			continue
+
+		RankLadderPointsBreakdown scoreBreakdown = file.matchList[index].breakdown
+		RankedMatchSummaryExtraInfo extraInfo
+
+		extraInfo.disclaimerTexts = [ "", "", "" ]
+
+		extraInfo.entryCost = -1 * scoreBreakdown.entryCost
+		extraInfo.totalBonus = 0
+
+		entity player = GetLocalClientPlayer()
+
+		int elapsedTime = GetUnixTimestamp() - GetPersistentVarAsInt( "lastGameTime" )
+		extraInfo.lastPlayedTime = GetFormattedIntByType( elapsedTime, eNumericDisplayType.TIME_MINUTES_LONG )
+
+		string lastGameMode = expect string( GetPersistentVar( "lastGameMode" ) )
+		extraInfo.lastGameMode = lastGameMode
+
+		
+		BonusBreakdownInfo highSkillKillBonus
+		highSkillKillBonus.bonusName	= "#RANKED_SKILL_KILL_BONUS"
+		highSkillKillBonus.bonusStat	= string( scoreBreakdown.highSkillKill )
+		highSkillKillBonus.bonusValue	= scoreBreakdown.highSkillKillBonusValue
+		highSkillKillBonus.tooltipTitle = "#RANKED_SKILL_KILL_BONUS"
+		highSkillKillBonus.tooltipBody  = Localize ( "#RANKED_SKILL_KILL_BONUS_DESC_V2", scoreBreakdown.highSkillKill , scoreBreakdown.highSkillKillBonusValue )
+		highSkillKillBonus.crossOut		= scoreBreakdown.highSkillKill > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.totalBonus		    += scoreBreakdown.highSkillKillBonusValue
+		extraInfo.breakdownBonuses.push(highSkillKillBonus)
+
+		BonusBreakdownInfo streakBonus
+		streakBonus.bonusName	 = "#RANKED_STREAK_BONUS"
+		streakBonus.bonusValue	 = scoreBreakdown.top5StreakBonusValue
+		streakBonus.bonusStat    = Localize ( "#X/Y", string( minint ( scoreBreakdown.top5Streak,  Ranked_GetTop5StreakMax() ) ) , string ( Ranked_GetTop5StreakMax() ) )
+		streakBonus.tooltipTitle = "#RANKED_STREAK_BONUS"
+		streakBonus.tooltipBody  = Localize ( "#RANKED_STREAK_BONUS_DESC" , Ranked_GetTop5StreakBonusValue () ,  scoreBreakdown.top5Streak , scoreBreakdown.top5StreakBonusValue,  Ranked_GetTop5StreakMax()  )
+		streakBonus.crossOut	 = Ranked_GetTop5StreakBonusValueFromStreak( scoreBreakdown.top5Streak ) > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.totalBonus	 += scoreBreakdown.top5StreakBonusValue
+		extraInfo.breakdownBonuses.push(streakBonus)
+
+		if (scoreBreakdown.provisionalMatchBonus > 0)
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_PROVISIONAL_BONUS"
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.provisionalMatchBonus
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_PROVISIONAL_BONUS"
+			tempBonusBreakdownInfo.tooltipBody  = "#RANKED_PROVISIONAL_BONUS_DESC"
+			extraInfo.totalBonus				+= scoreBreakdown.provisionalMatchBonus
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if (scoreBreakdown.promotionBonus > 0)
+		{
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED"
+			}
+			else
+			{
+				extraInfo.disclaimerTexts[1] = "#RANKED_RUMBLE_NO_SCORING_INCLUDED"
+			}
+
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "*" + Localize( "#RANKED_TIER_PROMOTION_BONUS" )
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.promotionBonus
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_TIER_PROMOTION_BONUS"
+			tempBonusBreakdownInfo.tooltipBody  = Localize ( "#RANKED_TIER_PROMOTION_BONUS_DESC", scoreBreakdown.promotionBonus )
+			extraInfo.totalBonus				+= scoreBreakdown.promotionBonus
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		
+		if ( scoreBreakdown.penaltyPointsForAbandoning > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_ABANDON_PENALTY"
+			tempBonusBreakdownInfo.bonusValue	= -scoreBreakdown.penaltyPointsForAbandoning
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_ABANDON_PENALTY"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_ABANDON_PENALTY_DESC", scoreBreakdown.penaltyPointsForAbandoning )
+			tempBonusBreakdownInfo.crossOut 	= true
+			extraInfo.totalBonus				-= scoreBreakdown.penaltyPointsForAbandoning
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.lossProtectionAdjustment > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED"
+				tempBonusBreakdownInfo.bonusName = "*" + Localize( "#RANKED_LOSS_FORGIVENESS" )
+			}else
+			{
+				tempBonusBreakdownInfo.bonusName = "#RANKED_LOSS_FORGIVENESS"
+			}
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.lossProtectionAdjustment
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_LOSS_FORGIVENESS"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_LOSS_FORGIVENESS_DESC", scoreBreakdown.lossProtectionAdjustment )
+			extraInfo.totalBonus				+= scoreBreakdown.lossProtectionAdjustment
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.demotionPenality > 0 )
+		{
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED"
+			}
+			else
+			{
+				extraInfo.disclaimerTexts[1] = "#RANKED_RUMBLE_NO_SCORING_INCLUDED"
+			}
+
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "*" + Localize( "#RANKED_TIER_DERANKING" )
+			tempBonusBreakdownInfo.bonusValue	= -scoreBreakdown.demotionPenality
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_TIER_DERANKING"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_TIER_DERANKING_DESC", scoreBreakdown.demotionPenality )
+			tempBonusBreakdownInfo.crossOut 	= true
+			extraInfo.totalBonus				-= scoreBreakdown.demotionPenality
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.demotionProtectionAdjustment > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_DEMOTION_PROTECTION"
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.demotionProtectionAdjustment
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_DEMOTION_PROTECTION"
+			SharedRankedDivisionData startRank = GetCurrentRankedDivisionFromScore( scoreBreakdown.startingLP )
+			if ( startRank.tier.allowsDemotion )
+			{
+				int tierDemotionPenalty = GetCurrentPlaylistVarInt ( "ranked_tier_demotion_penality", RANKED_LP_DEMOTION_PENALITY )
+				int playerDemotionProtectionCount = GetDemotionProtectionBuffer ( player )
+				tempBonusBreakdownInfo.tooltipBody = Localize( "#RANKED_DEMOTION_PROTECTION_DESC", scoreBreakdown.demotionProtectionAdjustment, playerDemotionProtectionCount, tierDemotionPenalty )
+			}
+			else
+			{
+				tempBonusBreakdownInfo.tooltipBody = Localize( "#RANKED_DEMOTION_PROTECTION_ALWAYS_DESC", Localize( startRank.tier.name ), scoreBreakdown.demotionProtectionAdjustment )
+			}
+			extraInfo.totalBonus			    += scoreBreakdown.demotionProtectionAdjustment
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		
+		int participationPercentage = 0
+		float participationsScaled = float( scoreBreakdown.participationUnique )
+		int killCapPercentage = 0
+		float killCapValue = 0
+		participationPercentage = int( Ranked_GetParticipationMutlipler() * 100 )
+		participationsScaled = scoreBreakdown.participationUnique * Ranked_GetParticipationMutlipler()
+		killCapPercentage = int( Ranked_GetSoftKillCapMod() * 100 )
+		killCapValue = scoreBreakdown.killValueModifierByPlacement - (scoreBreakdown.killValueModifierByPlacement * Ranked_GetSoftKillCapMod())
+
+		extraInfo.baseKillValue = scoreBreakdown.killValueModifierByPlacement
+		extraInfo.numPlacementMatches = Ranked_GetNumProvisionalMatchesRequired()
+		extraInfo.numCompletePlacementMatches = Ranked_GetNumProvisionalMatchesCompleted( player )
+		extraInfo.isPlacement = !Ranked_HasCompletedProvisionalMatches( player )
+
+		BonusBreakdownInfo killsNew
+		killsNew.bonusName = "#SCOREBOARD_KILLS"
+		killsNew.bonusStat = string( scoreBreakdown.killsUnique )
+		killsNew.bonusValue =  scoreBreakdown.wasAbandoned ? 0 : scoreBreakdown.killsUnique * scoreBreakdown.killValueModifierByPlacement
+		killsNew.tooltipTitle = "#SCOREBOARD_KILLS"
+		killsNew.tooltipBody = Localize( "#SCOREBOARD_KILLS_DESC_DETAILED", scoreBreakdown.killsUnique, scoreBreakdown.killValueModifierByPlacement , killsNew.bonusValue )
+		killsNew.crossOut		= scoreBreakdown.killsUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(killsNew)
+
+		BonusBreakdownInfo assistsNew
+		assistsNew.bonusName = "#SCOREBOARD_ASSISTS"
+		assistsNew.bonusStat = string( scoreBreakdown.assistUnique )
+		assistsNew.bonusValue =  scoreBreakdown.wasAbandoned ? 0 : scoreBreakdown.assistUnique * scoreBreakdown.killValueModifierByPlacement
+		assistsNew.tooltipTitle = "#SCOREBOARD_ASSISTS"
+		assistsNew.tooltipBody = Localize( "#SCOREBOARD_ASSISTS_DESC_DETAILED", scoreBreakdown.assistUnique, scoreBreakdown.killValueModifierByPlacement,  assistsNew.bonusValue )
+		assistsNew.crossOut		= scoreBreakdown.assistUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(assistsNew)
+
+		BonusBreakdownInfo participationsNew
+		participationsNew.bonusName = "#SCOREBOARD_PARTICIPATION"
+		participationsNew.bonusStat = Localize( "#RANKED_PARTICIPATION_DISPLAY", string( scoreBreakdown.participationUnique ), string( participationPercentage ), LocalizeAndShortenNumber_Float( participationsScaled, 3, 1 ) )
+		participationsNew.bonusValue = scoreBreakdown.wasAbandoned ? 0 : int( RoundToNearestInt(  participationsScaled * scoreBreakdown.killValueModifierByPlacement ) )
+		participationsNew.tooltipTitle = "#SCOREBOARD_PARTICIPATION"
+		participationsNew.tooltipBody = Localize( "#RANKED_PARTICIPATION_DESC_DETAILED", string( 100 - participationPercentage ), LocalizeAndShortenNumber_Float( participationsScaled, 3, 1 ) , participationsNew.bonusValue ,  scoreBreakdown.killValueModifierByPlacement )
+		participationsNew.crossOut		= scoreBreakdown.participationUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(participationsNew)
+
+		BonusBreakdownInfo softCapAdjustment
+		softCapAdjustment.bonusName = "#RANKED_SOFT_CAP_ADJUSTMENT"
+		int totalEarned = scoreBreakdown.wasAbandoned ? 0 : int( RoundToNearestInt(  ( scoreBreakdown.killsUnique +  scoreBreakdown.assistUnique + participationsScaled ) * scoreBreakdown.killValueModifierByPlacement ) )
+		int killCapAdjustment =  scoreBreakdown.killBonus - totalEarned
+		int killCap = Ranked_GetSoftKillCapStartCount()
+		softCapAdjustment.bonusValue = killCapAdjustment
+		softCapAdjustment.tooltipTitle = "#RANKED_SOFT_CAP_ADJUSTMENT"
+		softCapAdjustment.tooltipBody = Localize( "#RANKED_SOFT_CAP_ADJUSTMENT_DESC_OLD", killCap, LocalizeAndShortenNumber_Float( killCapValue, 3, 1 ), string( 100 - killCapPercentage ) )
+		extraInfo.stats.push(softCapAdjustment)
+
+		
+		BonusBreakdownInfo placementBonus
+		int lastGameRank = scoreBreakdown.placement
+		placementBonus.bonusName = "#RANKED_PLACEMENT_BONUS"
+		placementBonus.bonusStat = Localize( "#DEATH_SCREEN_SUMMARY_PLACEMENT", string( lastGameRank ) )
+		placementBonus.bonusValue = scoreBreakdown.placementScore
+		placementBonus.tooltipTitle = "#RANKED_PLACEMENT_BONUS"
+		placementBonus.tooltipBody = Localize ( "#RANKED_PLACEMENT_BONUS_DESC", scoreBreakdown.placementScore )
+		placementBonus.crossOut = Ranked_GetPointsForPlacement( lastGameRank ) > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.placementBonuses.push(placementBonus)
+
+		BonusBreakdownInfo costOfEntry
+		costOfEntry.bonusName = extraInfo.entryCost != 0 ? "*" + Localize( "#RANKED_COST_OF_ENTRY" ) : "#RANKED_COST_OF_ENTRY"
+		costOfEntry.bonusStat = GetCurrentRankedDivisionFromScoreAndLadderPosition( scoreBreakdown.startingLP, Ranked_GetLadderPosition( player ) ).divisionName
+		costOfEntry.bonusValue = extraInfo.entryCost
+		costOfEntry.tooltipTitle = "#RANKED_COST_OF_ENTRY"
+		costOfEntry.tooltipBody = Localize ( "#RANKED_COST_OF_ENTRY_DESC", extraInfo.entryCost )
+		extraInfo.placementBonuses.push(costOfEntry)
+		extraInfo.disclaimerTexts[2] = extraInfo.entryCost != 0 ? "#RANKED_RUMBLE_NO_ENTRY_COST_INCLUDED" : ""
+
+		
+		BonusBreakdownInfo combat
+		combat.bonusName = "#RANKED_COMBAT_SUBHEADER"
+		combat.bonusValue = scoreBreakdown.killBonus
+		combat.tooltipTitle = "#RANKED_COMBAT_SUBHEADER"
+		combat.tooltipBody = "#RANKED_COMBAT_SUBHEADER_DESC"
+		extraInfo.headers.push(combat)
+
+		BonusBreakdownInfo bonus
+		bonus.bonusName = "#RANKED_BONUS_SUBHEADER"
+		bonus.bonusValue = extraInfo.totalBonus
+		bonus.tooltipTitle = "#RANKED_BONUS_SUBHEADER"
+		bonus.tooltipBody = "#RANKED_BONUS_SUBHEADER_DESC"
+		extraInfo.headers.push(bonus)
+
+		BonusBreakdownInfo placement
+		placement.bonusName = "#RANKED_PLACEMENT_SUBHEADER"
+		placement.bonusValue = scoreBreakdown.placementScore + extraInfo.entryCost
+		placement.tooltipTitle = "#RANKED_PLACEMENT_SUBHEADER"
+		placement.tooltipBody = "#RANKED_PLACEMENT_SUBHEADER_DESC"
+		extraInfo.headers.push(placement)
+
+		file.matchsSummary.append( extraInfo )
+	}
+
+	if (file.matchsSummary.len() > 0)
+	{
+		
+		rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( panelStruct, "extraInfo", "RankedMatchSummaryExtraInfo" )
+		RTKStruct_SetValue( summaryExtraInfoModel, file.matchsSummary[file.initialIndex] )
+	}
+}
+
+void function SetTop10Matches( rtk_struct panelStruct )
+{
+	
+	array<RankedEventPlacementInfo> top10Placements
+
+	RankedEventPlacementInfo lastPlacement
+	lastPlacement.score = GetRankedGameData( GetLocalClientPlayer(), "lastGamePlacementScore" )
+
+	int replacedIndex = -1
+	file.top10Scores = 0
+
+	for ( int index = 0; index < file.topMatchesCount; index++ )
+	{
+		RankedEventPlacementInfo top10PlacementInfo
+
+		if ( index < file.matchList.len() )
+		{
+			RankLadderPointsBreakdown pointsBreakdown = file.matchList[index].breakdown
+			top10PlacementInfo.placement = index + 1
+			top10PlacementInfo.score = file.matchList[index].score
+			top10PlacementInfo.hasNoScore = false
+			top10PlacementInfo.isReplaced = file.matchList[index].isReplaced
+			if (top10PlacementInfo.isReplaced){
+				file.replacedIndex = index
+			}
+			top10PlacementInfo.showArrow = (index == 0)
+			file.top10Scores += top10PlacementInfo.score
+		}
+		else
+		{
+			top10PlacementInfo.placement = index + 1
+			top10PlacementInfo.hasNoScore = true
+			top10PlacementInfo.isReplaced = false
+		}
+
+		top10Placements.append( top10PlacementInfo )
+	}
+
+	rtk_array top10MatchesInfoModel = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "top10Placements", "RankedEventPlacementInfo" )
+	RTKArray_SetValue( top10MatchesInfoModel, top10Placements )
+}

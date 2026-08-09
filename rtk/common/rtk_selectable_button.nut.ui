@@ -1,0 +1,130 @@
+global function RTKSelectableButton_OnInitialize
+global function RTKSelectableButton_SetOnSelectedCallbackFunc
+global function RTKSelectableButton_SetSelected
+global function RTKSelectableButton_SetOnHighlightedCallbackFunc
+global function RTKSelectableButton_SetHighlighted
+global function RTKSelectableButton_SetOnIdleCallbackFunc
+global function RTKSelectableButton_SetOnSiblingIndexChangedCallbackFunc
+global function RTKSelectableButton_SetIdle
+global function RTKSelectableButton_UpdateIndex
+
+global struct RTKSelectableButton_Properties
+{
+	int index
+	void functionref( int ) onSelectedFunc
+	void functionref( int ) onHighlightedFunc
+	void functionref( int ) onIdleFunc
+	rtk_panel activePanel
+	rtk_behavior buttonBehavior
+	bool selectOnHighlighted
+	bool useHighlightedState
+	bool isSelected
+	bool isHighlighted
+	bool IsIdle
+	int buttonState
+}
+
+enum selectableButtonState
+{
+	idle,
+	highlighted,
+	selected
+}
+
+void function RTKSelectableButton_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	if ( button != null)
+	{
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			{
+				int index = RTKStruct_GetDataIndex( self.GetPanel().GetProperties(), self.PropGetInt( "index" ) )
+				self.InvokeEvent( "onSelectedFunc", index )
+			}
+		} )
+
+		if ( self.PropGetBool( "selectOnHighlighted" ) )
+		{
+			self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState )  : ( self ) {
+				{
+					int index = RTKStruct_GetDataIndex( self.GetPanel().GetProperties(), self.PropGetInt( "index" ) )
+					self.InvokeEvent( "onSelectedFunc", index )
+				}
+			} )
+		}
+
+		if ( self.PropGetBool( "useHighlightedState" ) )
+		{
+			self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+				{
+					int index = RTKStruct_GetDataIndex( self.GetPanel().GetProperties(), self.PropGetInt( "index" ) )
+					self.InvokeEvent( "onIdleFunc", index )
+				}
+			} )
+
+			self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState )  : ( self ) {
+				{
+					int index = RTKStruct_GetDataIndex( self.GetPanel().GetProperties(), self.PropGetInt( "index" ) )
+					self.InvokeEvent( "onHighlightedFunc", index )
+				}
+			} )
+		}
+	}
+}
+
+void function RTKSelectableButton_SetOnSelectedCallbackFunc( rtk_behavior self, void functionref( int ) onSelectedCallback )
+{
+	self.AddEventListener( "onSelectedFunc", onSelectedCallback )
+}
+
+void function RTKSelectableButton_SetSelected( rtk_behavior self, bool selected )
+{
+	rtk_panel activePanel = self.PropGetPanel( "activePanel" )
+	if (  activePanel != null )
+	{
+		activePanel.SetVisible( selected )
+	}
+
+	self.PropSetBool( "isSelected", selected )
+	self.PropSetInt( "buttonState", selected ? selectableButtonState.selected : selectableButtonState.idle )
+}
+
+void function RTKSelectableButton_SetOnHighlightedCallbackFunc( rtk_behavior self, void functionref( int ) onHighlightedCallback )
+{
+	self.AddEventListener( "onHighlightedFunc", onHighlightedCallback )
+}
+
+void function RTKSelectableButton_SetHighlighted( rtk_behavior self, bool highlighted )
+{
+	self.PropSetBool( "isHighlighted", highlighted )
+
+	if ( !self.PropGetBool( "isSelected" ) )
+	{
+		self.PropSetInt( "buttonState", highlighted ? selectableButtonState.highlighted : selectableButtonState.idle )
+	}
+}
+
+void function RTKSelectableButton_SetOnIdleCallbackFunc( rtk_behavior self, void functionref( int ) onIdleCallback )
+{
+	self.AddEventListener( "onIdleFunc", onIdleCallback )
+}
+
+void function RTKSelectableButton_SetOnSiblingIndexChangedCallbackFunc( rtk_panel panel, void functionref( int, int ) onSiblingIndexChangedCallback )
+{
+	panel.AddEventListener( "onSiblingIndexChanged", onSiblingIndexChangedCallback )
+}
+
+void function RTKSelectableButton_SetIdle( rtk_behavior self, bool idle )
+{
+	self.PropSetBool( "isIdle", idle )
+
+	if ( !self.PropGetBool( "isSelected" ) )
+	{
+		self.PropSetInt( "buttonState", selectableButtonState.idle )
+	}
+}
+
+void function RTKSelectableButton_UpdateIndex( rtk_behavior self, int index )
+{
+	self.PropSetInt( "index", index )
+}

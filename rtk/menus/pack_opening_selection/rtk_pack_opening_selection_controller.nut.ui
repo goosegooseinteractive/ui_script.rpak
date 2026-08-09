@@ -1,0 +1,1020 @@
+
+global function InitRTKPackOpeningSelectionMenu
+
+global function RTKPackOpeningSelectionController_OnInitialize
+global function RTKPackOpeningSelectionController_OnDestroy
+
+global function OpenPackOpeningSelectionMenu
+global function RTKPackOpeningSelectionController_GetPackName
+
+global struct RTKPackOpeningSelectionController_Properties
+{
+	rtk_behavior purchasePacksButton
+	rtk_behavior lootPoolBrowserButton
+
+	
+	rtk_behavior resetButton
+	rtk_behavior quantityButtonLeft
+	rtk_behavior quantityButtonLeft2
+	rtk_behavior openPackButton
+	rtk_behavior quantityButtonRight1
+	rtk_behavior quantityButtonRight2
+	rtk_behavior maxButton
+	
+	rtk_behavior upgradeButton
+	
+	rtk_panel packListPanel
+}
+
+global struct RTKPackOpeningSelectionPackData
+{
+	string packName
+	int quantity
+	int quality
+	asset icon
+	int packGUID
+	int state = 0
+	bool canProgressBonusMeter
+	bool isWishlistPack
+	bool isWishlistUpgradable
+}
+
+global struct RTKPackUpgradeTooltipData
+{
+	string bodyText
+	string subtitleText
+	bool active
+}
+
+global struct RTKPackUpgradeData
+{
+	RTKPackUpgradeTooltipData& tooltipData
+	bool isSelectedPackUpgradable
+	string price
+}
+
+global struct RTKPackOpeningSelectionModel
+{
+	array<RTKPackOpeningSelectionPackData> packData
+	int selectedPackQuantity = 1
+	string selectedPackName
+	bool hasAvailablePacks = true
+	bool isTopLevel = true
+	bool isPackBrowsable
+	bool isControllerModeActive
+	int selectedPackQuality
+	string bonusMeterDisclaimer
+	string wishlistDisclaimer
+	RTKPackUpgradeData& packUpgradeData
+}
+
+global enum ePackOpeningSelectionButtonState
+{
+	IDLE,
+	SELECTED,
+	HIGHLIGHTED,
+	DISABLED
+}
+
+const string MODEL_PATH_NAME = "packOpeningSelection"
+int MAX_PACKS_QUANTITY = 50
+int MAX_WISHLIST_PACKS_QUANTITY = 25
+const int MIN_PACKS_QUANTITY = 1
+const int FIRST_BUTTON_PACKS_QUANTITY = 1
+const int SECOND_BUTTON_PACKS_QUANTITY = 5
+
+
+const string OPEN_PACK_HOLD_BUTTON_SOUND = "UI_Menu_LootCeremony_Hold_Bar"
+const string QUANTITY_BUTTONS_PRESS_SOUND = "UI_Menu_LootCeremony_Press"
+const string OPEN_PACK_SOUND = "ui_menu_openlootbox"
+
+global const string OPEN_PACKS_TUTORIAL = "openPacksTutorial"
+global const string OPEN_PACKS_TUTORIAL_INFO = "openPacksTutorialInfo"
+
+struct PrivateData
+{
+	int selectedQuantity = MIN_PACKS_QUANTITY
+	ItemFlavor& selectedPack
+
+	void functionref( bool input ) onInputModeChangedCallbackFunc
+	void functionref() onGRXInventoryStateChanged
+	void functionref() onGRXOffersRefreshed
+
+	bool initializedInventory
+	bool initializedOffer
+
+	GRXScriptOffer ornull upgradeOffer
+}
+
+struct
+{
+	var menu
+	int previousSelectedPackButtonGUID
+	rtk_behavior self 
+} file
+
+const string REWARD_PACK_OPEN_THREAD_SIGNAL = "KillRewardsPackThread"
+
+void function InitRTKPackOpeningSelectionMenu( var menu )
+{
+	file.menu = menu
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+
+	AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( RTKViewPacksInventoryButton_PopulateOpenPacksTutorialAboutText, OPEN_PACKS_TUTORIAL )
+	AddCallback_UI_FeatureTutorialDialog_SetTitle( RTKViewPacksInventoryButton_PopulateOpenPacksTutorialTitle, OPEN_PACKS_TUTORIAL )
+
+	AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( RTKViewPacksInventoryButton_PopulateOpenPacksTutorialInfoAboutText, OPEN_PACKS_TUTORIAL_INFO )
+	AddCallback_UI_FeatureTutorialDialog_SetTitle( RTKViewPacksInventoryButton_PopulateOpenPacksTutorialTitle, OPEN_PACKS_TUTORIAL_INFO )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_GET_TOP_LEVEL, OnGainTopLevel )
+	AddMenuEventHandler( menu, eUIEvent.MENU_LOSE_TOP_LEVEL, OnLoseTopLevel )
+
+	RegisterSignal( REWARD_PACK_OPEN_THREAD_SIGNAL )
+}
+
+void function OnGainTopLevel()
+{
+	if ( GRX_UI_IsInValidStateToAttemptGRXOperations() )
+	{
+		thread TryForceOpenRewardPacks_Thread()
+	}
+
+	if ( file.self == null )
+		return
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	PrivateData p
+	file.self.Private( p )
+	if ( ItemFlavor_GetType( p.selectedPack ) == eItemType.account_pack )
+	{
+		RTKStruct_SetBool( panelStruct, "hasAvailablePacks", GRX_GetPackCount( ItemFlavor_GetGRXIndex( p.selectedPack ) ) > 1 )
+		RTKStruct_SetBool( panelStruct, "isTopLevel", true )
+	}
+	else
+	{
+		RTKStruct_SetBool( panelStruct, "hasAvailablePacks", false )
+	}
+}
+
+void function OnLoseTopLevel()
+{
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	RTKStruct_SetBool( panelStruct, "hasAvailablePacks", false )
+	RTKStruct_SetBool( panelStruct, "isTopLevel", false )
+	Signal( uiGlobal.signalDummy, REWARD_PACK_OPEN_THREAD_SIGNAL )
+}
+
+void function OpenPackOpeningSelectionMenu()
+{
+	if ( GetActiveMenu() == file.menu )
+		return
+
+	AdvanceMenu( file.menu )
+}
+
+void function TryForceOpenRewardPacks_Thread()
+{
+	EndSignal( uiGlobal.signalDummy, REWARD_PACK_OPEN_THREAD_SIGNAL )
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+
+	while ( IsFullyConnected() && IsLobby() )
+	{
+		if ( GRXPack_HasCompletionRewardPacks() )
+			TryForceOpenRewardPacks()
+
+		wait 0.25 
+	}
+}
+
+
+void function RTKPackOpeningSelectionController_OnInitialize( rtk_behavior self )
+{
+	MAX_PACKS_QUANTITY          = GetConVarInt( "mtx_mass_pack_opening_max_packs_to_open" )
+	MAX_WISHLIST_PACKS_QUANTITY = GetConVarInt( "mtx_mass_pack_opening_max_wishlist_packs_to_open" )
+
+	file.self = self
+
+	UI_SetPresentationType( ePresentationType.LOOT_CEREMONY )
+	string modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+	self.GetPanel().SetBindingRootPath( modelPath )
+
+	PrivateData p
+	self.Private( p )
+	p.onInputModeChangedCallbackFunc = void function( bool input ) : ( self ) {
+		 RTKPackOpeningSelectionController_SetIsControllerModeActive( self ) 
+	}
+	RTKPackOpeningSelectionController_SetIsControllerModeActive( self )
+	AddUICallback_InputModeChanged( p.onInputModeChangedCallbackFunc )
+
+
+
+
+
+
+	RTKPackOpeningSelectionController_SetPackPurchaseButton( self )
+
+	p.onGRXInventoryStateChanged = ( void function() : ( self ) {
+		 RTKPackOpeningSelectionController_GRXInventoryUpdate( self ) 
+	} ) 
+	p.onGRXOffersRefreshed = ( void function() : ( self ) {
+		 RTKPackOpeningSelectionController_GRXOffersRefresh( self ) 
+	} )
+
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( p.onGRXInventoryStateChanged )
+	AddCallbackAndCallNow_OnGRXOffersRefreshed( p.onGRXOffersRefreshed )
+
+}
+
+void function RTKPackOpeningSelectionController_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+	StopUISoundByName( OPEN_PACK_HOLD_BUTTON_SOUND )
+	Signal( uiGlobal.signalDummy, REWARD_PACK_OPEN_THREAD_SIGNAL )
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+
+	PrivateData p
+	self.Private( p )
+	RemoveUICallback_InputModeChanged( p.onInputModeChangedCallbackFunc )
+
+
+
+
+
+	RemoveCallback_OnGRXInventoryStateChanged( p.onGRXInventoryStateChanged )
+	RemoveCallback_OnGRXOffersRefreshed( p.onGRXOffersRefreshed )
+
+	
+	
+	
+	if ( GetActiveMenu() != GetMenu( "RewardCeremonyMenu" ) )
+	{
+		RunClientScript( "ClearBattlePassItem" )
+	}
+	file.self = null
+}
+
+void function RTKPackOpeningSelectionController_GRXInventoryUpdate( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	RTKPackOpeningSelectionController_SetMenuDataModel( self, panelStruct )
+
+	if ( !p.initializedInventory )
+	{
+		p.initializedInventory = true
+		RTKPackOpeningSelectionController_SetPackLootBrowserButton( self )
+		RTKPackOpeningSelectionController_SetOpenPackButton( self )
+		RTKPackOpeningSelectionController_SetPackQuantityControllerButtons( self )
+		RTKPackOpeningSelectionController_SetPacksSelectionButtons( self, panelStruct )
+		RTKPackOpeningSelectionController_SetBonusMeterDisclaimer( self )
+
+		thread BonusMeter_TryPurchaseRewardOffer_Thread()
+	}
+	else
+	{
+		RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( self, 0 )
+		RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+	}
+
+	RTKPackOpeningSelectionController_SetWishlistDisclaimer( self )
+
+	thread RTKPackOpeningSelectionController_PreviewPackDelayed( self )
+}
+
+void function RTKPackOpeningSelectionController_GRXOffersRefresh( rtk_behavior self )
+{
+	if ( !GRX_AreOffersReady() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	if ( !p.initializedOffer )
+	{
+		RTKPackOpeningSelectionController_SetUpgradeButton( self )
+		p.initializedOffer = true
+	}
+	else
+	{
+		RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+	}
+}
+
+void function RTKPackOpeningSelectionController_SetMenuDataModel( rtk_behavior self, rtk_struct panelStruct )
+{
+	RTKPackOpeningSelectionModel panelModel
+	panelModel.packData = RTKPackOpeningSelectionController_GetPackData()
+
+	PrivateData p
+	self.Private( p )
+
+	p.selectedPack = GetItemFlavorByGUID( file.previousSelectedPackButtonGUID ) 
+	bool hasPacks = panelModel.packData[0].quantity > 0
+	panelModel.selectedPackName = hasPacks ? RTKPackOpeningSelectionController_GetPackName( p.selectedPack ) : ""
+	panelModel.isPackBrowsable =  hasPacks ? ItemFlavor_IsApexPackBrowsable( p.selectedPack ) : false
+	panelModel.selectedPackQuality = ItemFlavor_GetQuality( p.selectedPack )
+
+	if ( !hasPacks ) 
+	{
+		p.selectedQuantity = 0
+		panelModel.selectedPackQuantity = p.selectedQuantity
+		panelModel.hasAvailablePacks = false
+	}
+	else if ( GRX_GetPackCount( ItemFlavor_GetGRXIndex ( p.selectedPack ) ) == 1 )
+	{
+		panelModel.hasAvailablePacks = false
+		if ( ShouldPackProgressBonusMeter( p.selectedPack ) )
+		{
+			thread function() : ( self )
+			{
+				EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+				WaitFrame() 
+				RTKBonusMeterController_SetPreviewQuantity( 1 )
+			}()
+		}
+
+	}
+	else if ( ShouldPackProgressBonusMeter( p.selectedPack ) )
+	{
+		int selectedPackQuantity = p.selectedQuantity
+		thread function() : ( self, selectedPackQuantity )
+		{
+			EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+			WaitFrame() 
+			RTKBonusMeterController_SetPreviewQuantity( selectedPackQuantity )
+		}()
+	}
+
+	int selectedPackGUID = p.selectedPack.guid
+	int selectedPackQuantity = p.selectedQuantity
+	thread function() : ( self, selectedPackGUID, selectedPackQuantity )
+	{
+		EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+		WaitFrame() 
+		RTKWishlistWidget_SetPackSelected( selectedPackGUID, selectedPackQuantity )
+	}()
+
+	RTKStruct_SetValue( panelStruct, panelModel )
+}
+
+array<RTKPackOpeningSelectionPackData> function RTKPackOpeningSelectionController_GetPackData()
+{
+	bool foundPreviousPack = false
+
+	array<RTKPackOpeningSelectionPackData> packData
+	table<ItemFlavor, int> packCountMap = GRX_GetPackCounts()
+	foreach ( ItemFlavor pack, int count in packCountMap )
+	{
+		RTKPackOpeningSelectionPackData data
+		if ( count == 0 )
+			continue
+		data.packName = RTKPackOpeningSelectionController_GetPackName( pack )
+		data.icon = GRXPack_GetOpenButtonIcon( pack )
+		data.icon = data.icon == "" ? $"ui_image/rui/events/collection_events/pack_image.rpak" : data.icon
+		data.quantity = GRX_GetPackCount( ItemFlavor_GetGRXIndex( pack ) )
+		data.packGUID = ItemFlavor_GetGUID( pack )
+		data.quality = ItemFlavor_GetQuality( pack )
+		data.canProgressBonusMeter = ShouldPackProgressBonusMeter( pack )
+
+		if ( data.packGUID == file.previousSelectedPackButtonGUID )
+		{
+			data.state = ePackOpeningSelectionButtonState.SELECTED
+			foundPreviousPack = true
+		}
+		if ( Wishlist_IsEnabled() )
+		{
+			data.isWishlistPack = ItemFlavor_IsWishlistPack( pack )
+			data.isWishlistUpgradable = Wishlist_IsPackUpgradable( pack )
+		}
+		packData.append( data )
+	}
+
+	packData.sort( SortByQuality )
+
+	if ( packData.len() == 0 )
+	{
+		ItemFlavor pack = GetItemFlavorByAsset( $"settings/itemflav/pack/cosmetic_rare.rpak" )
+		RTKPackOpeningSelectionPackData data
+		data.packName = "#PACKS"
+		data.icon = $"ui_image/rui/events/collection_events/pack_image.rpak"
+		data.quantity = 0
+		data.packGUID = ItemFlavor_GetGUID( pack )
+		data.state = ePackOpeningSelectionButtonState.DISABLED
+		file.previousSelectedPackButtonGUID = data.packGUID
+		packData.append( data )
+	}
+	else if ( !foundPreviousPack )
+	{
+		packData[0].state = ePackOpeningSelectionButtonState.SELECTED
+		file.previousSelectedPackButtonGUID = packData[0].packGUID
+	}
+
+	return packData
+}
+
+string function RTKPackOpeningSelectionController_GetPackName( ItemFlavor pack )
+{
+	string packName = ""
+	if ( !ItemFlavor_IsApexPack( pack ) )
+		packName = ItemFlavor_GetShortName( pack )
+	else
+		packName = ItemFlavor_GetQualityName( pack )
+	return packName
+}
+
+void function RTKPackOpeningSelectionController_SetPackQuantityControllerButtons( rtk_behavior self )
+{
+	rtk_behavior resetButton = self.PropGetBehavior( "resetButton" )
+	rtk_behavior quantityButtonLeft = self.PropGetBehavior( "quantityButtonLeft" )
+	rtk_behavior quantityButtonLeft2 = self.PropGetBehavior( "quantityButtonLeft2" )
+	rtk_behavior quantityButtonRight1 = self.PropGetBehavior( "quantityButtonRight1" )
+	rtk_behavior quantityButtonRight2 = self.PropGetBehavior( "quantityButtonRight2" )
+	rtk_behavior maxButton = self.PropGetBehavior( "maxButton" )
+
+	self.AutoSubscribe( resetButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_SetSelectedPackQuantity( self, MIN_PACKS_QUANTITY )
+	} )
+	self.AutoSubscribe( quantityButtonLeft, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( self, -SECOND_BUTTON_PACKS_QUANTITY )
+	} )
+	self.AutoSubscribe( quantityButtonLeft2, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( self, -FIRST_BUTTON_PACKS_QUANTITY )
+	} )
+	self.AutoSubscribe( quantityButtonRight1, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( self, FIRST_BUTTON_PACKS_QUANTITY )
+	} )
+	self.AutoSubscribe( quantityButtonRight2, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( self, SECOND_BUTTON_PACKS_QUANTITY )
+	} )
+	self.AutoSubscribe( maxButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		PrivateData p
+		self.Private( p )
+		RTKPackOpeningSelectionController_SetSelectedPackQuantity( self, RTKPackOpeningSelectionController_GetMaxPackOpen( p.selectedPack ) )
+	} )
+}
+
+void function RTKPackOpeningSelectionController_SetOpenPackButton( rtk_behavior self )
+{
+	rtk_behavior openPackButton = self.PropGetBehavior( "openPackButton" )
+	openPackButton.AutoSubscribe( openPackButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		PrivateData p
+		self.Private( p )
+		if ( p.selectedQuantity == 1 )
+			RTKPackOpeningSelectionController_OpenPacks( self )
+		else if ( p.selectedQuantity > 1 )
+			EmitUISound( OPEN_PACK_HOLD_BUTTON_SOUND )
+	} )
+	openPackButton.AutoSubscribe( openPackButton, "onCompletedHold", function( rtk_behavior button, int keycode ) : ( self ) {
+		PrivateData p
+		self.Private( p )
+		if ( p.selectedQuantity > 1 )
+			RTKPackOpeningSelectionController_OpenPacks( self )
+	} )
+	openPackButton.AutoSubscribe( openPackButton, "onInterrumptedHold", function( rtk_behavior button, int keycode ) : ( self ) {
+		StopUISoundByName( OPEN_PACK_HOLD_BUTTON_SOUND )
+	} )
+}
+
+void function RTKPackOpeningSelectionController_SetPackPurchaseButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "purchasePacksButton" )
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKPackOpeningSelectionController_OpenPurchaseDialog()
+	} )
+}
+
+void function RTKPackOpeningSelectionController_SetPackLootBrowserButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "lootPoolBrowserButton" )
+
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		PrivateData p
+		self.Private( p )
+		array< ItemFlavor > packs
+		packs.push( p.selectedPack )
+		BrowseLootPoolMenu_OpenWithPacks( packs, "#OPEN_PACKS" )
+	} )
+}
+
+void function RTKPackOpeningSelectionController_OpenPurchaseDialog()
+{
+	
+	bool isATest = false 
+	if ( isATest )
+	{
+		array<GRXScriptOffer> ornull offers = GetLootTickPurchaseOffers()
+
+		if ( offers == null )
+		{
+			EmitUISound( "menu_deny" )
+			return
+		}
+		PurchaseDialogConfig pdc
+		pdc.offer = expect array<GRXScriptOffer>( offers )[0]
+		pdc.quantity = 1
+		pdc.markAsNew = false
+		pdc.shouldShowQuantityPackSelectionForRegularPacks = true 
+		PurchaseDialog( pdc )
+	}
+	else
+	{
+		JumpToStorePacks() 
+	}
+
+}
+
+void function RTKPackOpeningSelectionController_ChangeSelectedPackQuantity( rtk_behavior self, int quantity )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.selectedQuantity = p.selectedQuantity + quantity
+
+	int maxPackOpenForSelectedPack = RTKPackOpeningSelectionController_GetMaxPackOpen( p.selectedPack )
+	if ( p.selectedQuantity <= 0 )
+	{
+		p.selectedQuantity = MIN_PACKS_QUANTITY
+	}
+	else if ( p.selectedQuantity > maxPackOpenForSelectedPack )
+	{
+		p.selectedQuantity = maxPackOpenForSelectedPack
+	}
+
+	RTKPackOpeningSelectionController_CapSelectedPackQuantityToOwned( self )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	RTKStruct_SetInt( panelStruct, "selectedPackQuantity", p.selectedQuantity )
+
+	if ( ShouldPackProgressBonusMeter( p.selectedPack ) )
+		RTKBonusMeterController_SetPreviewQuantity( p.selectedQuantity )
+
+	RTKPackOpeningSelectionController_SetBonusMeterDisclaimer( self )
+	RTKPackOpeningSelectionController_SetWishlistDisclaimer( self )
+	RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+}
+
+void function RTKPackOpeningSelectionController_SetSelectedPackQuantity( rtk_behavior self, int quantity )
+{
+	PrivateData p
+	self.Private( p )
+	p.selectedQuantity = quantity
+
+	RTKPackOpeningSelectionController_CapSelectedPackQuantityToOwned( self )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	RTKStruct_SetInt( panelStruct, "selectedPackQuantity", p.selectedQuantity )
+
+	if ( ShouldPackProgressBonusMeter( p.selectedPack ) )
+		RTKBonusMeterController_SetPreviewQuantity( p.selectedQuantity )
+
+	RTKPackOpeningSelectionController_SetBonusMeterDisclaimer( self )
+	RTKPackOpeningSelectionController_SetWishlistDisclaimer( self )
+	RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+}
+
+void function RTKPackOpeningSelectionController_CapSelectedPackQuantityToOwned( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	int ownedPackCount = GRX_GetPackCount( ItemFlavor_GetGRXIndex( p.selectedPack ) )
+	if ( p.selectedQuantity > ownedPackCount )
+		p.selectedQuantity = ownedPackCount
+}
+
+void function RTKPackOpeningSelectionController_SetPacksSelectionButtons( rtk_behavior self, rtk_struct panelStruct )
+{
+	rtk_panel packListPanel = self.PropGetPanel( "packListPanel" )
+	self.AutoSubscribe( packListPanel, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, panelStruct ) {
+		rtk_behavior button =  newChild.FindBehaviorByTypeName( "Button" )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex, panelStruct ) {
+			PrivateData p
+			self.Private( p )
+			rtk_array buttonsData = RTKStruct_GetArray( panelStruct, "packData" )
+			if ( RTKArray_GetCount( buttonsData ) > 0 )
+			{
+				rtk_struct buttonData = RTKArray_GetStruct( buttonsData, newChildIndex )
+				ItemFlavor selectedPack = GetItemFlavorByGUID( RTKStruct_GetInt( buttonData, "packGUID" ) )
+				if ( file.previousSelectedPackButtonGUID == selectedPack.guid )
+					return
+
+				EmitUISound( "ui_menu_accept" )
+				p.selectedPack = selectedPack
+				p.selectedQuantity = MIN_PACKS_QUANTITY
+
+				if ( BonusMeter_IsActive() && !BonusMeter_IsCompleted() )
+				{
+					bool shouldPackProgressBonusMeter = ShouldPackProgressBonusMeter( p.selectedPack )
+					int bonusMeterPreviewQuantity = shouldPackProgressBonusMeter ? 1 : 0
+					RTKBonusMeterController_SetPreviewQuantity( bonusMeterPreviewQuantity )
+					RTKBonusMeterController_SetPreviewMarkerVisibility( shouldPackProgressBonusMeter )
+				}
+
+				if ( file.previousSelectedPackButtonGUID != selectedPack.guid )
+				{
+					RTKPackOpeningSelectionController_SetPackSelectionButtonStateByGUID( file.previousSelectedPackButtonGUID, ePackOpeningSelectionButtonState.IDLE )
+					RTKPackOpeningSelectionController_SetPackSelectionButtonStateByGUID( selectedPack.guid, ePackOpeningSelectionButtonState.SELECTED )
+					file.previousSelectedPackButtonGUID = selectedPack.guid
+				}
+				bool hasAvailablePacks = GRX_GetPackCount( ItemFlavor_GetGRXIndex( p.selectedPack ) ) > 1
+
+				RTKStruct_SetInt( panelStruct, "selectedPackQuality", ItemFlavor_GetQuality( p.selectedPack ) )
+				RTKStruct_SetBool( panelStruct, "isPackBrowsable", ItemFlavor_IsApexPackBrowsable( p.selectedPack ) )
+				RTKStruct_SetInt( panelStruct, "selectedPackQuantity", p.selectedQuantity )
+				RTKStruct_SetString( panelStruct, "selectedPackName", RTKPackOpeningSelectionController_GetPackName( p.selectedPack ) )
+				RTKStruct_SetBool( panelStruct, "hasAvailablePacks", hasAvailablePacks )
+
+				RTKPackOpeningSelectionController_PreviewPack( self )
+				RTKPackOpeningSelectionController_SetBonusMeterDisclaimer( self )
+				RTKPackOpeningSelectionController_SetWishlistDisclaimer( self )
+				RTKWishlistWidget_SetPackSelected( selectedPack.guid, p.selectedQuantity )
+				RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+			}
+		})
+
+		self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, newChildIndex, panelStruct ) {
+
+			rtk_array buttonsData = RTKStruct_GetArray( panelStruct, "packData" )
+			rtk_struct buttonData = RTKArray_GetStruct( buttonsData, newChildIndex )
+			int selectedPackGUID = RTKStruct_GetInt( buttonData, "packGUID" )
+
+			if ( file.previousSelectedPackButtonGUID != selectedPackGUID )
+				RTKPackOpeningSelectionController_SetPackSelectionButtonStateByGUID( selectedPackGUID, ePackOpeningSelectionButtonState.IDLE )
+		})
+
+		self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, newChildIndex, panelStruct ) {
+			rtk_array buttonsData = RTKStruct_GetArray( panelStruct, "packData" )
+			rtk_struct buttonData = RTKArray_GetStruct( buttonsData, newChildIndex )
+			int selectedPackGUID = RTKStruct_GetInt( buttonData, "packGUID" )
+
+			if ( file.previousSelectedPackButtonGUID != selectedPackGUID )
+			{
+				EmitUISound( "ui_menu_focus" )
+				RTKPackOpeningSelectionController_SetPackSelectionButtonStateByGUID( selectedPackGUID, ePackOpeningSelectionButtonState.HIGHLIGHTED )
+			}
+		})
+	})
+}
+
+void function RTKPackOpeningSelectionController_OpenPacks( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	if ( TryOpenWishlistOpenPackDialog( ItemFlavor_GetGUID( p.selectedPack ), p.selectedQuantity ) )
+	{
+		StopUISoundByName( OPEN_PACK_HOLD_BUTTON_SOUND )
+		EmitUISound( "menu_deny" )
+		return
+	}
+
+	if ( p.selectedQuantity == 1 )
+	{
+		
+		OnLobbyOpenLootBoxMenu_ButtonPress( p.selectedPack )
+		EmitUISound( "ui_menu_openlootbox" )
+	}
+	else if( p.selectedQuantity > 1 && p.selectedQuantity <= MAX_PACKS_QUANTITY )
+	{
+		RTKPackOpeningSelectionController_SendBonusProgressPIN( self )
+		OpenMassPackOpeningMenu( p.selectedPack, p.selectedQuantity )
+		EmitUISound( "ui_menu_openlootbox" )
+	}
+}
+
+void function RTKPackOpeningSelectionController_PreviewPack( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	int guid = ItemFlavor_GetGUID( p.selectedPack )
+	RunClientScript( "UIToClient_ItemPresentation", guid, -1, 1, false, null, true, "target_loot_ceremony_ref" )
+}
+void function RTKPackOpeningSelectionController_PreviewPackDelayed( rtk_behavior self )
+{
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+	WaitFrame()
+	RTKPackOpeningSelectionController_PreviewPack( self )
+}
+
+void function RTKPackOpeningSelectionController_SetPackSelectionButtonStateByGUID( int guid, int state )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	rtk_array packButtons  = RTKStruct_GetArray( panelStruct, "packData" )
+
+	int count = RTKArray_GetCount( packButtons )
+	for ( int i = 0; i < count; ++i )
+	{
+		rtk_struct packData = RTKArray_GetStruct( packButtons, i )
+		int packGuid = RTKStruct_GetInt( packData, "packGUID" )
+		if ( packGuid == guid )
+			RTKStruct_SetInt( packData, "state", state )
+	}
+}
+
+int function RTKPackOpeningSelectionController_GetPackSelectionButtonStateByGUID( int guid )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	rtk_array packButtons  = RTKStruct_GetArray( panelStruct, "packData" )
+	int count = RTKArray_GetCount( packButtons )
+	for ( int i = 0; i < count; ++i )
+	{
+		rtk_struct packData = RTKArray_GetStruct( packButtons, i )
+		int packGuid = RTKStruct_GetInt( packData, "packGUID" )
+		if ( packGuid == guid )
+			return RTKStruct_GetInt( packData, "state" )
+	}
+	return ePackOpeningSelectionButtonState.IDLE
+}
+
+void function RTKPackOpeningSelectionController_SetIsControllerModeActive( rtk_behavior self )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	RTKStruct_SetBool( panelStruct, "isControllerModeActive", IsControllerModeActive() )
+}
+
+string function RTKViewPacksInventoryButton_PopulateOpenPacksTutorialTitle()
+{
+	return "#PACKS_INVENTORY_BUTTON_TITLE"
+}
+
+array<featureTutorialTab> function RTKViewPacksInventoryButton_PopulateOpenPacksTutorialAboutText()
+{
+	array<featureTutorialTab> tabs
+	featureTutorialTab tab1
+	array<featureTutorialData> tab1Rules
+
+	tab1.tabName = 	"#PACKS_INVENTORY_BUTTON_TUTORIAL_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_1", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_1", $"rui/hud/gametype_icons/bonus_meter/bonus_about_01" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_2", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_2", $"rui/hud/gametype_icons/bonus_meter/bonus_about_02" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_3", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_3", $"rui/hud/gametype_icons/bonus_meter/bonus_about_03" ) )
+	tab1.rules = tab1Rules
+
+	featureTutorialFooterData footerButton1
+	footerButton1.title = "#PACKS_INVENTORY_BUTTON_VIEW_PACK_OPENING"
+	footerButton1.titleGamepad = "#PACKS_INVENTORY_BUTTON_VIEW_PACK_OPENING"
+	footerButton1.callbackFunc = void function ( var button ) {
+		while ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+			CloseActiveMenu()
+		OpenPackOpeningSelectionMenu()
+		Remote_ServerCallFunction( "ClientCallback_MarkOpenPacksInfoDialogAsSeen" )
+	}
+	tab1.footerData.append( footerButton1 )
+	tabs.append( tab1 )
+	return tabs
+}
+
+array<featureTutorialTab> function RTKViewPacksInventoryButton_PopulateOpenPacksTutorialInfoAboutText()
+{
+	array<featureTutorialTab> tabs
+	featureTutorialTab tab1
+	array<featureTutorialData> tab1Rules
+
+	tab1.tabName = 	"#PACKS_INVENTORY_BUTTON_TUTORIAL_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_1", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_1", $"rui/hud/gametype_icons/bonus_meter/bonus_about_01" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_2", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_2", $"rui/hud/gametype_icons/bonus_meter/bonus_about_02" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#PACKS_INVENTORY_BUTTON_TUTORIAL_TITLE_3", "#PACKS_INVENTORY_BUTTON_TUTORIAL_DESC_3", $"rui/hud/gametype_icons/bonus_meter/bonus_about_03" ) )
+	tab1.rules = tab1Rules
+
+	featureTutorialFooterData footerButton1
+	footerButton1.title = "#PACKS_INVENTORY_BUTTON_VIEW_PACK_OPENING"
+	footerButton1.titleGamepad = "#PACKS_INVENTORY_BUTTON_VIEW_PACK_OPENING"
+	tabs.append( tab1 )
+	return tabs
+}
+
+void function RTKPackOpeningSelectionController_SetBonusMeterDisclaimer( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( BonusMeter_IsActive() )
+	{
+		rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+		if ( ShouldPackProgressBonusMeter( p.selectedPack ) )
+		{
+			int excessPacks = (p.selectedQuantity + BonusMeter_GetMeterProgress()) - BonusMeter_GetMeterGoal()
+			if ( excessPacks > 0 && !BonusMeter_IsCompleted() )
+			{
+				string locString = excessPacks == 1 ? "#PACKS_INVENTORY_BONUS_METER_EXCESS_N" : "#PACKS_INVENTORY_BONUS_METER_EXCESS_N_PLURAL"
+				RTKStruct_SetString( panelStruct, "bonusMeterDisclaimer", Localize( locString, excessPacks ) )
+			}
+			else
+				RTKStruct_SetString( panelStruct, "bonusMeterDisclaimer", "" )
+		}
+		else
+		{
+			RTKStruct_SetString( panelStruct, "bonusMeterDisclaimer", "#PACKS_INVENTORY_BONUS_METER_NOT_ELEGIBLE" )
+		}
+	}
+	else
+	{
+		rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+		RTKStruct_SetString( panelStruct, "bonusMeterDisclaimer", "" )
+	}
+}
+
+void function RTKPackOpeningSelectionController_SetWishlistDisclaimer( rtk_behavior self )
+{
+	if ( !Wishlist_IsEnabled() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+
+	int wishlistState = Wishlist_GetSelectionUIState( p.selectedQuantity, ItemFlavor_GetQuality( p.selectedPack ), "RTKPackOpeningSelectionController_SetWishlistDisclaimer" )
+	if ( p.selectedQuantity > 0 && ItemFlavor_IsWishlistPack( p.selectedPack ) && wishlistState == eWishlistFrontState.MAYBE_INVALID )
+	{
+		RTKStruct_SetString( panelStruct, "wishlistDisclaimer", "#WISHLIST_INVENTORY_OPENING_MAY_INVALID" )
+	}
+	else if ( Wishlist_IsPackUpgradable( p.selectedPack ) && wishlistState == eWishlistFrontState.ACTIVE )
+	{
+		RTKStruct_SetString( panelStruct, "wishlistDisclaimer", "#WISHLIST_INVENTORY_OPENING_NOT_AFFECTED" )
+	}
+	else
+	{
+		RTKStruct_SetString( panelStruct, "wishlistDisclaimer", "" )
+	}
+}
+
+void function RTKPackOpeningSelectionController_SetUpgradeButton( rtk_behavior self )
+{
+	if ( !Wishlist_IsEnabled() )
+		return
+
+	rtk_behavior upgradeButton = self.PropGetBehavior( "upgradeButton" )
+	if ( !Wishlist_IsUpgradingEnabled() )
+	{
+		upgradeButton.GetPanel().SetVisible( false )
+		return
+	}
+
+	self.AutoSubscribe( upgradeButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		PrivateData p
+		self.Private( p )
+
+		if ( p.upgradeOffer == null )
+			return
+
+		GRXScriptOffer offer = expect GRXScriptOffer( p.upgradeOffer )
+
+		PurchaseDialogConfig pdc
+		pdc.offer = offer
+		pdc.quantity = p.selectedQuantity
+		pdc.messageOverride = p.selectedQuantity > 1 ? Localize( "#UPGRADE_TO_WISHLIST_PACK_N", p.selectedQuantity ) : Localize( "#UPGRADE_TO_WISHLIST_PACK" )
+		pdc.messageQualityOverride = ItemFlavor_GetQuality( p.selectedPack )
+		pdc.buttonTextOverride = "#UPGRADE"
+		PurchaseDialog( pdc )
+	})
+
+	
+	RTKPackOpeningSelectionController_UpdateUpgradeButton( self )
+}
+
+void function RTKPackOpeningSelectionController_UpdateUpgradeButton( rtk_behavior self )
+{
+	if ( !Wishlist_IsEnabled() || !Wishlist_IsUpgradingEnabled() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior upgradeButton = self.PropGetBehavior( "upgradeButton" )
+
+	if ( Wishlist_IsCompleted() )
+	{
+		p.upgradeOffer = null
+		upgradeButton.GetPanel().SetVisible( false )
+		return
+	}
+
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKPackOpeningSelectionModel" )
+	rtk_struct upgradeDataStruct = RTKStruct_GetStruct( panelStruct, "packUpgradeData" )
+
+	RTKPackUpgradeData packUpgradeData
+
+	
+	bool isSelectedPackUpgradable = GRX_GetPackCount( ItemFlavor_GetGRXIndex( p.selectedPack ) ) > 0 && Wishlist_IsPackUpgradable( p.selectedPack )
+	packUpgradeData.isSelectedPackUpgradable = isSelectedPackUpgradable
+
+	
+	p.upgradeOffer = Wishlist_GetUpgradePackOffer( p.selectedPack )
+
+	bool canAfford
+	if ( p.upgradeOffer != null )
+	{
+		GRXScriptOffer offer = expect GRXScriptOffer( p.upgradeOffer )
+
+		ItemFlavorBag price = offer.prices[0]
+		canAfford = GRX_CanAfford( price, p.selectedQuantity, false )
+		int priceDelta = GRX_CanAffordDelta( price, p.selectedQuantity )
+		int creditsBalance = GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_CREDITS ] )
+
+		string creditsBalanceText = FormatAndLocalizeNumber( "1", float( creditsBalance ), true )
+		string priceDeltaText = FormatAndLocalizeNumber( "1", float( priceDelta ), true )
+
+		packUpgradeData.price = GRX_GetFormattedPrice( offer.prices[0], p.selectedQuantity )
+		packUpgradeData.tooltipData.active = !canAfford
+		packUpgradeData.tooltipData.bodyText = Localize( "#CANNOT_AFFORD_CREDITS_DESC", priceDeltaText ) + Localize( "#CANNOT_AFFORD_CREDITS" )
+		packUpgradeData.tooltipData.subtitleText = Localize( "#AVAILABLE_N", Localize( "#CREDITS_CURRENCY_ICON_N", creditsBalanceText ) )
+	}
+
+	upgradeButton.PropSetBool( "interactive", canAfford )
+
+	RTKStruct_SetValue( upgradeDataStruct, packUpgradeData )
+}
+
+int function SortByQuality( RTKPackOpeningSelectionPackData a, RTKPackOpeningSelectionPackData b )
+{
+	if ( a.quality < b.quality )
+	{
+		return 1
+	}
+	else if ( a.quality > b.quality )
+	{
+		return -1
+	}
+	return 0
+}
+
+void function RTKPackOpeningSelectionController_SendBonusProgressPIN( rtk_behavior self )
+{
+	if ( !BonusMeter_IsActive() || BonusMeter_IsCompleted() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	if ( !ShouldPackProgressBonusMeter( p.selectedPack ) )
+		return
+
+	string reward = ""
+	string meterID = ""
+	int meterGoal = BonusMeter_GetMeterGoal()
+	int meterProgress = BonusMeter_GetMeterProgress()
+	bool willCompleteMeter = p.selectedQuantity + meterProgress >= meterGoal
+
+	GRXScriptOffer ornull offer = BonusMeter_GetEligibleRewardOffer()
+	if ( offer != null )
+	{
+		expect GRXScriptOffer( offer )
+		meterID = offer.offerAlias
+	}
+
+	if ( willCompleteMeter )
+	{
+		SettingsAssetGUID guid = BonusMeter_GetEligibleRewardFlavGUID()
+		if( IsValidItemFlavorGUID( guid ) )
+		{
+			ItemFlavor item = GetItemFlavorByGUID( guid )
+			reward = ItemFlavor_GetHumanReadableRefForPIN_Slow( item )
+		}
+	}
+	
+	PIN_BonusMeterPlayerProgressedMeter( GetLocalClientPlayer(), meterProgress, p.selectedQuantity, meterGoal, meterID, reward )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function RTKPackOpeningSelectionController_GetMaxPackOpen( ItemFlavor pack )
+{
+	if ( ItemFlavor_IsWishlistPack( pack ) )
+		return MAX_WISHLIST_PACKS_QUANTITY
+
+	return MAX_PACKS_QUANTITY
+}

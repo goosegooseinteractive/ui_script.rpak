@@ -1,0 +1,143 @@
+
+
+global function RTKArmoryArtifactComponents_OnInitialize
+global function RTKArmoryArtifactComponents_OnDestroy
+
+global struct RTKArmoryArtifactComponents_Properties
+{
+	int flavGUID
+	rtk_panel buttonsParentPanel
+}
+
+struct PrivateData
+{
+	int guidListenerHandler
+	string modelPath
+}
+
+const string MODEL_PATH = "armoryArtifactComponents"
+
+void function RTKArmoryArtifactComponents_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKMeleeCustomizationSetModel" )
+	p.modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH, true )
+	self.GetPanel().SetBindingRootPath( p.modelPath )
+
+	p.guidListenerHandler = self.AddPropertyCallback( "flavGUID", RTKArmoryArtifactComponents_OnGUIDUpdated )
+	
+	RTKArmoryArtifactComponents_SetButtons( self )
+}
+
+void function RTKArmoryArtifactComponents_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+	self.RemovePropertyCallback( "flavGUID", p.guidListenerHandler )
+}
+
+void function RTKArmoryArtifactComponents_SetButtons( rtk_behavior self )
+{
+	rtk_panel ornull panel = self.PropGetPanel( "buttonsParentPanel" )
+	Assert ( panel != null, "Did you forget setting up the panel reference to the behavior property in RTK file?" )
+	expect rtk_panel( panel )
+
+	int childCount = panel.GetChildCount() - 1 
+
+	for ( int i = 0; i < childCount; i++ )
+	{
+		rtk_panel child = panel.GetChildByIndex( i )
+		rtk_behavior button = child.FindBehaviorByTypeName( "Button" )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			int flavGUID = self.PropGetInt( "flavGUID" )
+			Assert( IsValidItemFlavorGUID( flavGUID ), format( "Attempted to press Armory Artifact Component button with a bad GUID %i", flavGUID ) )
+			OpenArtifactCustomizationMenu( GetItemFlavorByGUID( flavGUID ) )
+		} )
+	}
+}
+
+void function RTKArmoryArtifactComponents_OnGUIDUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	ItemFlavor ornull itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+	{
+		Assert( false, format( "Attempted to Update RTKArmoryArtifactComponents with a bad GUID %i", flavGUID ) )
+		return
+	}
+
+	expect ItemFlavor( itemFlav )
+	
+	bool isArtifact = Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav )
+
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( ToEHI( GetLocalClientPlayer() ), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), itemFlav )
+	bool shouldShow = isArtifact && isUnlocked
+	self.GetPanel().SetActive( shouldShow )
+	self.GetPanel().SetVisible( shouldShow )
+	if ( !shouldShow )
+		return
+
+	
+	Assert( RTKDataModel_HasDataModel( p.modelPath ), format( "RTK Struct not found on Path %s", p.modelPath ) )
+
+	rtk_struct itemData = RTKDataModel_GetStruct( p.modelPath )
+	RTKStruct_SetValue( itemData, RTKArmoryArtifactComponents_GetEquippedComponentsData( itemFlav ) )
+}
+
+RTKMeleeCustomizationSetModel function RTKArmoryArtifactComponents_GetEquippedComponentsData( ItemFlavor itemFlav )
+{
+	Assert( Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav ), "Attempted to use function for a non Artifact Item" )
+	RTKMeleeCustomizationSetModel equippedComponentsModel
+	array<ItemFlavor> equippedFlavs = Artifacts_GetEquippedSet( itemFlav )
+
+	foreach ( int index, ItemFlavor component in equippedFlavs )
+	{
+		int type = Artifacts_GetComponentType( component )
+
+		switch ( type )
+		{
+			case eArtifactComponentType.BLADE:
+				equippedComponentsModel.blade = GetMeleeCustomizationItemModel( component, type )
+				equippedComponentsModel.blade.state = eMeleeCustomizationItemState.SELECTED
+				equippedComponentsModel.blade.selected = false
+				equippedComponentsModel.blade.equipped = false
+				break
+
+			case eArtifactComponentType.THEME:
+				equippedComponentsModel.theme = GetMeleeCustomizationItemModel( component, type )
+				equippedComponentsModel.theme.state = eMeleeCustomizationItemState.SELECTED
+				equippedComponentsModel.theme.selected = false
+				equippedComponentsModel.theme.equipped = false
+				break
+
+			case eArtifactComponentType.POWER_SOURCE:
+				equippedComponentsModel.powerSource = GetMeleeCustomizationItemModel( component, type )
+				equippedComponentsModel.powerSource.state = eMeleeCustomizationItemState.SELECTED
+				equippedComponentsModel.powerSource.selected = false
+				equippedComponentsModel.powerSource.equipped = false
+				break
+
+			case eArtifactComponentType.ACTIVATION_EMOTE:
+				equippedComponentsModel.activationEmote = GetMeleeCustomizationItemModel( component, type )
+				equippedComponentsModel.activationEmote.state = eMeleeCustomizationItemState.SELECTED
+				equippedComponentsModel.activationEmote.selected = false
+				equippedComponentsModel.activationEmote.equipped = false
+				break
+
+			case eArtifactComponentType.DEATHBOX:
+				equippedComponentsModel.deathbox = GetMeleeCustomizationItemModel( component, type )
+				equippedComponentsModel.deathbox.state = eMeleeCustomizationItemState.SELECTED
+				equippedComponentsModel.deathbox.selected = false
+				equippedComponentsModel.deathbox.equipped = false
+				break
+		}
+	}
+	return equippedComponentsModel
+}

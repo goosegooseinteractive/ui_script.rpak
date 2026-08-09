@@ -1,0 +1,90 @@
+
+global function DEV_RUI_TestFullScreenRui
+
+
+global function InitRuiFullScreenTest
+
+
+global function RTKRuiFullScreenTest_OnInitialize
+global function RTKRuiFullScreenTest_OnDestroy
+
+global struct RTKRuiFullScreenTestData
+{
+	asset ruiAssetPath
+}
+
+global struct RTKRuiFullScreenTest_Properties
+{
+	rtk_behavior ruiBehavior
+}
+
+struct
+{
+	var menu
+	string assetName
+} file
+
+const string RUI_FULLSCREEN_TEST_ROOT_PATH = "ui_fullscreen_test"
+
+void function InitRuiFullScreenTest( var menu )
+{
+ 	file.menu = menu
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddMenuFooterOption( menu, LEFT, KEY_R, true, "#R_RESTART", "#R_RESTART", RTKRuiFullScreenTest_Restart )
+}
+
+void function RTKRuiFullScreenTest_OnInitialize( rtk_behavior self )
+{
+	string pathToModel = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, RUI_FULLSCREEN_TEST_ROOT_PATH )
+	self.GetPanel().SetBindingRootPath( pathToModel )
+
+	rtk_struct ruiFullScreenTestModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, RUI_FULLSCREEN_TEST_ROOT_PATH, "RTKRuiFullScreenTestData" )
+
+	RTKRuiFullScreenTestData data
+	data.ruiAssetPath = CastStringToAsset( file.assetName )
+
+	RTKStruct_SetValue( ruiFullScreenTestModel, data )
+}
+
+void function RTKRuiFullScreenTest_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, RUI_FULLSCREEN_TEST_ROOT_PATH )
+}
+
+void function DEV_RUI_TestFullScreenRui( string assetName = "" )
+{
+	if ( assetName == "" )
+	{	
+		assetName = GetConVarString( "rui_dev_test_fullscreen_rui_ref" )
+	}
+
+	
+	if ( assetName.slice( 0, 3 ) != "ui/" )
+	{
+		assetName = "ui/" + assetName
+	}
+
+	if ( !assetName.endswith( ".rpak" ) )
+	{
+		assetName = assetName + ".rpak"
+	}
+
+	file.assetName = assetName
+
+	if ( file.menu == GetActiveMenu() )
+	{
+		CloseActiveMenu()
+	}
+
+	AdvanceMenu( file.menu )
+}
+
+void function RTKRuiFullScreenTest_Restart( var button )
+{
+	CloseActiveMenu()
+
+	thread (void function() : () {
+		wait 0.1
+		AdvanceMenu( file.menu )
+	})()
+}

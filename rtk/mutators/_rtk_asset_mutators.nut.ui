@@ -1,0 +1,263 @@
+globalize_all_functions
+
+asset function RTKMutator_PickAssetFromTwo( int input, asset option0, asset option1 )
+{
+	return input == 1 ? option1 : option0
+}
+
+asset function RTKMutator_PickAssetFromThree( int input, asset option0, asset option1, asset option2 )
+{
+	switch ( input )
+	{
+		case (0):
+			return option0
+		case (1):
+			return option1
+		case (2):
+			return option2
+	}
+	Warning( "RTKMutator_PickAssetFromThree : Invalid index" )
+	return $""
+}
+
+asset function RTKMutator_PickAssetFromFour( int input, asset option0, asset option1, asset option2, asset option3 )
+{
+	switch ( input )
+	{
+		case (0):
+			return option0
+		case (1):
+			return option1
+		case (2):
+			return option2
+		case (3):
+			return option3
+	}
+	Warning( "RTKMutator_PickAssetFromFour : Invalid index" )
+	return $""
+}
+
+bool function RTKMutator_IsAssetEmpty( asset input )
+{
+	return input == $""
+}
+
+asset function RTKMutator_PlatformIcon( int input )
+{
+	if ( IsUserOnSamePlatformID( input ) )
+	{
+		switch ( input )
+		{
+			case HARDWARE_PC:
+			case HARDWARE_PC_STEAM:
+				return $"ui_image/rui/menu/crossplatform/pc.rpak"
+
+			case HARDWARE_PS4:
+			case HARDWARE_PS5:
+				return $"ui_image/rui/menu/crossplatform/psn.rpak"
+
+			case HARDWARE_XBOXONE:
+			case HARDWARE_XB5:
+				return $"ui_image/rui/menu/crossplatform/xbox.rpak"
+
+			case HARDWARE_SWITCH:
+			case HARDWARE_SWITCH2:
+				return $"ui_image/rui/menu/crossplatform/switch.rpak"
+
+			default:
+				return $""
+		}
+	}
+	else
+	{
+		switch ( input )
+		{
+			case HARDWARE_PC:
+			case HARDWARE_PC_STEAM:
+				return $"ui_image/rui/menu/crossplatform/pc.rpak"
+
+			case HARDWARE_PS4:
+			case HARDWARE_PS5:
+			case HARDWARE_XBOXONE:
+			case HARDWARE_XB5:
+			case HARDWARE_SWITCH:
+			case HARDWARE_SWITCH2:
+				return $"ui_image/rui/menu/crossplatform/controller.rpak"
+			default:
+				return $""
+		}
+	}
+
+	Assert( false, "Unhandled platformID " + input )
+	unreachable
+}
+
+asset function RTKMutator_BadgeRuiAsset( int input )
+{
+	return GetAccountBadgeRuiAssetAsAsset( input )
+}
+
+asset function RTKMutator_GetAmmoIcon( int ammoType, bool isCrateWeapon )
+{
+	asset ammoIcon= $""
+
+	if ( isCrateWeapon )
+	{
+		switch( ammoType )
+		{
+			case eAmmoPoolType.bullet:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_unique"
+				break
+			case eAmmoPoolType.highcal:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_heavy"
+				break
+			case eAmmoPoolType.special:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_lstar"
+				break
+			case eAmmoPoolType.shotgun:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_mastiff"
+				break
+			case eAmmoPoolType.sniper:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_kraber"
+				break
+			case eAmmoPoolType.arrows:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_bocek"
+				break
+			default:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_unique"
+				break
+		}
+	}
+	else
+	{
+		switch( ammoType )
+		{
+			case eAmmoPoolType.bullet:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_bullet"
+				break
+			case eAmmoPoolType.highcal:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_bullet_large"
+				break
+			case eAmmoPoolType.special:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_special"
+				break
+			case eAmmoPoolType.shotgun:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_shotgun"
+				break
+			case eAmmoPoolType.sniper:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_sniper"
+				break
+			case eAmmoPoolType.arrows:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_arrows"
+				break
+			default:
+				ammoIcon = $"rui/hud/gametype_icons/survival/sur_ammo_bullet"
+				break
+		}
+	}
+
+	return ammoIcon
+}
+
+string function RTKMutator_GetAmmoName( int ammoType, bool isCrateWeapon )
+{
+	string ammoString = ""
+
+	switch( ammoType )
+	{
+		case eAmmoPoolType.bullet:
+			ammoString = "#SURVIVAL_PICKUP_BULLETS"
+			break
+		case eAmmoPoolType.highcal:
+			ammoString = "#SURVIVAL_PICKUP_BULLETS_LARGE"
+			break
+		case eAmmoPoolType.special:
+			ammoString = "#SURVIVAL_PICKUP_SPECIAL"
+			break
+		case eAmmoPoolType.shotgun:
+			ammoString = "#SURVIVAL_PICKUP_SHOTGUN"
+			break
+		case eAmmoPoolType.sniper:
+			ammoString = "#SURVIVAL_PICKUP_SNIPER"
+			break
+		case eAmmoPoolType.arrows:
+			ammoString = "#SURVIVAL_PICKUP_ARROWS"
+			break
+		default:
+			ammoString = ""
+			break
+	}
+
+	if ( isCrateWeapon )
+	{
+		return Localize( "#WEAPON_PLAYGROUND_MYTHIC_N", Localize( ammoString ) )
+	}
+
+	return ammoString
+}
+
+string function RTKMutator_GetAmmoDescription( int ammoType, bool isCrateWeapon )
+{
+	string ammoString = ""
+
+	if ( isCrateWeapon )
+	{
+		return "#WEAPON_PLAYGROUND_UNIQUE_AMMO_TYPE_TOOLTIP_DESC"
+	}
+	else
+	{
+		switch( ammoType )
+		{
+			case eAmmoPoolType.bullet:
+				ammoString = "#WEAPON_PLAYGROUND_LIGHT_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			case eAmmoPoolType.highcal:
+				ammoString = "#WEAPON_PLAYGROUND_HEAVY_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			case eAmmoPoolType.special:
+				ammoString = "#WEAPON_PLAYGROUND_ENERGY_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			case eAmmoPoolType.shotgun:
+				ammoString = "#WEAPON_PLAYGROUND_SHOTGUN_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			case eAmmoPoolType.sniper:
+				ammoString = "#WEAPON_PLAYGROUND_SNIPER_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			case eAmmoPoolType.arrows:
+				ammoString = "#WEAPON_PLAYGROUND_ARROW_AMMO_TYPE_TOOLTIP_DESC"
+				break
+			default:
+				ammoString = ""
+				break
+		}
+	}
+
+	return ammoString
+}
+
+bool function RTKMutator_IsImageHorizontal( asset input )
+{
+	if ( input == $"" )
+		return false
+
+	vector imageSize = GetImageSize( input )
+	return imageSize.x > imageSize.y
+}
+
+bool function RTKMutator_IsImageVertical( asset input )
+{
+	if ( input == $"" )
+		return false
+
+	vector imageSize = GetImageSize( input )
+	return imageSize.x < imageSize.y
+}
+
+bool function RTKMutator_IsImageSquare( asset input )
+{
+	if ( input == $"" )
+		return true
+
+	vector imageSize = GetImageSize( input )
+	return imageSize.x == imageSize.y
+}

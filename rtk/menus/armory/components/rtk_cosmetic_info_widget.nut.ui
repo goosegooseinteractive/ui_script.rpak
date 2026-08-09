@@ -1,0 +1,276 @@
+global function RTKCosmeticInfoWidget_OnInitialize
+global function RTKCosmeticInfoWidget_OnDestroy
+
+global struct RTKCosmeticInfoWidget_Properties
+{
+	int flavGUID
+}
+
+global struct RTKCosmeticPrestigeTierRewardModel
+{
+	bool rewardUnlocked
+	string rewardText
+}
+
+global struct RTKCosmeticPrestigeTierInfoModel
+{
+	string challengeText
+	int challengeProgress = 1
+	int challengeGoal = 1
+	array<RTKCosmeticPrestigeTierRewardModel> rewards
+}
+
+global struct RTKCosmeticTagInfoModel
+{
+	string tagText
+	vector tagTextColor = <1.0, 1.0, 1.0>
+	asset auxIcon1
+	asset auxIcon2
+}
+
+global struct RTKCosmeticInfoModel
+{
+	string itemName
+	string itemTierName
+	int itemTier
+	asset armoryIcon
+	string armoryIconTooltipText
+
+	string loreHeaderText
+	string loreText
+
+	string disclaimerText
+
+	RTKCosmeticPrestigeTierInfoModel& currentPrestigeTier
+
+	array<RTKCosmeticTagInfoModel> tagList
+}
+
+struct PrivateData
+{
+	int guidListenerHandler
+}
+
+const string MODEL_PATH 	 = "cosmeticInfoWidget"
+const asset FINISHER_ICON	 = $"ui_image/rui/menu/common/icon_finisher.rpak"
+const asset INTRO_ICON		 = $"ui_image/rui/menu/common/icon_character_select.rpak"
+const asset LINK_ICON 	 	 = $"ui_image/rui/menu/heirloom_crafting/heirloom_page_link.rpak"
+
+void function RTKCosmeticInfoWidget_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	rtk_struct widgetStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticInfoModel" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH, true ) )
+
+	p.guidListenerHandler = self.AddPropertyCallback( "flavGUID", RTKCosmeticInfoWidget_OnGUIDUpdated )
+}
+
+void function RTKCosmeticInfoWidget_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+	self.RemovePropertyCallback( "flavGUID", p.guidListenerHandler )
+}
+
+void function RTKCosmeticInfoWidget_OnGUIDUpdated( rtk_behavior self )
+{
+	rtk_struct widgetStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticInfoModel" )
+	RTKCosmeticInfoModel widgetModel = RTKCosmeticInfo_GetCosmeticInfoModel( self.PropGetInt( "flavGUID" ) )
+	RTKStruct_SetValue( widgetStruct, widgetModel )
+}
+
+RTKCosmeticInfoModel function RTKCosmeticInfo_GetCosmeticInfoModel( int flavGUID )
+{
+	RTKCosmeticInfoModel widgetModel
+	ItemFlavor ornull  itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+		return widgetModel
+
+	expect ItemFlavor( itemFlav )
+
+	
+	widgetModel.itemName = ItemFlavor_GetLongName( itemFlav )
+	widgetModel.armoryIcon = ItemFlavor_GetSourceIcon( itemFlav )
+	widgetModel.armoryIconTooltipText = Localize( GetEventLongNameFromTagIcon( GetTagIconStringFromItemFlavor( itemFlav ) ) )
+	widgetModel.itemTier = ItemFlavor_GetQuality( itemFlav )
+	widgetModel.itemTierName = ItemQuality_GetQualityName( widgetModel.itemTier, false )
+
+	
+	widgetModel.loreHeaderText = Localize( "#SKIN_BLURB_STORY_TITLE", Localize( ItemFlavor_GetLongName( itemFlav ) ) )
+	widgetModel.loreText = RTKCosmeticInfo_GetLoreBodyTextForItem( itemFlav )
+
+	
+	widgetModel.disclaimerText = RTKCosmeticInfo_GetDisclaimerTextForItem( itemFlav )
+
+	
+	widgetModel.currentPrestigeTier = RTKCosmeticInfo_GetPrestigeTierModelForItem( itemFlav )
+
+	
+	widgetModel.tagList = RTKCosmeticInfo_GetTagListForItem( itemFlav, widgetModel.itemTier )
+
+	return widgetModel
+}
+
+string function RTKCosmeticInfo_GetLoreBodyTextForItem( ItemFlavor itemFlav )
+{
+	string text
+
+	switch ( ItemFlavor_GetType( itemFlav ) )
+	{
+		case eItemType.weapon_skin:
+			text = WeaponSkin_GetStoryBlurbBodyText( itemFlav )
+			break
+		case eItemType.character_skin:
+			text = CharacterSkin_GetStoryBlurbBodyText( itemFlav )
+			break
+	}
+
+	return text
+}
+
+string function RTKCosmeticInfo_GetDisclaimerTextForItem( ItemFlavor itemFlav )
+{
+	switch ( ItemFlavor_GetType( itemFlav ) )
+	{
+		case eItemType.digital_garment:
+			return "#RANKED_GARMENT_DISCLAIMER"
+	}
+
+	return ""
+}
+
+RTKCosmeticPrestigeTierInfoModel function RTKCosmeticInfo_GetPrestigeTierModelForItem( ItemFlavor itemFlav )
+{
+	RTKCosmeticPrestigeTierInfoModel tierModel
+	if ( ItemFlavor_GetType( itemFlav ) != eItemType.character_skin || ItemFlavor_GetQuality( itemFlav ) != eRarityTier.MYTHIC )
+		return tierModel
+
+	entity player = GetLocalClientPlayer()
+	ItemFlavor characterFlav = Mythics_GetCharacterForSkin( itemFlav )
+	ItemFlavor challenge = Mythics_GetChallengeForCharacter( characterFlav )
+	bool tierComplete = GRX_IsItemOwnedByPlayer( itemFlav )
+	int tier = Mythics_GetSkinTierIntForSkin( itemFlav )
+
+	if ( tierComplete )
+	{
+		tierModel.rewards.append( RTKCosmeticInfo_CreateTierRewardModel( tierComplete, "#itemtype_character_skin_NAME" ) )
+
+		if ( tier == 1 && Mythics_SkinHasCustomSkydivetrail( itemFlav ) )
+		{
+			tierModel.rewards.append( RTKCosmeticInfo_CreateTierRewardModel( tierComplete, "#PRESTIGE_PLUS_SKYDIVE_TRAIL" ) )
+		}
+		else if ( tier == 3 )
+		{
+			tierModel.rewards.append( RTKCosmeticInfo_CreateTierRewardModel( tierComplete, "#itemtype_character_execution_NAME" ) )
+		}
+	}
+	else
+	{
+		tierModel.rewards.append( RTKCosmeticInfo_CreateTierRewardModel( tierComplete, "#MYTHIC_SKIN_LOCKED" ) )
+		if ( tier == 3 )
+		{
+			tierModel.rewards.append( RTKCosmeticInfo_CreateTierRewardModel( tierComplete, "#PRESTIGE_PLUS_FINISHER_LOCKED" ) )
+		}
+
+		if ( Challenge_IsAssigned( player, challenge ) )
+		{
+			tierModel.challengeProgress = Challenge_GetProgressValue( player, challenge, tier - 2 )
+			tierModel.challengeGoal = Challenge_GetGoalVal( challenge, tier - 2 )
+		}
+	}
+	tierModel.challengeText = tier <= 1 ? "#MYTHIC_SKIN_UNLOCK_DESC" : Challenge_GetDescription( challenge, tier - 2 )
+
+	return tierModel
+}
+
+RTKCosmeticPrestigeTierRewardModel function RTKCosmeticInfo_CreateTierRewardModel( bool rewardUnlocked, string rewardText )
+{
+	RTKCosmeticPrestigeTierRewardModel rewardModel
+	rewardModel.rewardUnlocked = rewardUnlocked
+	rewardModel.rewardText = rewardText
+	return rewardModel
+}
+
+array<RTKCosmeticTagInfoModel> function RTKCosmeticInfo_GetTagListForItem( ItemFlavor itemFlav, int itemTier )
+{
+	array<RTKCosmeticTagInfoModel> tagList
+
+	ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( itemFlav )
+	string tagIconString = GetTagIconStringFromItemFlavor( itemFlav )
+	vector tierColor = GetKeyColor( COLORID_MENU_TEXT_LOOT_TIER0, itemTier + 1 ) / 255
+
+	
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.character_skin )
+	{
+		if ( Mythics_IsItemFlavorMythicSkin( itemFlav ) )
+		{
+			tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_PRESTIGE", tierColor ) )
+		}
+
+		if ( itemTier == eRarityTier.MYTHIC && ( Mythics_IsExecutionUsableOnTier1AndTier2( itemFlav ) || Mythics_ShouldForceCustomExecution( GetLocalClientPlayer(), itemFlav ) ) )
+		{
+			tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_FINISHER_TIED", <0.0, 1.0, 1.0>, FINISHER_ICON, LINK_ICON ) )
+		}
+
+		if ( CharacterSkin_HasCustomCharacterSelect( itemFlav ) )
+		{
+			tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_INTRO_TIED", <0.0, 1.0, 1.0>, INTRO_ICON, LINK_ICON ) )
+		}
+	}
+
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.character_execution && Mythics_IsCustomExecutionInMythicBundle( itemFlav ) )
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_FINISHER_TIED", <0.0, 1.0, 1.0>, FINISHER_ICON, LINK_ICON ) )
+	}
+
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.character_select && CharacterSelect_IsLockedToOPSkin( itemFlav ) )
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_INTRO_TIED", <0.0, 1.0, 1.0>, INTRO_ICON, LINK_ICON ) )
+	}
+
+	
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.weapon_skin && WeaponSkin_DoesReactToKills( itemFlav ) && itemTier != eRarityTier.MYTHIC ) 
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_REACTIVE", tierColor ) )
+	}
+
+	
+	
+
+	
+	if ( IsBattlepassFromTagIcon( tagIconString ) )
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_BATTLE_PASS" ) )
+	}
+
+	
+	if ( IsEventFromTagIcon( tagIconString ) )
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_EVENT" ) )
+	}
+
+	
+	if ( ifpi.craftingOfferOrNull != null )
+	{
+		tagList.append( RTKCosmeticInfo_CreateTagModel( "#INFO_TAG_CORE_PACK_POOL" ) )
+	}
+
+	return tagList
+}
+
+RTKCosmeticTagInfoModel function RTKCosmeticInfo_CreateTagModel( string text = "", vector textColor = <1.0, 1.0, 1.0>, asset auxIcon1 = $"", asset auxIcon2 = $"" )
+{
+	RTKCosmeticTagInfoModel tag
+
+	tag.tagText = text
+	tag.tagTextColor = textColor
+	tag.auxIcon1 = auxIcon1
+	tag.auxIcon2 = auxIcon2
+
+	return tag
+}

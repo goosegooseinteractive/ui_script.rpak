@@ -1,0 +1,439 @@
+
+global function RTKPaginationBinder_OnInitialize
+global function RTKPaginationBinder_SetInitPageIndex
+
+global struct RTKPaginationBinder_Properties
+{
+	
+	string pathToModel
+	rtk_behavior paginationBehavior
+	string indexPropName
+
+	rtk_panel    pipParentPanel
+	string	     pathToPipModel
+	rtk_behavior cursorInteractBehavior
+	rtk_behavior cursorInteractBehaviorExtra
+	rtk_behavior hintAnimatorBehavior
+	rtk_behavior pipListBinder
+
+	rtk_behavior nextButton
+	rtk_behavior prevButton
+	rtk_behavior nextButtonAlt
+	rtk_behavior prevButtonAlt
+
+	bool isVertical
+	bool canWrap
+	bool useLRTriggers = false
+	bool useMouseWheel = true
+	float updateDelay = 0.1
+
+	int maxPips
+
+	void functionref() onPageChange
+}
+
+global struct RTKPaginationPipModel
+{
+	int buttonState
+}
+
+struct PrivateData
+{
+	int pageIndex
+	int pageCount
+	float lastUpdate
+
+	int currentPipRangeStart
+	int currentPipRangeEnd
+}
+
+
+void function RTKPaginationBinder_OnInitialize( rtk_behavior self )
+{
+	rtk_panel pipParent 			= self.PropGetPanel( "pipParentPanel" )
+	rtk_behavior pipListBinder 		= self.PropGetBehavior( "pipListBinder" )
+	rtk_behavior nextButton 		= self.PropGetBehavior( "nextButton" )
+	rtk_behavior nextButtonAlt 		= self.PropGetBehavior( "nextButtonAlt" )
+	rtk_behavior prevButton 		= self.PropGetBehavior( "prevButton" )
+	rtk_behavior prevButtonAlt 		= self.PropGetBehavior( "prevButtonAlt" )
+	rtk_behavior cursorZone 		= self.PropGetBehavior( "cursorInteractBehavior" )
+	rtk_behavior cursorZoneExtra 	= self.PropGetBehavior( "cursorInteractBehaviorExtra" )
+
+	self.AutoSubscribe( pipParent, "onChildAdded", function( rtk_panel newChild, int newChildIndex ) : ( pipParent, self )
+	{
+		PrivateData p
+		self.Private( p )
+
+		rtk_behavior button = newChild.FindBehaviorByTypeName( "Button" )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex )
+		{
+			RTKPaginationBinder_SetPageIndex( self, newChildIndex )
+		} )
+	})
+
+	self.AutoSubscribe( pipListBinder, "onUpdatedList", function( ) : ( self )
+	{
+		PrivateData p
+		self.Private( p )
+
+		rtk_panel pipParent = self.PropGetPanel( "pipParentPanel" )
+
+		p.pageCount = pipParent.GetChildCount()
+		self.GetPanel().SetVisible( p.pageCount > 1 )
+		RTKPaginationBinder_UpdateNavArrowsState( self )
+	})
+
+	if ( nextButton != null )
+	{
+		self.AutoSubscribe( nextButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			RTKPaginationBinder_NextPage( self )
+		} )
+	}
+
+	if ( nextButtonAlt != null )
+	{
+		self.AutoSubscribe( nextButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			RTKPaginationBinder_NextPage( self )
+		} )
+	}
+
+	if ( prevButton != null )
+	{
+		self.AutoSubscribe( prevButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			RTKPaginationBinder_PrevPage( self )
+		} )
+	}
+
+	if ( prevButtonAlt != null )
+	{
+		self.AutoSubscribe( prevButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			RTKPaginationBinder_PrevPage( self )
+		} )
+	}
+
+	if ( cursorZone != null )
+	{
+		RTKPaginationBinder_SetupCursorInteractArea( self, cursorZone )
+	}
+
+	if ( cursorZoneExtra != null )
+	{
+		RTKPaginationBinder_SetupCursorInteractArea( self, cursorZoneExtra )
+	}
+}
+
+void function RTKPaginationBinder_SetPageIndex( rtk_behavior self, int pageIndex )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( !RTKPaginationBinder_CanUpdate( self ) )
+		return
+
+	pageIndex = ClampInt ( pageIndex, 0, p.pageCount - 1 )
+	if ( p.pageIndex == pageIndex )
+		return
+
+	p.pageIndex = pageIndex
+	p.lastUpdate = UITime()
+
+	string pathToModel = self.PropGetString( "pathToModel" )
+	string indexPropName = self.PropGetString( "indexPropName" )
+	rtk_behavior targetBehavior = self.PropGetBehavior( "paginationBehavior" )
+	rtk_struct dataStruct = RTKDataModel_GetStruct( pathToModel )
+
+	if ( targetBehavior != null && RTKStruct_HasProperty( targetBehavior.GetProperties(), indexPropName ) )
+	{
+		targetBehavior.PropSetInt( indexPropName, pageIndex )
+	}
+
+	if ( dataStruct != null && RTKStruct_HasProperty( dataStruct, indexPropName ) )
+	{
+		RTKStruct_SetInt( dataStruct, indexPropName, pageIndex )
+	}
+	RTKPaginationBinder_UpdateNavArrowsState( self )
+	EmitUISound( "UI_Menu_BattlePass_LevelTab" )
+	self.InvokeEvent( "OnPageChange", pageIndex )
+}
+
+void function RTKPaginationBinder_NextPage( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	bool canWrap = self.PropGetBool( "canWrap" )
+	bool isLastPage = p.pageIndex >= p.pageCount - 1
+
+	if ( isLastPage && !canWrap )
+		return
+
+	int targetPage =  isLastPage ? 0 : p.pageIndex + 1
+	if ( !RTKPaginationBinder_IsTargetPageLocked( self, targetPage ) )
+	{
+		RTKPaginationBinder_SetPageIndex( self, targetPage )
+		p.lastUpdate = UITime()
+	}
+}
+
+void function RTKPaginationBinder_PrevPage( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	bool canWrap     = self.PropGetBool( "canWrap" )
+	bool isFirstPage = p.pageIndex <= 0
+
+	if ( isFirstPage && !canWrap )
+		return
+
+	int targetPage =  isFirstPage ? 0 : p.pageIndex - 1
+	if ( !RTKPaginationBinder_IsTargetPageLocked( self, targetPage ) )
+	{
+		RTKPaginationBinder_SetPageIndex( self, targetPage )
+		p.lastUpdate = UITime()
+	}
+}
+
+void function RTKPaginationBinder_OnMouseWheeled( rtk_behavior self, float delta )
+{
+	if( IsControllerModeActive() && !self.PropGetBool( "isVertical" ) )
+		return
+
+	if( delta > 0 )
+	{
+		RTKPaginationBinder_PrevPage( self )
+	}
+	else if( delta < 0 )
+	{
+		RTKPaginationBinder_NextPage( self )
+	}
+}
+
+void function RTKPaginationBinder_OnKeyCodePressed( rtk_behavior self, int keycode )
+{
+	bool isVertical = self.PropGetBool( "isVertical" )
+
+	
+	switch ( keycode )
+	{
+		
+
+
+
+
+
+
+
+		case STICK2_UP:
+		case STICK2_DOWN:
+		case KEY_UP:
+		case KEY_DOWN:
+			if ( !isVertical )
+				return
+			break
+
+		
+
+
+
+
+
+
+
+		case BUTTON_TRIGGER_LEFT:
+		case BUTTON_TRIGGER_RIGHT:
+			if ( !self.PropGetBool( "useLRTriggers" ) || isVertical )
+				return
+			break
+		case STICK2_LEFT:
+		case STICK2_RIGHT:
+		case KEY_LEFT:
+		case KEY_RIGHT:
+		case BUTTON_SHOULDER_LEFT:
+		case BUTTON_SHOULDER_RIGHT:
+			if ( isVertical )
+				return
+			break
+
+		
+		default:
+			return
+	}
+
+
+	
+	bool toNextPage = false
+	switch ( keycode )
+	{
+		
+
+
+
+
+		case STICK2_DOWN:
+		case KEY_DOWN:
+		case STICK2_RIGHT:
+		case KEY_RIGHT:
+		case BUTTON_TRIGGER_RIGHT:
+		case BUTTON_SHOULDER_RIGHT:
+			toNextPage = true
+			break
+
+		
+
+
+
+
+		case STICK2_UP:
+		case KEY_UP:
+		case STICK2_LEFT:
+		case KEY_LEFT:
+		case BUTTON_TRIGGER_LEFT:
+		case BUTTON_SHOULDER_LEFT:
+			toNextPage = false
+			break
+	}
+
+	
+	if ( !isVertical && IsRTL() )
+		toNextPage = !toNextPage
+
+	if ( toNextPage )
+		RTKPaginationBinder_NextPage( self )
+	else
+		RTKPaginationBinder_PrevPage( self )
+}
+
+void function RTKPaginationBinder_OnHoverEnter( rtk_behavior self, rtk_behavior cursorZone )
+{
+	bool controlTypeIsActive = cursorZone.PropGetBool( IsControllerModeActive() ? "controllerEnabled" : "mouseEnabled" )
+	if ( !controlTypeIsActive )
+		return
+
+	rtk_behavior animator = self.PropGetBehavior( "hintAnimatorBehavior" )
+	if( animator != null && RTKAnimator_HasAnimation( animator, "FadeIn" ) )
+	{
+		RTKAnimator_PlayAnimation( animator, "FadeIn" )
+	}
+}
+
+void function RTKPaginationBinder_OnHoverLeave( rtk_behavior self, rtk_behavior cursorZone )
+{
+	bool controlTypeIsActive = cursorZone.PropGetBool( IsControllerModeActive() ? "controllerEnabled" : "mouseEnabled" )
+	if ( !controlTypeIsActive )
+		return
+
+	rtk_behavior animator = self.PropGetBehavior( "hintAnimatorBehavior" )
+	if( animator != null && RTKAnimator_HasAnimation( animator, "FadeOut" ) )
+	{
+		RTKAnimator_PlayAnimation( animator, "FadeOut" )
+	}
+}
+
+void function RTKPaginationBinder_SetupCursorInteractArea( rtk_behavior self, rtk_behavior cursorZone )
+{
+	array< int > keycodes = [ STICK2_LEFT, STICK2_RIGHT, STICK2_UP, STICK2_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN ]
+
+
+
+
+	rtk_behavior inputBehavior = RTKInput_GetInputBehaviorOnPanel( cursorZone.GetPanel() )
+	rtk_array rtk_keycodes = inputBehavior.PropGetArray( "inputButtons" )
+	RTKArray_SetValue( rtk_keycodes, keycodes )
+
+	if ( self.PropGetBool( "useLRTriggers" ) )
+	{
+		keycodes     = [ BUTTON_TRIGGER_LEFT, BUTTON_TRIGGER_RIGHT ]
+		rtk_keycodes = inputBehavior.PropGetArray( "globalInputButtons" )
+		RTKArray_SetValue( rtk_keycodes, keycodes )
+	}
+
+	if ( self.PropGetBool( "useMouseWheel" ) )
+	{
+		RTKCursorInteract_AutoSubscribeMouseWheeledListener( self, cursorZone,
+			void function( float delta ) : ( self )
+			{
+				RTKPaginationBinder_OnMouseWheeled( self, delta )
+			}
+		)
+	}
+
+	RTKCursorInteract_AutoSubscribeOnKeyCodePressedListener( self, cursorZone,
+		void function( int keycode ) : ( self )
+		{
+			RTKPaginationBinder_OnKeyCodePressed( self, keycode )
+		}
+	)
+
+	RTKCursorInteract_AutoSubscribeOnHoverEnterListener( self, cursorZone,
+		void function() : ( self, cursorZone )
+		{
+			RTKPaginationBinder_OnHoverEnter( self, cursorZone )
+		}
+	)
+
+	RTKCursorInteract_AutoSubscribeOnHoverLeaveListener( self, cursorZone,
+		void function() : ( self, cursorZone )
+		{
+			RTKPaginationBinder_OnHoverLeave( self, cursorZone )
+		}
+	)
+}
+
+bool function RTKPaginationBinder_IsTargetPageLocked( rtk_behavior self, int targetPage )
+{
+	string pipModelPath = self.PropGetString( "pathToPipModel" )
+	if ( RTKDataModel_HasDataModel( pipModelPath ) )
+	{
+		rtk_array pipArray = RTKDataModel_GetArray( pipModelPath )
+		if ( RTKArray_GetCount( pipArray ) == 0 )
+			return false
+		rtk_struct ornull pipStruct = RTKArray_GetStruct( pipArray, targetPage )
+		if ( pipStruct != null )
+		{
+			expect rtk_struct( pipStruct )
+			if ( RTKStruct_HasProperty( pipStruct, "isLocked" ) )
+				return RTKStruct_GetBool( pipStruct, "isLocked" )
+		}
+	}
+	return false
+}
+
+void function RTKPaginationBinder_SetInitPageIndex( rtk_behavior self, int pageIndex )
+{
+	PrivateData p
+	self.Private( p )
+	p.pageIndex = pageIndex
+}
+
+bool function RTKPaginationBinder_CanUpdate( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	return UITime() > p.lastUpdate + self.PropGetFloat( "updateDelay" )
+}
+
+void function RTKPaginationBinder_UpdateNavArrowsState( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	rtk_behavior nextButton = self.PropGetBehavior( "nextButton" )
+	rtk_behavior prevButton = self.PropGetBehavior( "prevButton" )
+	nextButton.PropSetBool( "interactive", !RTKPaginationBinder_IsNextPageLocked( self ) )
+	prevButton.PropSetBool( "interactive", !RTKPaginationBinder_IsPrevPageLocked( self ) )
+}
+
+bool function RTKPaginationBinder_IsPrevPageLocked( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	int prevPage = ClampInt( p.pageIndex - 1, 0, p.pageCount - 1 )
+	return RTKPaginationBinder_IsTargetPageLocked( self, prevPage ) || p.pageIndex == 0
+}
+
+bool function RTKPaginationBinder_IsNextPageLocked( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	int nextPage = ClampInt( p.pageIndex + 1, 0, p.pageCount - 1 )
+	return RTKPaginationBinder_IsTargetPageLocked( self, nextPage ) || p.pageIndex == p.pageCount - 1
+}

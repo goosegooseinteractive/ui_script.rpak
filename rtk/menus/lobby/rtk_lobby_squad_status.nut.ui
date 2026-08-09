@@ -1,0 +1,17 @@
+global function RTKLobbySquadStatus_OnInitialize
+
+
+global struct RTKLobbySquadStatus_Properties
+{
+	
+	rtk_behavior fillButtonBehavior
+}
+
+void function RTKLobbySquadStatus_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior fillButtonBehavior = self.PropGetBehavior( "fillButtonBehavior" )
+
+	self.AutoSubscribe( fillButtonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		FillButton_OnActivate( null )
+	} )
+}

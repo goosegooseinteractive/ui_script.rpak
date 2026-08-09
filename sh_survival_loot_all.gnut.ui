@@ -1,0 +1,2787 @@
+global function SURVIVAL_Loot_All_InitShared
+
+global function SURVIVAL_Loot_GetLootDataTable
+global function SURVIVAL_Loot_GetLootOverrideTableString
+global function SURVIVAL_Loot_GetLootOverrideTableStringForPlaylist
+global function SURVIVAL_Loot_GetLootOverrideTableAsset
+
+global function SURVIVAL_Loot_GetAttachmentMatrixOverrideTableAssetForPlaylist
+
+global function SURVIVAL_Loot_GetPlaylistLootTableString
+global function SURVIVAL_Loot_GetPlaylistLootTableBool
+
+global function SURVIVAL_Loot_GetLootDataByIndex
+global function SURVIVAL_Loot_IsLootIndexValid
+global function SURVIVAL_Loot_GetLootDataByRef
+
+global function SURVIVAL_Loot_IsRefValid
+global function SURVIVAL_Loot_IsRefDisabled
+global function SURVIVAL_Loot_AddDisabledRef
+global function SURVIVAL_Loot_RemoveDisabledRef
+global function SURVIVAL_Loot_GetDisabledLootRefsForPlaylist
+
+global function SURVIVAL_Loot_IsReforBaseWeaponDisabled
+
+global function SURVIVAL_Loot_GetByType
+global function SURVIVAL_Loot_GetLootTypeFromString
+
+global function SURVIVAL_Loot_GetAttachmentType_Enum
+global function SURVIVAL_Loot_GetByTier
+global function SURVIVAL_Loot_GetColorIDFromLootTier
+
+global function SURVIVAL_Loot_GetSortedStringArrayFromSupportedAttachmentsString
+
+global function SURVIVAL_Loot_AddCallback_LootFinalized
+global function SURVIVAL_Loot_RemoveCallback_LootFinalized
+
+global function SURVIVAL_Loot_SetLootTargetLockedStartTimeByIndex
+
+
+
+
+global function GetShieldTierFromShieldAmount
+global function SURVIVAL_GetArmorShieldCapacity
+global function SURVIVAL_SetCallback_GetArmorShieldCapacity
+
+global function CountLootItemsFromDatatables
+
+global function SURVIVAL_Loot_FloorSpawnCategoryStringToInt
+global function SURVIVAL_Loot_FloorSpawnCategoryIntToString
+
+global function WeaponHasLockedHopup
+global function SURVIVAL_Weapon_IsAttachmentLocked
+global function SURVIVAL_IsAttachmentPointLocked
+global function WeaponLootRefIsLockedSet
+global function GetAttachmentPointName
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function SURVIVAL_Loot_GetRestrictedDialogArray
+
+
+
+global function SURVIVAL_Loot_GetPickupString
+global function SURVIVAL_Loot_GetDesc
+global function SURVIVAL_GetButtonStringForLootActionType
+
+global function AddCallback_EditLootDesc
+global function RemoveCallback_EditLootDesc
+
+
+
+
+global function SURVIVAL_Loot_IsUniqueAmmoWeapon
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if DEV
+global function DEV_PrintDisabledLoot
+global function DEV_PrintLootDataOverrides
+global function DEV_PrintLootDataByRef
+#endif
+
+
+global function GetFXRarityColorForTier 
+global function GetFXRarityColorForUnlockable 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function Integrated_IncapShield_Enabled
+
+
+
+global function HasLockedCorruptedAttachments
+global function HasExclusiveCorruptedAttachments
+global function IsAttachmentCorrupted
+global function IsStockpileWeapon
+
+
+
+
+
+
+
+global const int MAX_LOOT_ITEMS = 1024 
+
+global enum eLootTier
+{
+	NONE
+	COMMON
+	RARE
+	EPIC
+	LEGENDARY
+	MYTHIC
+	ICONIC
+
+	_count
+}
+
+global enum eLootActionType
+{
+	PRIMARY_ACTION
+	ALT_ACTION
+	PRIMARY_SWAP
+	CHARACTER_ACTION1
+	CHARACTER_ACTION2
+}
+
+global enum eFloorSpawnCategory
+{
+	NONE,
+	CORE,
+	EVENT,
+	PROTO,
+
+
+
+	NOSPAWN,
+}
+
+global struct LootData
+{
+	string        ref
+	int           tier
+	int           index = -1
+	int           inventorySlotCount
+	int           pingCommsAction
+	int			  requestCommsAction
+	asset         model
+	int           skinOverride
+	asset         hudIcon
+	asset         hudIconSquare
+	asset		  craftingIcon
+	asset         emptyImage
+	string        attachSound
+	string        pickupSound_1p
+	string        pickupSound_3p
+	string        carrySound
+	string        pickupString
+	string        desc
+	string        hopupPopupDesc
+	string        specialCaseInvalidReason
+	int           countPerDrop
+	int           lootType
+	string        netInt
+	array<string> supportedAttachments
+	array<string> disabledAttachments
+	array<string> lootTags
+	string        ammoType
+	string        secondaryAmmoType
+	bool          isActive = false
+	int           passive = -1
+
+
+
+	string        attachmentStyle = ""
+	int 		  attachmentType = -1
+	int           scrapValue
+
+
+
+	bool          droppodRotate = false
+	bool          isDynamic = false
+	bool          conditional = false
+	bool          printPickupToObituary = false
+	bool          pretendsToBeBlank = false
+
+	int			  floorSpawnCategory = eFloorSpawnCategory.NONE
+
+	table<int,var> extraData
+
+	string        baseWeapon
+	array<string> baseMods
+
+	asset         fakeAmmoIcon = $""
+	array<string> fakeMods
+
+	asset		  brandAsset
+	asset 		  collabCharacter
+
+	bool functionref( entity, entity, int ) extraCanUseFunction = null
+
+	bool restrictFromSling = false
+	bool hideFromDeathbox = false
+	bool hideFromBlackMarket = false
+	bool isDisabled = false
+
+	int targetLockedStartTime = 0
+
+	asset cosmeticSkinOverride
+
+#if DEV
+		string dev_source
+#endif
+}
+
+global enum eExtraDataType
+{
+	INT_ARMOR_EVO = 0,
+	INT_ARMOR_SHIELDS
+}
+
+global enum eWeaponAttachmentType
+{
+	NONE = -1,
+	MAG,
+	SCOPE,
+	BARREL,
+	STOCK,
+	HOPUP,
+	_count
+}
+
+global enum eLootType
+{
+	INVALID
+	MAINWEAPON 
+	AMMO 
+	HEALTH
+	ARMOR
+	INCAPSHIELD
+	JUMPKIT
+	ORDNANCE
+	ATTACHMENT
+	CUSTOMPICKUP
+	BACKPACK
+
+
+
+
+
+
+	HELMET
+
+	AUGMENT
+
+
+
+
+	BLANK
+
+		DATAKNIFE
+
+
+		SHIPKEYCARD
+
+	RESOURCE
+
+
+
+
+	LOCKBOX
+	GADGET
+
+
+		MARVIN_ARM
+
+
+
+
+
+
+
+
+
+
+
+
+		COLLECTABLE_NESSIE
+
+
+
+
+
+
+	EVO_CACHE
+
+
+
+
+
+
+		SELF_RES_KIT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	_count
+}
+
+global const table<string, asset> emptyAttachmentSlotImages = {
+	barrel = $"rui/pilot_loadout/mods/empty_barrel"
+	barrel_stabilizer = $"rui/pilot_loadout/mods/empty_barrel_stabilizer"
+	laser_sight = $"rui/pilot_loadout/mods/empty_laser_sight"
+	grip = $"rui/pilot_loadout/mods/empty_stock_tactical"
+	stock = $"rui/pilot_loadout/mods/empty_stock_tactical"
+	stock_tactical = $"rui/pilot_loadout/mods/empty_stock_tactical"
+	stock_sniper = $"rui/pilot_loadout/mods/empty_stock_sniper"
+	mag = $"rui/pilot_loadout/mods/empty_mag"
+	mag_car = $"rui/pilot_loadout/mods/CAR_Empty_Mag_Icon"
+	mag_straight = $"rui/pilot_loadout/mods/empty_mag_straight"
+	mag_energy = $"rui/pilot_loadout/mods/empty_energy_mag"
+	mag_shotgun = $"rui/pilot_loadout/mods/empty_mag_shotgun"
+	mag_sniper = $"rui/pilot_loadout/mods/empty_mag_sniper"
+	sight = $"rui/pilot_loadout/mods/empty_sight"
+
+
+
+
+	hopup = $"rui/pilot_loadout/mods/empty_hopup"
+	hopupMulti_a = $"rui/pilot_loadout/mods/empty_hopup"
+	hopupMulti_b = $"rui/pilot_loadout/mods/empty_hopup"
+	hopup_turbocharger = $"rui/pilot_loadout/mods/empty_hopup_turbocharger"
+	hopup_selectfire = $"rui/pilot_loadout/mods/empty_hopup_autofire"
+	hopup_em_choke = $"rui/pilot_loadout/mods/empty_hopup_em_choke"
+	hopup_skullpiercer = $"rui/pilot_loadout/mods/empty_hopup_skullpiercer"
+	hopup_shield_breaker = $"rui/pilot_loadout/mods/empty_hopup_shield_breaker"
+
+
+
+	hopup_smart_reload = $"rui/pilot_loadout/mods/hopup_smart_reload_empty"
+	hopup_kinetic_loader = $"rui/pilot_loadout/mods/empty_hopup_kinetic_feeder"
+	hopup_dual_loader = $"rui/pilot_loadout/mods/empty_hopup_dualshell"
+	hopup_unshielded_dmg = $"rui/pilot_loadout/mods/empty_hopup_unshielded_dmg"
+
+
+
+	hopup_double_tap = $"rui/pilot_loadout/mods/empty_hopup_doubletap"
+	hopup_paintball = $"rui/pilot_loadout/mods/empty_hopup_graffiti"
+	hopup_quickdraw_holster = $"rui/pilot_loadout/mods/empty_hopup_quickdraw_holster"
+	hopup_marksmans_tempo = $"rui/pilot_loadout/mods/empty_hopup_marksmans_tempo"
+	hopup_shatter_rounds = $"rui/pilot_loadout/mods/empty_hopup_shatter_caps"
+	hopup_gunshield = $"rui/pilot_loadout/mods/empty_hopup_gunshield"
+	hopup_ultimate_accelerator = $"rui/pilot_loadout/mods/empty_hopup_accelerator"
+
+
+
+
+		hopup_brand_weapon_takeover = $"rui/pilot_loadout/mods/hopup_takeover"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	hopup_golden_horse_blue =  $"rui/pilot_loadout/mods/empty_hopup_golden_horse_blue"
+	hopup_golden_horse_green = $"rui/pilot_loadout/mods/empty_hopup_golden_horse_green"
+	hopup_golden_horse_yellow = $"rui/pilot_loadout/mods/empty_hopup_golden_horse_yellow"
+	hopup_golden_horse_purple = $"rui/pilot_loadout/mods/empty_hopup_golden_horse_purple"
+	hopup_golden_horse_red = $"rui/pilot_loadout/mods/empty_hopup_golden_horse_red"
+
+
+
+}
+
+
+global const string BRAND_MOD_WEAPON_TAKEOVER = "hopup_brand_weapon_takeover"
+global const vector WEAPON_TAKEOVER_COLOR = < 66, 135, 245 >
+
+
+global const int NORMAL_UNRESTRICTED_LOOT = -1
+global enum eRestrictedLootTypes
+{
+	VAULT,
+	SHIP_VAULT,
+	BLOODHOUND_TT,
+	CAUSTIC_TT,
+
+		RAMPART_TT,
+
+
+		SPECTRE_SHACK,
+
+
+		EXPLOSIVE_HOLDS,
+
+
+		PVE_AIRDROP,
+
+
+
+
+
+
+
+}
+
+global enum eRestrictedLootBlackMarketInteraction
+{
+	SHOW_LOCKED,
+	SHOW_UNLOCKED,
+	HIDE
+}
+
+struct RestrictedLootInfo
+{
+
+
+
+
+
+
+
+
+
+		string dialogPopupHeader
+		string dialogPopupAreYouSure
+		string dialogPopupDeny
+
+}
+
+
+
+
+
+global const int ARMOR_GREY_TIER = 0
+global const int ARMOR_WHITE_TIER = 1
+global const int ARMOR_BLUE_TIER = 2
+global const int ARMOR_PURPLE_TIER = 3
+global const int ARMOR_GOLD_TIER = 4
+global const int ARMOR_RED_TIER = 5
+
+
+
+
+
+
+
+
+
+global const int DEFAULT_GREY_ARMOR_HEALTH = 0
+global const int DEFAULT_WHITE_ARMOR_HEALTH = 50
+global const int DEFAULT_BLUE_ARMOR_HEALTH = 75
+global const int DEFAULT_PURPLE_ARMOR_HEALTH = 100
+global const int DEFAULT_GOLD_ARMOR_HEALTH = 100
+global const int DEFAULT_RED_ARMOR_HEALTH = 125
+
+const int UPGRADE_CORE_GREY_ARMOR_CAPACITY = 25
+
+global const string WEAPON_LOCKEDSET_MOD_CRATE = "crate"
+global const string WEAPON_LOCKEDSET_LOOT_TAG = "lockedset"
+global const string AUTO_HEMLOK_BARREL_ATTACHMENT = "barrel_hemlok_elite"
+
+
+
+
+
+
+
+struct
+{
+	table< string, LootData > lootData
+	array<string>             lootIndexToString
+	bool                      initialized
+	StringSet             	  disabledRefs
+	array<string>             uniqueAmmoWeaponRefs
+
+	table<int, RestrictedLootInfo> restrictedLootInfo
+
+	array<void functionref( )> lootFinalizedCallbacks
+
+	array<string functionref( string, entity , string)> editLootDescCallbacks
+
+
+	int functionref( int ) GetArmorShieldCapacity_Callback
+
+#if DEV
+		table< string, LootData > lootDataOverrides
+#endif
+
+} file
+
+
+
+
+global const array<string> WEAPON_ATTACHMENT_SORT_ORDER = ["barrel", "mag", "sight", "grip", "hopup", "hopupMulti_a", "hopupMulti_b"]
+
+
+string function GetLootTableString( string ref, var datatable, int rowIndex, string columnName )
+{
+	return SURVIVAL_Loot_GetPlaylistLootTableString( GetCurrentPlaylistName(), ref, datatable, rowIndex, columnName )
+}
+
+
+asset function GetLootTableAsset( string ref, var datatable, int rowIndex, string columnName )
+{
+	asset val =  GetDataTableAsset( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+
+
+
+
+	return val
+
+
+}
+
+
+int function GetLootTableInt( string ref, var datatable, int rowIndex, string columnName )
+{
+	int val = GetDataTableInt( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+
+	return GetCurrentPlaylistVarInt( format( "%s_dt_override_%s", ref, columnName), val )
+}
+
+
+bool function GetLootTableBool( string ref, var datatable, int rowIndex, string columnName )
+{
+	return SURVIVAL_Loot_GetPlaylistLootTableBool( GetCurrentPlaylistName(), ref, datatable, rowIndex, columnName )
+}
+
+
+float function GetLootTableFloat( string ref, var datatable, int rowIndex, string columnName )
+{
+	float val = GetDataTableFloat( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+
+	return GetCurrentPlaylistVarFloat( format( "%s_dt_override_%s", ref, columnName), val )
+}
+
+string function SURVIVAL_Loot_GetLootOverrideTableString()
+{
+	return SURVIVAL_Loot_GetLootOverrideTableStringForPlaylist( GetCurrentPlaylistName() )
+}
+
+string function SURVIVAL_Loot_GetLootOverrideTableStringForPlaylist( string playlistName )
+{
+	return GetPlaylistVarString( playlistName, "survival_loot_override_tables", "" )
+}
+
+asset ornull function SURVIVAL_Loot_GetAttachmentMatrixOverrideTableAssetForPlaylist( string playlistName )
+{
+	string overrideTableID = GetPlaylistVarString( playlistName, "weapon_attachment_matrix_override_table", "" ).tolower()
+	if ( overrideTableID == "" )
+		return null
+
+	return SURVIVAL_Loot_GetLootOverrideTableAsset( overrideTableID )
+}
+
+string function SURVIVAL_Loot_GetPlaylistLootTableString( string playlistName, string ref, var datatable, int rowIndex, string columnName )
+{
+	string val = GetDataTableString( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetPlaylistVarString( playlistName, format( "%s_dt_override_%s", ref, columnName ), val )
+}
+
+bool function SURVIVAL_Loot_GetPlaylistLootTableBool( string playlistName, string ref, var datatable, int rowIndex, string columnName )
+{
+	bool val = GetDataTableBool( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetPlaylistVarBool( playlistName, format( "%s_dt_override_%s", ref, columnName ), val )
+}
+
+LootData function ReadLootItemFromDatatableRow( var dt, int i, string source = "" )
+{
+		LootData data
+
+#if DEV
+			data.dev_source = source
+#endif
+
+		data.ref = GetDataTableString( dt, i, GetDataTableColumnByName( dt, "ref" ) )
+
+
+
+
+
+
+
+
+
+		string lootType = GetLootTableString( data.ref, dt, i, "type" )
+
+		data.baseWeapon = GetLootTableString( data.ref, dt, i, "baseWeapon" )
+
+		if ( data.baseWeapon == "" )
+		{
+			data.baseWeapon = data.ref
+		}
+
+		data.fakeAmmoIcon = GetLootTableAsset( data.ref, dt, i, "fakeAmmoIcon" )
+		data.brandAsset = GetLootTableAsset( data.ref, dt, i, "brandAsset" ) 	
+		data.collabCharacter = GetLootTableAsset( data.ref, dt, i, "collabCharacter" )
+
+		data.baseMods = split( GetLootTableString( data.ref, dt, i, "baseMods" ), WHITESPACE_CHARACTERS )
+
+		data.model = GetLootTableAsset( data.ref, dt, i, "pickupModel" )
+		data.skinOverride = GetLootTableInt( data.ref, dt, i, "skinOverride" )
+		data.hudIcon = GetLootTableAsset( data.ref, dt, i, "icon" )
+		data.attachSound = GetLootTableString( data.ref, dt, i, "attachSound" )
+		data.pickupSound_3p = GetLootTableString( data.ref, dt, i, "pickupSound_3p" )
+		data.pickupSound_1p = GetLootTableString( data.ref, dt, i, "pickupSound_1p" )
+		data.carrySound = GetLootTableString( data.ref, dt, i, "carrySound" )
+		data.scrapValue = GetLootTableInt( data.ref, dt, i, "scrapValue" )
+
+
+
+		data.droppodRotate = GetLootTableBool( data.ref, dt, i, "droppodRotate" )
+		data.isDynamic = GetLootTableBool( data.ref, dt, i, "isDynamic" )
+		data.pretendsToBeBlank = GetLootTableBool( data.ref, dt, i, "pretendsToBeBlank" )
+		data.conditional = GetLootTableBool( data.ref, dt, i, "conditional" )
+		data.printPickupToObituary = (data.ref == "treasure_box")    
+		data.restrictFromSling = GetLootTableBool( data.ref, dt, i, "restrictFromSling" )
+		data.hideFromDeathbox = GetLootTableBool( data.ref, dt, i, "hideFromDeathbox" )
+		data.hideFromBlackMarket = GetLootTableBool( data.ref, dt, i, "hideFromBlackMarket" )
+
+		data.pickupString = GetLootTableString( data.ref, dt, i, "pickupString" )
+		data.desc = GetLootTableString( data.ref, dt, i, "desc" )
+
+		data.countPerDrop = GetLootTableInt( data.ref, dt, i, "countPerDrop" )
+		data.tier = GetLootTableInt( data.ref, dt, i, "tier" )
+
+
+
+
+		data.isDisabled = GetLootTableBool( data.ref, dt, i, "isDisabled" )
+
+		string supportedAttachmentsString  = GetLootTableString( data.ref, dt, i, "supportedAttachments" )
+		data.supportedAttachments = SURVIVAL_Loot_GetSortedStringArrayFromSupportedAttachmentsString( supportedAttachmentsString )
+
+		data.lootTags = split( GetLootTableString( data.ref, dt, i, "lootTags" ), WHITESPACE_CHARACTERS )
+
+		data.lootType = SURVIVAL_Loot_GetLootTypeFromString( lootType )
+		data.netInt = GetLootTableString( data.ref, dt, i, "netInt" )
+		data.inventorySlotCount = GetLootTableInt( data.ref, dt, i, "inventorySlotCount" )
+
+		data.cosmeticSkinOverride = GetLootTableAsset( data.ref, dt, i, "cosmeticSkinOverride" )
+
+		
+		
+
+		data.floorSpawnCategory = SURVIVAL_Loot_FloorSpawnCategoryStringToInt( GetLootTableString( data.ref, dt, i, "floorSpawnCategory" ) )
+
+		string passiveRef = GetLootTableString( data.ref, dt, i, "passive" )
+		if ( passiveRef == "" )
+		{
+			data.passive = ePassives.INVALID
+		}
+		else
+		{
+			Assert( passiveRef in ePassives )
+			data.passive = ePassives[passiveRef]
+
+				Assert( data.passive in PASSIVE_NAME_MAP )
+				Assert( data.passive in PASSIVE_DESCRIPTION_SHORT_MAP )
+
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	return data
+}
+
+void function InitLootItemDataByType( LootData data )
+{
+	var attachmentTable = GetDataTable( $"datatable/survival_weapon_mods.rpak" )
+
+	switch ( data.lootType )
+	{
+		case eLootType.MAINWEAPON:
+			 RegisterWeaponForUse( data.baseWeapon )
+			 data.pickupString = GetWeaponInfoFileKeyField_WithMods_GlobalString( data.baseWeapon, data.baseMods, "printName" )
+			 data.desc = GetWeaponInfoFileKeyField_WithMods_GlobalString( data.baseWeapon, data.baseMods, "description" )
+			 data.hudIcon = GetWeaponInfoFileKeyFieldAsset_Global( data.baseWeapon, "hud_icon" )
+			 data.hudIconSquare = GetWeaponInfoFileKeyFieldAsset_Global( data.baseWeapon, "hud_icon_square" )
+			 data.craftingIcon = GetWeaponInfoFileKeyFieldAsset_Global( data.baseWeapon, "crafting_icon" )
+
+			 
+			 if ( IsWeaponKeyFieldDefined( data.baseWeapon, "is_akimbo_weapon" ) && GetWeaponInfoFileKeyField_GlobalBool( data.baseWeapon, "is_akimbo_weapon" ) && data.baseMods.contains( "locked_akimbo" ) )
+			 {
+				 data.hudIcon = GetWeaponInfoFileKeyFieldAsset_Global( data.baseWeapon, "hud_icon_akimbo_active" )
+			 }
+
+
+
+
+
+
+
+
+
+
+			if ( IsWeaponKeyFieldDefined( data.baseWeapon, "ammo_pool_type" ) && GetWeaponInfoFileKeyField_Global( data.baseWeapon, "uses_ammo_pool" ) != false || IsStockpileWeapon (data.baseWeapon) )
+
+
+
+			 {
+				 
+				 
+				 int type = GetWeaponInfoFileKeyField_WithMods_GlobalInt( data.baseWeapon, data.baseMods, "ammo_pool_type" )
+				 switch( type )
+				 {
+					 case eAmmoPoolType.bullet:
+						   data.ammoType = BULLET_AMMO
+						   break
+					 case eAmmoPoolType.highcal:
+						   data.ammoType = HIGHCAL_AMMO
+						   break
+					 case eAmmoPoolType.special:
+						   data.ammoType = SPECIAL_AMMO
+						   break
+					 case eAmmoPoolType.shotgun:
+						   data.ammoType = SHOTGUN_AMMO
+						   break
+					 case eAmmoPoolType.sniper:
+						   data.ammoType = SNIPER_AMMO
+						   break
+					 case eAmmoPoolType.arrows:
+						   data.ammoType = ARROWS_AMMO
+						   break
+
+
+
+
+
+					  default:
+						   data.ammoType = ""
+						   break
+				 }
+
+			 }
+			 else
+			 {
+				 data.ammoType = ""
+			 }
+
+			 if ( IsWeaponKeyFieldDefined( data.baseWeapon, "secondary_ammo_pool_type" ) )
+			 {
+				 string type = GetWeaponInfoFileKeyField_GlobalString( data.baseWeapon, "secondary_ammo_pool_type" )
+				 switch( type )
+				 {
+					  case BULLET_AMMO:
+						   data.secondaryAmmoType = BULLET_AMMO
+						   break
+					  case HIGHCAL_AMMO:
+						   data.secondaryAmmoType = HIGHCAL_AMMO
+						   break
+					  case SPECIAL_AMMO:
+						   data.secondaryAmmoType = SPECIAL_AMMO
+						   break
+					  case SHOTGUN_AMMO:
+						   data.secondaryAmmoType = SHOTGUN_AMMO
+						   break
+					  case SNIPER_AMMO:
+						   data.secondaryAmmoType = SNIPER_AMMO
+						   break
+					  case ARROWS_AMMO:
+						   data.secondaryAmmoType = ARROWS_AMMO
+						   break
+					  default:
+						   data.secondaryAmmoType = ""
+						   break
+				 }
+			 }
+			 if ( data.fakeAmmoIcon != "" )
+			 {
+				 file.uniqueAmmoWeaponRefs.append( data.ref )
+			 }
+
+			 ItemFlavor ornull weaponFlavor = GetWeaponItemFlavorByClass( data.baseWeapon )
+			 if ( weaponFlavor != null )
+			 {
+				 expect ItemFlavor( weaponFlavor )
+
+				 int availableState = ItemFlavor_GetPlaylistAvailability( weaponFlavor )
+				 bool shouldBeEnabled
+				 if ( availableState == eItemFlavorPlaylistAvailability.FORCE_UNLOCK_FOR_SPECIAL_EVENT )
+					  shouldBeEnabled = true
+				 else if ( availableState == eItemFlavorPlaylistAvailability.HIDDEN )
+					  shouldBeEnabled = false
+				 else if ( availableState == eItemFlavorPlaylistAvailability.DISABLED )
+					  shouldBeEnabled = false
+				 else
+					  shouldBeEnabled = ItemFlavor_IsActiveForEdition( weaponFlavor, GetConVarInt( "mtx_svEdition" ) )
+
+				 if ( !shouldBeEnabled )
+					  file.disabledRefs[ data.ref ] <- IN_SET
+			 }
+
+			 break
+
+		case eLootType.ORDNANCE:
+		case eLootType.GADGET:
+			 RegisterWeaponForUse( data.baseWeapon )
+
+
+
+
+
+			 if ( data.pickupString == "" )
+				 data.pickupString = GetWeaponInfoFileKeyField_GlobalString( data.baseWeapon, "printName" )
+
+			 if ( data.desc == "" )
+				 data.desc = GetWeaponInfoFileKeyField_GlobalString( data.baseWeapon, "description" )
+
+			 data.hudIcon = GetWeaponInfoFileKeyFieldAsset_Global( data.baseWeapon, "hud_icon" )
+			 break
+
+		case eLootType.AMMO:
+			 data.countPerDrop = GetCurrentPlaylistVarInt( "loot_ammo_per_drop_override_" + data.ref, data.countPerDrop )
+			 data.inventorySlotCount = GetCurrentPlaylistVarInt( "inventory_ammo_stacksize_override_" + data.ref, data.inventorySlotCount )
+			 break
+
+		case eLootType.ATTACHMENT:
+			 int row = GetDataTableRowMatchingStringValue( attachmentTable, GetDataTableColumnByName( attachmentTable, "mod" ), data.ref )
+			 data.pickupString = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "name" ) )
+			 data.desc = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "description" ) )
+			 data.hopupPopupDesc = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "hopupPopupDesc" ) )
+
+			 data.ammoType = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "ammoType" ) )
+
+			 data.specialCaseInvalidReason = ""
+			 if ( data.hudIcon == $"" )
+				 data.hudIcon = GetDataTableAsset( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "image" ) )
+
+			 string attachmentPointStr = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "attachmentPoint" ) )
+			 array<string> attachmentPointList = split( attachmentPointStr, WHITESPACE_CHARACTERS )
+			 data.attachmentStyle = GetDataTableString( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "type" ) )
+			 data.attachmentType = SURVIVAL_Loot_GetAttachmentType_Enum( attachmentPointList[0] )
+			 data.emptyImage = GetDataTableAsset( attachmentTable, row, GetDataTableColumnByName( attachmentTable, "emptyImage" ) )
+
+			if ( data.brandAsset == $"" )
+			{
+				data.brandAsset = Playlist_GetDataTableAssetNoPrecache( data.ref, attachmentTable, row, "brandAsset", "_mod_override_brand_asset_" )
+			}
+
+
+
+
+
+
+
+			 break
+	}
+}
+
+array<string> function GetDisabledLootRefsFromPlaylist()
+{
+	return SURVIVAL_Loot_GetDisabledLootRefsForPlaylist( GetCurrentPlaylistName() )
+}
+
+array<string> function SURVIVAL_Loot_GetDisabledLootRefsForPlaylist( string playlistName )
+{
+	array< string > result
+
+	string disabledRefs = GetPlaylistVarString( playlistName, "survival_disabled_loot", " " )
+	
+	if( UpgradeCore_ArmorTiedToUpgrades()
+
+
+
+	)
+	{
+		string upgradeDisabledRefs = GetPlaylistVarString( playlistName, "upgrade_core_survival_disabled_loot", " armor_pickup_lv0 armor_pickup_lv0_evolving armor_pickup_lv1 armor_pickup_lv1_evolving armor_pickup_lv2 armor_pickup_lv2_evolving armor_pickup_lv3 armor_pickup_lv3_evolving armor_pickup_lv4_exec_armor armor_pickup_lv4_all_fast" )
+		disabledRefs += upgradeDisabledRefs
+	}
+
+	if( GetPlaylistVarBool( playlistName, "faster_ttk_enabled", true ) )
+	{
+		string upgradeDisabledRefs = GetPlaylistVarString( playlistName, "faster_ttk_survival_disabled_loot", " helmet_pickup_lv1 helmet_pickup_lv2 helmet_pickup_lv3" )
+		disabledRefs += upgradeDisabledRefs
+	}
+
+
+		if ( GetPlaylistVarBool( playlistName, "Integrated_IncapShield_Enabled", true ) )
+		{
+			string upgradeDisabledRefs = GetPlaylistVarString( playlistName, "Integrated_IncapShield_Disabled_Loot", " incapshield_pickup_lv1 incapshield_pickup_lv2 incapshield_pickup_lv3" )
+			disabledRefs += upgradeDisabledRefs
+		}
+
+
+	result.extend( split( disabledRefs, WHITESPACE_CHARACTERS ) )
+
+	disabledRefs = GetPlaylistVarString( playlistName, "survival_disabled_weapons", " " )
+	result.extend( split( disabledRefs, WHITESPACE_CHARACTERS ) )
+
+	disabledRefs = GetPlaylistVarString( playlistName, "global_disabled_loot", " " )
+	result.extend( split( disabledRefs, WHITESPACE_CHARACTERS ) )
+
+	return result
+}
+
+
+table< string, asset > LOOT_OVERRIDE_DATATABLE_ASSET = {
+
+		[ "unhinged_base_loot_overrides" ] 						= $"datatable/unhinged_base_loot_overrides.rpak",
+		[ "unhinged_loot_group_remapping" ] 					= $"datatable/unhinged_loot_group_remapping.rpak",
+		[ "unhinged_weapon_attachment_matrix_overrides" ]		= $"datatable/unhinged_weapon_attachment_matrix_overrides.rpak",
+
+
+
+
+
+}
+
+asset ornull function SURVIVAL_Loot_GetLootOverrideTableAsset( string overrideTableID )
+{
+	asset ornull tableAsset = null
+	if ( overrideTableID in LOOT_OVERRIDE_DATATABLE_ASSET )
+		tableAsset = LOOT_OVERRIDE_DATATABLE_ASSET[overrideTableID]
+	return tableAsset
+}
+
+array< LootData > function GetLootDataOverrides()
+{
+	string lootOverrideTableStr = SURVIVAL_Loot_GetLootOverrideTableString()
+	table< string, LootData > result
+	foreach ( string entry in GetTrimmedSplitLoweredString( lootOverrideTableStr, " " ) )
+	{
+		asset ornull overrideTableAsset = SURVIVAL_Loot_GetLootOverrideTableAsset( entry )
+		if ( overrideTableAsset != null )
+		{
+			 expect asset( overrideTableAsset )
+			 var overrideTable = GetDataTable( overrideTableAsset )
+			 int overrideTableRows = GetDataTableRowCount( overrideTable )
+			 for ( int i = 0; i < overrideTableRows; i++ )
+			 {
+				 LootData data =  ReadLootItemFromDatatableRow( overrideTable, i, string( overrideTableAsset ) )
+				 result[data.ref] <- data
+			 }
+		}
+	}
+
+#if DEV
+		printt( "[LootOverrides] " + FUNC_NAME() + " loot items total: " + result.len() )
+#endif
+
+	return result.clonevalues()
+}
+
+int function CountLootItemsFromDatatables()
+{
+	var dt = GetDataTable( LOOT_DATATABLE )
+	int numRows = GetDataTableRowCount( dt )
+
+	string lootOverrideTableStr = SURVIVAL_Loot_GetLootOverrideTableString()
+	if ( lootOverrideTableStr == "" )
+		return numRows
+
+	int col_ref = GetDataTableColumnByName( dt, "ref" )
+	table<string, bool> lootRefs
+	for ( int i = 0; i < numRows; i++  )
+	{
+		string ref = GetDataTableString( dt, i, col_ref )
+		lootRefs[ref] <- false
+	}
+	int numAdds = 0
+	foreach ( string entry in GetTrimmedSplitLoweredString( lootOverrideTableStr, " " ) )
+	{
+		asset ornull overrideTableAsset = SURVIVAL_Loot_GetLootOverrideTableAsset( entry )
+		if ( overrideTableAsset != null )
+		{
+			expect asset( overrideTableAsset )
+			var overrideTable = GetDataTable( overrideTableAsset )
+			int overrideTableRows = GetDataTableRowCount( overrideTable )
+			for ( int i = 0; i < overrideTableRows; i++ )
+			{
+				string ref = GetDataTableString( overrideTable, i, col_ref )
+				if ( !(ref in lootRefs) )
+				{
+					lootRefs[ref] <- true
+					numAdds++
+				}
+			}
+		}
+	}
+
+#if ( DEV && !DEV )
+		
+		
+		printt( "[LootOverrides] " + FUNC_NAME() + " loot items total: " + lootRefs.len() + " base table: " + GetDataTableRowCount( dt ) + " numAdds: " + numAdds + " returned count: " + ( numRows + numAdds ) )
+		foreach( string ref, bool isAdd in lootRefs )
+		{
+			if ( isAdd )
+			{
+				printt("[LootOverrides] ADDED *** " + ref )
+			}
+		}
+#endif
+
+	return numRows + numAdds
+}
+
+int function SURVIVAL_Loot_FloorSpawnCategoryStringToInt( string spawnCategory )
+{
+	if ( spawnCategory == "NONE" )
+		return eFloorSpawnCategory.NONE
+	else if ( spawnCategory == "CORE" )
+		return eFloorSpawnCategory.CORE
+	else if ( spawnCategory == "EVENT" )
+		return eFloorSpawnCategory.EVENT
+	else if ( spawnCategory == "EVENTS" )
+		return eFloorSpawnCategory.EVENT
+	else if ( spawnCategory == "PROTO" )
+		return eFloorSpawnCategory.PROTO
+
+
+
+
+	else if ( spawnCategory == "NOSPAWN" )
+		return eFloorSpawnCategory.NOSPAWN
+	else
+		return eFloorSpawnCategory.NONE
+
+	return eFloorSpawnCategory.NONE
+}
+
+string function SURVIVAL_Loot_FloorSpawnCategoryIntToString( int spawnCategory )
+{
+	switch( spawnCategory )
+	{
+		case eFloorSpawnCategory.NONE:
+			return "NONE"
+		case eFloorSpawnCategory.CORE:
+			return "CORE"
+		case eFloorSpawnCategory.EVENT:
+			return "EVENT"
+		case eFloorSpawnCategory.PROTO:
+			return "PROTO"
+
+
+
+
+		case eFloorSpawnCategory.NOSPAWN:
+			return "NOSPAWN"
+		default:
+			return "NONE"
+	}
+	return "NONE"
+}
+
+bool function WeaponHasLockedHopup( LootData weaponData )
+{
+	array<string> mods = clone weaponData.baseMods
+	foreach ( mod in mods )
+	{
+		if ( !SURVIVAL_Loot_IsRefValid( mod ) )
+			continue
+
+		if ( SURVIVAL_Loot_GetLootDataByRef( mod ).lootType != eLootType.ATTACHMENT )
+			continue
+
+		if ( SURVIVAL_Loot_GetLootDataByRef( mod ).lootTags.contains( "LockedHopup" ) )
+			return true
+	}
+
+	return false
+}
+
+bool function SURVIVAL_Weapon_IsAttachmentLocked( string weaponName )
+{
+
+		if( GameMode_IsActive( eGameModes.ARENAS ) )
+			return true
+
+
+	if ( !SURVIVAL_Loot_IsRefValid( weaponName ) )
+		return false
+	LootData data = SURVIVAL_Loot_GetLootDataByRef( weaponName )
+	array<string> baseMods = data.baseMods
+	array<string> lootTags = data.lootTags
+
+	if ( baseMods.contains( WEAPON_LOCKEDSET_MOD_CRATE ) )
+		return true
+
+	if ( lootTags.contains( WEAPON_LOCKEDSET_LOOT_TAG ) )
+		return true
+
+	if ( WeaponLootRefIsLockedSet( data.ref ) )
+		return true
+
+	return false
+}
+
+bool function SURVIVAL_IsAttachmentPointLocked( string weaponName, string attachmentPoint, array<string> activeMods = [] )
+{
+
+		if( GameMode_IsActive( eGameModes.ARENAS ) )
+			return true
+
+
+	if ( SURVIVAL_Weapon_IsAttachmentLocked( weaponName ) )
+	{
+
+
+
+
+		if ( attachmentPoint == "sight" )
+			return !GetCurrentPlaylistVarBool( "swappable_optic_for_kitted_weapons", true )
+		else
+			return true
+	}
+
+	if ( SURVIVAL_Loot_IsRefValid( weaponName ) )
+	{
+		LootData data = SURVIVAL_Loot_GetLootDataByRef( weaponName )
+		array<string> baseMods = data.baseMods
+
+
+			
+			if ( attachmentPoint == "barrel" && baseMods.contains( AUTO_HEMLOK_BARREL_ATTACHMENT ) )
+			{
+				return true
+			}
+
+
+		
+		if ( attachmentPoint.find( "hopup" ) != -1 && WeaponHasLockedHopup( data ) )
+		{
+			return true
+		}
+	}
+
+
+	if ( HasLockedCorruptedAttachments() )
+	{
+		foreach ( mod in activeMods )
+		{
+			if ( !SURVIVAL_Loot_IsRefValid( mod ) )
+				continue
+
+			if ( SURVIVAL_Loot_GetLootDataByRef( mod ).lootType != eLootType.ATTACHMENT )
+				continue
+
+			if ( !IsAttachmentCorrupted( SURVIVAL_Loot_GetLootDataByRef( mod ) ) )
+				continue
+
+			
+			LootData attachData = SURVIVAL_Loot_GetLootDataByRef( mod )
+			string attachStyle = ""
+			if ( attachData.attachmentStyle.find( "barrel" ) >= 0 || attachData.attachmentStyle.find( "laser_sight" ) >= 0 )
+				attachStyle = "barrel"
+			else if ( attachData.attachmentStyle.find( "mag" ) >= 0 )
+				attachStyle = "mag"
+			else if ( attachData.attachmentStyle.find( "sight" ) >= 0 )
+				attachStyle = "sight"
+			else if ( attachData.attachmentStyle.find( "stock" ) >= 0 )
+				attachStyle = "grip"
+			else if ( attachData.attachmentStyle.find( "hopupMulti_a" ) >= 0 )
+				attachStyle = "hopupMultiA"
+			else if ( attachData.attachmentStyle.find( "hopupMulti_b" ) >= 0 )
+				attachStyle = "hopupMultiB"
+			else if ( attachData.attachmentStyle.find( "hopup" ) >= 0 )
+				attachStyle = "hopup"
+
+			if( attachStyle == "" )
+				continue
+
+			if ( attachmentPoint == attachStyle || attachmentPoint == attachData.attachmentStyle )
+				return true
+		}
+	}
+
+	return false
+}
+
+bool function WeaponLootRefIsLockedSet( string ref )
+{
+	
+	if ( SURVIVAL_Loot_IsRefValid( ref ) )
+	{
+		LootData weaponData = SURVIVAL_Loot_GetLootDataByRef( ref )
+
+
+
+
+
+
+		return weaponData.baseWeapon != ref
+	}
+	return false
+}
+
+void function SURVIVAL_Loot_All_InitShared()
+{
+
+
+
+
+
+
+
+
+	var dt = GetDataTable( LOOT_DATATABLE )
+
+	file.lootIndexToString.clear()
+	file.lootData.clear()
+	file.restrictedLootInfo.clear()
+#if DEV
+		file.lootDataOverrides.clear()
+#endif
+
+
+		file.disabledRefs.clear()
+
+
+	array<string> playlistDisabledRefs = GetDisabledLootRefsFromPlaylist()
+	foreach( string disabledRef in playlistDisabledRefs)
+	{
+		file.disabledRefs[ disabledRef ] <- IN_SET
+	}
+
+	int numRows = GetDataTableRowCount( dt )
+	Assert( numRows < MAX_LOOT_ITEMS, "Exceeded max loot items, this is an RPC range limit, you can probably bump the MAX_LOOT_ITEMS value ( MAX_LOOT_ITEMS = " + MAX_LOOT_ITEMS + ", numRows = " + numRows + " )" )
+
+	for ( int i = 0; i < numRows; i++ )
+	{
+		LootData data = ReadLootItemFromDatatableRow( dt, i, string( LOOT_DATATABLE ) )
+		file.lootData[ data.ref ] <- data
+	}
+
+	array< LootData > lootDataOverrides = GetLootDataOverrides()
+
+	foreach ( LootData data in lootDataOverrides )
+	{
+#if DEV
+		file.lootDataOverrides[data.ref] <- clone data
+#endif
+		file.lootData[data.ref] <- data
+	}
+
+	foreach ( LootData data in file.lootData )
+	{
+		InitLootItemDataByType( data )
+
+		data.index = file.lootIndexToString.len()
+		file.lootIndexToString.append( data.ref )
+
+		if ( data.isDisabled )
+		{
+			SURVIVAL_Loot_AddDisabledRef( data.ref )
+		}
+
+
+
+
+
+
+
+
+
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	SURVIVAL_Loot_InitRestrictedLoot()
+
+	
+	foreach ( func in file.lootFinalizedCallbacks )
+	{
+		func( )
+	}
+
+	file.initialized = true
+
+
+
+
+}
+
+void function SURVIVAL_Loot_AddCallback_LootFinalized( void functionref( ) callback )
+{
+	Assert( !file.lootFinalizedCallbacks.contains( callback ), "Tried to add a callback that was already added" )
+	file.lootFinalizedCallbacks.append( callback )
+}
+void function SURVIVAL_Loot_RemoveCallback_LootFinalized( void functionref( ) callback )
+{
+	Assert( file.lootFinalizedCallbacks.contains( callback ), "Tried to remove a callback that was not added" )
+	file.lootFinalizedCallbacks.fastremovebyvalue( callback )
+}
+
+
+
+void function SURVIVAL_SetCallback_GetArmorShieldCapacity( int functionref( int ) func )
+{
+	Assert( file.GetArmorShieldCapacity_Callback == null )
+	file.GetArmorShieldCapacity_Callback = func
+}
+
+int function SURVIVAL_GetArmorShieldCapacity( int tier )
+{
+	
+	if ( file.GetArmorShieldCapacity_Callback != null )
+		return file.GetArmorShieldCapacity_Callback( tier )
+
+	switch ( tier )
+	{
+		case ARMOR_GREY_TIER:
+			return UPGRADE_CORE_GREY_ARMOR_CAPACITY
+
+		case ARMOR_WHITE_TIER:
+			return DEFAULT_WHITE_ARMOR_HEALTH
+
+		case ARMOR_BLUE_TIER:
+			return DEFAULT_BLUE_ARMOR_HEALTH
+
+		case ARMOR_PURPLE_TIER:
+			return DEFAULT_PURPLE_ARMOR_HEALTH
+		case ARMOR_GOLD_TIER:
+			return DEFAULT_GOLD_ARMOR_HEALTH
+		case ARMOR_RED_TIER:
+			return DEFAULT_RED_ARMOR_HEALTH
+		default:
+			Assert( false, "SURVIVAL_GetArmorShieldCapacity: Invalid armor tier: " + tier )
+			return DEFAULT_GREY_ARMOR_HEALTH
+	}
+
+	return DEFAULT_GREY_ARMOR_HEALTH
+}
+
+int function GetShieldTierFromShieldAmount( int amount )
+{
+	int tier = 0
+	for( int i = 0; i <= ARMOR_RED_TIER; ++i )
+	{
+		int shieldAmtForTier = SURVIVAL_GetArmorShieldCapacity( i )
+		if ( amount <= shieldAmtForTier)
+		{
+			tier = i
+			break
+		}
+	}
+
+
+
+
+
+
+
+
+	return tier
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function SURVIVAL_Loot_GetColorIDFromLootTier( int lootTier )
+{
+	switch ( lootTier )
+	{
+		case eLootTier.COMMON:
+			return COLORID_HUD_LOOT_TIER1
+		case eLootTier.RARE:
+			return COLORID_HUD_LOOT_TIER2
+		case eLootTier.EPIC:
+			return COLORID_HUD_LOOT_TIER3
+		case eLootTier.LEGENDARY:
+			return COLORID_HUD_LOOT_TIER4
+		case eLootTier.MYTHIC:
+			return COLORID_HUD_LOOT_TIER5
+	}
+	return COLORID_HUD_LOOT_TIER1
+}
+
+array<string> function SURVIVAL_Loot_GetSortedStringArrayFromSupportedAttachmentsString( string supportedAttachmentsString )
+{
+	array<string> supportedAttachments = split( supportedAttachmentsString, WHITESPACE_CHARACTERS )
+	supportedAttachments.sort(
+		int function( string attachmentA, string attachmentB ) : ()
+		{
+			int aIndex = WEAPON_ATTACHMENT_SORT_ORDER.find( attachmentA )
+			int bIndex = WEAPON_ATTACHMENT_SORT_ORDER.find( attachmentB )
+			if ( aIndex > bIndex )
+				return 1
+			else if ( aIndex < bIndex )
+				return -1
+
+			return 0
+		}
+	)
+	return supportedAttachments
+}
+
+table< string, LootData > function SURVIVAL_Loot_GetLootDataTable()
+{
+	return file.lootData
+}
+
+array<LootData> function SURVIVAL_Loot_GetByType( int lootType )
+{
+	array<LootData> lootOfType = []
+	foreach ( string lootRef, LootData lootData in file.lootData )
+	{
+		if ( lootData.lootType != lootType )
+			continue
+
+		lootOfType.append( lootData )
+	}
+
+	return lootOfType
+}
+
+array<LootData> function SURVIVAL_Loot_GetByTier( int tier )
+{
+	array<LootData> lootOfTier = []
+	foreach ( string lootRef, LootData lootData in file.lootData )
+	{
+		if ( lootData.tier!= tier )
+			continue
+
+		if ( SURVIVAL_Loot_IsRefDisabled( lootData.ref ) )
+			continue
+
+		printt( lootData.ref )
+
+		lootOfTier.append( lootData )
+	}
+
+	return lootOfTier
+}
+
+
+int function SURVIVAL_Loot_GetLootTypeFromString( string lootTypeString )
+{
+	Assert( lootTypeString != "", "Loot Type has null type defined in survival_loot.csv" )
+	switch( lootTypeString )
+	{
+		case "main_weapon":
+			return eLootType.MAINWEAPON
+
+		case "ammo":
+			return eLootType.AMMO
+
+		case "health":
+			return eLootType.HEALTH
+
+		case "armor":
+			return eLootType.ARMOR
+
+		case "incapshield":
+			return eLootType.INCAPSHIELD
+
+		case "jumpkit":
+			return eLootType.JUMPKIT
+
+		case "ordnance":
+			return eLootType.ORDNANCE
+
+		case "attachment":
+			return eLootType.ATTACHMENT
+
+		case "backpack":
+			return eLootType.BACKPACK
+
+		case "custom_pickup":
+			return eLootType.CUSTOMPICKUP
+
+		case "helmet":
+			return eLootType.HELMET
+
+
+		case AUGMENT_SLOT_REF:
+			return eLootType.AUGMENT
+
+
+
+
+
+
+
+
+
+		case "data_knife":
+			return eLootType.DATAKNIFE
+
+
+
+		case "ship_keycard":
+			return eLootType.SHIPKEYCARD
+
+
+		case "blank":
+			return eLootType.BLANK
+
+		case "resource":
+			return eLootType.RESOURCE
+
+
+
+
+
+
+		case "lockbox":
+			return eLootType.LOCKBOX
+
+
+
+
+
+
+
+
+
+
+
+		case "gadget":
+			return eLootType.GADGET
+
+
+		case "marvin_arm":
+			return eLootType.MARVIN_ARM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		case "collectable_nessie":
+			return eLootType.COLLECTABLE_NESSIE
+
+
+
+
+
+		case "evo_pickup":
+			return eLootType.EVO_CACHE
+
+
+
+
+
+
+
+		case "self_res_kit":
+			return eLootType.SELF_RES_KIT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		default:
+			
+			string warnMsg = "Error Building LootData Struct: Unknown loot type string: "
+			Warning( warnMsg + lootTypeString )
+			return eLootType.BLANK
+	}
+
+	unreachable
+}
+
+int function SURVIVAL_Loot_GetAttachmentType_Enum( string attachmentType )
+{
+	int attachmentStyle = eWeaponAttachmentType.NONE
+	switch( attachmentType )
+	{
+		case "mag":
+			attachmentStyle = eWeaponAttachmentType.MAG
+			break
+		case "sight":
+			attachmentStyle = eWeaponAttachmentType.SCOPE
+			break
+		case "barrel":
+			attachmentStyle = eWeaponAttachmentType.BARREL
+			break
+		case "grip":
+		case "stock":
+			attachmentStyle = eWeaponAttachmentType.STOCK
+			break
+		case "hopup":
+			attachmentStyle = eWeaponAttachmentType.HOPUP
+			break
+		default:
+			break
+	}
+	return attachmentStyle
+}
+
+LootData function SURVIVAL_Loot_GetLootDataByIndex( int index )
+{
+	return file.lootData[ file.lootIndexToString[ index ] ]
+}
+
+
+void function SURVIVAL_Loot_SetLootTargetLockedStartTimeByIndex( int index )
+{
+	file.lootData[ file.lootIndexToString[ index ] ].targetLockedStartTime = GetUnixTimestamp()
+}
+
+
+
+
+
+
+
+
+
+bool function SURVIVAL_Loot_IsLootIndexValid( int index )
+{
+	return file.lootIndexToString.isvalidindex( index )
+}
+
+
+LootData function SURVIVAL_Loot_GetLootDataByRef( string ref )
+{
+
+
+
+
+
+
+
+
+
+
+
+	return file.lootData[ ref ]
+}
+
+
+bool function SURVIVAL_Loot_IsRefValid( string ref )
+{
+	return (ref in file.lootData)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function SURVIVAL_Loot_IsRefDisabled( string ref )
+{
+	return (ref in file.disabledRefs )
+}
+
+bool function SURVIVAL_Loot_IsReforBaseWeaponDisabled( string ref )
+{
+	if( SURVIVAL_Loot_IsRefDisabled( ref ) )
+		return true
+
+	
+	if( !SURVIVAL_Loot_IsRefValid( ref ) )
+		return true
+
+	
+	LootData lootData = SURVIVAL_Loot_GetLootDataByRef( ref )
+
+
+
+
+
+
+	if( lootData.lootType == eLootType.MAINWEAPON && SURVIVAL_Loot_IsRefDisabled( lootData.baseWeapon ) )
+		return true
+
+	return false
+}
+
+void function SURVIVAL_Loot_AddDisabledRef( string ref )
+{
+	file.disabledRefs[ ref ] <- IN_SET
+}
+
+void function SURVIVAL_Loot_RemoveDisabledRef( string ref )
+{
+	if ( ref in file.disabledRefs )
+	{
+		delete file.disabledRefs[ref]
+	}
+}
+
+#if DEV
+void function DEV_PrintDisabledLoot()
+{
+	printt("Dumping Disabled Loot")
+	foreach ( string ref, void _ in file.disabledRefs )
+	{
+		printt( ref )
+	}
+}
+
+void function DEV_PrintLootDataOverrides()
+{
+	var dt = GetDataTable( LOOT_DATATABLE )
+	int numRows = GetDataTableRowCount( dt )
+	int ref_col = GetDataTableColumnByName( dt, "ref" )
+	table<string, LootData>	baseLootData
+	for ( int i = 0; i < numRows; i++ )
+	{
+		string ref = GetDataTableString( dt, i, ref_col )
+		if ( ref in file.lootDataOverrides )
+		{
+			LootData data = ReadLootItemFromDatatableRow( dt, i, string( LOOT_DATATABLE ) )
+			baseLootData[data.ref] <- data
+		}
+	}
+
+	foreach ( string ref, LootData override in file.lootDataOverrides )
+	{
+		if ( ref in baseLootData )
+		{
+			printt( "[LootOverride] MODIFY item " + ref + " from source " + override.dev_source )
+
+			LootData base = baseLootData[ref]
+
+			asset overrideTableAsset = GetAssetFromString( override.dev_source )
+			var dtOverride = GetDataTable( overrideTableAsset )
+			int baseRow = GetDataTableRowMatchingStringValue( dt, ref_col, ref )
+			int overrideRow = GetDataTableRowMatchingStringValue( dtOverride, ref_col, ref )
+
+			string baseString
+			string overrideString
+			if ( base.pingCommsAction != override.pingCommsAction )
+			{
+				printt( "+ pingCommsAction " + base.pingCommsAction + " -> " + override.pingCommsAction )
+			}
+			if ( base.baseWeapon != override.baseWeapon )
+			{
+				printt( "+ baseWeapon " + base.baseWeapon + " -> " + override.baseWeapon )
+			}
+			if ( string( base.fakeAmmoIcon ) != string( override.fakeAmmoIcon ) )
+			{
+				printt( "+ fakeAmmoIcon " + string( base.fakeAmmoIcon ) + " -> " + string ( override.fakeAmmoIcon ) )
+			}
+			if ( base.brandAsset != override.brandAsset )
+			{
+				printt( "+ brandAsset " + string( base.brandAsset )  + " -> " + string ( override.brandAsset ) )
+			}
+			baseString = GetLootTableString( ref, dt, baseRow, "baseMods" )
+			overrideString = GetLootTableString( ref, dtOverride, overrideRow, "baseMods" )
+			if ( baseString != overrideString )
+			{
+				printt( "+ baseMods " + baseString  + " -> " + overrideString )
+			}
+			if ( base.model != override.model )
+			{
+				printt( "+ model " + string( base.model )  + " -> " + string ( override.model ) )
+			}
+			if ( base.skinOverride != override.skinOverride  )
+			{
+				printt( "+ skinOverride " + base.skinOverride + " -> " + override.skinOverride )
+			}
+			if ( base.hudIcon != override.hudIcon )
+			{
+				printt( "+ hudIcon " + string( base.hudIcon )  + " -> " + string ( override.hudIcon ) )
+			}
+			if ( base.attachSound != override.attachSound )
+			{
+				printt( "+ attachSound " + base.attachSound + " -> " + override.attachSound )
+			}
+			if ( base.pickupSound_3p != override.pickupSound_3p )
+			{
+				printt( "+ pickupSound_3p " + base.pickupSound_3p + " -> " + override.pickupSound_3p )
+			}
+			if ( base.pickupSound_1p != override.pickupSound_1p)
+			{
+				printt( "+ pickupSound_1p " + base.pickupSound_1p + " -> " + override.pickupSound_1p )
+			}
+			if ( base.carrySound != override.carrySound )
+			{
+				printt( "+ carrySound " + base.carrySound + " -> " + override.carrySound )
+			}
+			if ( base.scrapValue != override.scrapValue )
+			{
+				printt( "+ scrapValue " + base.scrapValue + " -> " + override.scrapValue )
+			}
+			if ( base.droppodRotate != override.droppodRotate )
+			{
+				printt( "+ droppodRotate " + base.droppodRotate + " -> " + override.droppodRotate )
+			}
+			if ( base.isDynamic != override.isDynamic )
+			{
+				printt( "+ isDynamic " + base.isDynamic + " -> " + override.isDynamic )
+			}
+			if ( base.pretendsToBeBlank != override.pretendsToBeBlank )
+			{
+				printt( "+ pretendsToBeBlank " + base.pretendsToBeBlank + " -> " + override.pretendsToBeBlank )
+			}
+			if ( base.conditional != override.conditional )
+			{
+				printt( "+ conditional " + base.conditional + " -> " + override.conditional )
+			}
+			if ( base.printPickupToObituary != override.printPickupToObituary )
+			{
+				printt( "+ printPickupToObituary " + base.printPickupToObituary + " -> " + override.printPickupToObituary  )
+			}
+			if ( base.restrictFromSling != override.restrictFromSling )
+			{
+				printt( "+ restrictFromSling " + base.restrictFromSling+ " -> " + override.restrictFromSling )
+			}
+			if ( base.pickupString != override.pickupString )
+			{
+				printt( "+ pickupString " + base.pickupString + " -> " + override.pickupString )
+			}
+			if ( base.desc != override.desc )
+			{
+				printt( "+ desc " + base.desc + " -> " + override.desc )
+			}
+			if ( base.countPerDrop != override.countPerDrop )
+			{
+				printt( "+ countPerDrop " + base.countPerDrop + " -> " + override.countPerDrop )
+			}
+			if ( base.tier != override.tier )
+			{
+				printt( "+ tier " + base.tier + " -> " + override.tier )
+			}
+			if ( base.isDisabled != override.isDisabled )
+			{
+				printt( "+ isDisabled " + base.isDisabled + " -> " + override.isDisabled )
+			}
+			baseString = GetLootTableString(ref, dt, baseRow, "supportedAttachments" )
+			overrideString = GetLootTableString( ref, dtOverride, overrideRow, "supportedAttachments" )
+			if ( baseString != overrideString )
+			{
+				printt( "+ supportedAttachments " + baseString + " -> " + overrideString )
+			}
+			baseString = GetLootTableString(ref, dt, baseRow, "lootTags" )
+			overrideString = GetLootTableString( ref, dtOverride, overrideRow, "lootTags" )
+			if ( baseString != overrideString )
+			{
+				printt( "+ lootTags " + baseString + " -> " + overrideString )
+			}
+			if ( base.lootType != override.lootType )
+			{
+				printt( "+ lootType " + base.lootType + " -> " + override.lootType )
+			}
+			if ( base.netInt != override.netInt )
+			{
+				printt( "+ netInt " + base.netInt + " -> " + override.netInt )
+			}
+			if ( base.inventorySlotCount != override.inventorySlotCount )
+			{
+				printt( "+ inventorySlotCount " + base.inventorySlotCount + " -> " + override.inventorySlotCount )
+			}
+			if ( base.floorSpawnCategory != override.floorSpawnCategory )
+			{
+				printt( "+ floorSpawnCategory " + base.floorSpawnCategory + " -> " + override.floorSpawnCategory )
+			}
+			baseString = GetLootTableString(ref, dt, baseRow, "passive" )
+			overrideString = GetLootTableString( ref, dtOverride, overrideRow, "passive" )
+			if ( baseString != overrideString )
+			{
+				printt( "+ passive " + baseString + " -> " + overrideString )
+			}
+			if ( base.cosmeticSkinOverride != override.cosmeticSkinOverride )
+			{
+				printt( "+ cosmeticSkinOverride " + string( base.cosmeticSkinOverride )  + " -> " + string ( override.cosmeticSkinOverride ) )
+			}
+		}
+		else
+		{
+			printt( "[LootOverride] ADD item " + ref + " from source " + override.dev_source )
+		}
+	}
+}
+
+void function DEV_PrintLootDataByRef( string ref )
+{
+	LootData data = SURVIVAL_Loot_GetLootDataByRef( ref )
+	printt( "=== LootData for ref: " + ref + " ===" )
+	printt( "ref:", data.ref )
+	printt( "tier:", data.tier )
+	printt( "index:", data.index )
+	printt( "inventorySlotCount:", data.inventorySlotCount )
+	printt( "pingCommsAction:", data.pingCommsAction )
+	printt( "requestCommsAction:", data.requestCommsAction )
+	printt( "model:", data.model )
+	printt( "skinOverride:", data.skinOverride )
+	printt( "hudIcon:", data.hudIcon )
+	printt( "hudIconSquare:", data.hudIconSquare )
+	printt( "craftingIcon:", data.craftingIcon )
+	printt( "attachSound:", data.attachSound )
+	printt( "pickupSound_1p:", data.pickupSound_1p )
+	printt( "pickupSound_3p:", data.pickupSound_3p )
+	printt( "carrySound:", data.carrySound )
+	printt( "pickupString:", data.pickupString )
+	printt( "desc:", data.desc )
+	printt( "hopupPopupDesc:", data.hopupPopupDesc )
+	printt( "countPerDrop:", data.countPerDrop )
+	printt( "lootType:", data.lootType )
+	printt( "netInt:", data.netInt )
+	printt( "ammoType:", data.ammoType )
+	printt( "secondaryAmmoType:", data.secondaryAmmoType )
+	printt( "isActive:", data.isActive )
+	printt( "passive:", data.passive )
+	printt( "attachmentStyle:", data.attachmentStyle )
+	printt( "attachmentType:", data.attachmentType )
+	printt( "scrapValue:", data.scrapValue )
+	printt( "droppodRotate:", data.droppodRotate )
+	printt( "isDynamic:", data.isDynamic )
+	printt( "conditional:", data.conditional )
+	printt( "printPickupToObituary:", data.printPickupToObituary )
+	printt( "pretendsToBeBlank:", data.pretendsToBeBlank )
+	printt( "baseWeapon:", data.baseWeapon )
+	foreach ( attachment in data.supportedAttachments )
+	{
+		printt( "supportedAttachments:", attachment )
+	}
+	foreach ( attachment in data.disabledAttachments )
+	{
+		printt( "disabledAttachments:", attachment )
+	}
+	foreach ( lootTag in data.lootTags )
+	{
+		printt( "lootTags:", lootTag )
+	}
+		foreach ( fakeMod in data.fakeMods )
+	{
+		printt( "fakeMods:", fakeMod )
+	}
+	foreach ( baseMode in data.baseMods )
+	{
+		printt( "baseMods:", baseMode )
+	}
+	printt( "fakeAmmoIcon:", data.fakeAmmoIcon )
+	printt( "brandAsset:", data.brandAsset )
+	printt( "collabCharacter:", data.collabCharacter )
+	printt( "restrictFromSling:", data.restrictFromSling )
+	printt( "hideFromDeathbox:", data.hideFromDeathbox )
+	printt( "hideFromBlackMarket:", data.hideFromBlackMarket )
+	printt( "isDisabled:", data.isDisabled )
+	printt( "floorSpawnCategory:", data.floorSpawnCategory )
+	printt( "cosmeticSkinOverride:", data.cosmeticSkinOverride )
+	printt( "targetLockedStartTime:", data.targetLockedStartTime )
+	printt( "===============================\n" )
+}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+vector function GetFXRarityColorForTier( int tier )
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		return GetKeyColor( COLORID_FX_LOOT_TIER0, tier )
+
+
+	unreachable
+}
+
+
+
+vector function GetFXRarityColorForUnlockable( int tier )
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		return GetKeyColor( COLORID_FX_LOOT_TIER0, tier + 1 )
+
+
+	unreachable
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function SURVIVAL_Loot_IsUniqueAmmoWeapon( string ref )
+{
+	return file.uniqueAmmoWeaponRefs.contains( ref )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+string function SURVIVAL_Loot_GetPickupString( LootData data, entity forPlayer )
+{
+	string result = Localize( data.pickupString )
+
+
+		if ( data.passive != ePassives.INVALID && data.ref.find( "augment" ) == -1 )
+
+
+
+	{
+		string passiveName = PASSIVE_NAME_MAP[data.passive]
+		result = Localize( "#HUD_LOOT_WITH_PASSIVE", result, Localize( passiveName ) )
+	}
+
+	return result
+}
+
+string function SURVIVAL_Loot_GetDesc( LootData data, entity forPlayer )
+{
+	string result = Localize( data.desc )
+
+	if ( data.passive != ePassives.INVALID )
+	{
+		string passiveName = PASSIVE_NAME_MAP[data.passive]
+		string passiveDesc = PASSIVE_DESCRIPTION_SHORT_MAP[data.passive]
+		result = Localize( "#HUD_LOOT_WITH_PASSIVE_DESC", result, Localize( passiveName ).toupper(), Localize( passiveDesc ) )
+
+
+			if( data.ref.find( "augment" ) != -1 )
+				result = Localize( passiveDesc )
+
+	}
+	else if( data.lootType == eLootType.AMMO )
+	{
+		result = Localize( data.pickupString )
+	}
+
+	
+	foreach ( func in file.editLootDescCallbacks )
+	{
+		result = func( data.ref, forPlayer, result )
+	}
+
+	return result
+}
+
+string function SURVIVAL_GetButtonStringForLootActionType( int actionType, bool isInMenu, bool isHoldAction = false )
+{
+	switch( actionType )
+	{
+		case eLootActionType.PRIMARY_ACTION:
+			if( isInMenu )
+				return "%[A_BUTTON|MOUSE1]%"
+			else if( isHoldAction )
+				return "%use_long%"
+			else
+				return "%&use%"
+
+			break
+
+		case eLootActionType.ALT_ACTION:
+			if( isInMenu )
+				return "%[X_BUTTON|MOUSE2]%"
+			else
+				return "%&use_alt%"
+
+			break
+
+		case eLootActionType.PRIMARY_SWAP:
+			if( isInMenu )
+			{
+				if( IsControllerModeActive() )
+					return "%L_SHOULDER%"
+				return "%&melee%"
+			}
+
+			return ""
+			break
+
+		case eLootActionType.CHARACTER_ACTION1:
+			if( isInMenu )
+			{
+				if( IsControllerModeActive() )
+					return "%L_TRIGGER%"
+
+				return "%&offhand1%"
+			}
+
+			return ""
+			break
+
+		case eLootActionType.CHARACTER_ACTION2:
+			if( isInMenu )
+			{
+				if( IsControllerModeActive() )
+					return "%R_TRIGGER%"
+				return "%&use%"
+			}
+
+			return ""
+			break
+	}
+
+	return ""
+}
+
+void function AddCallback_EditLootDesc( string functionref( string, entity, string ) callback )
+{
+	Assert( !file.editLootDescCallbacks.contains( callback ), "Tried to add a callback that was already added" )
+	file.editLootDescCallbacks.append( callback )
+}
+void function RemoveCallback_EditLootDesc( string functionref( string, entity, string ) callback )
+{
+	Assert( file.editLootDescCallbacks.contains( callback ), "Tried to remove a callback that was not added" )
+	file.editLootDescCallbacks.fastremovebyvalue( callback )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+array< string > function SURVIVAL_Loot_GetRestrictedDialogArray( int restrictedLootType )
+{
+	array< string > dialogArray = [ file.restrictedLootInfo[ restrictedLootType ].dialogPopupHeader,
+	                                file.restrictedLootInfo[ restrictedLootType ].dialogPopupAreYouSure,
+	                                file.restrictedLootInfo[ restrictedLootType ].dialogPopupDeny ]
+
+	return dialogArray
+}
+
+
+void function SURVIVAL_Loot_InitRestrictedLoot()
+{
+	{
+		RestrictedLootInfo emptyLoot
+		
+		file.restrictedLootInfo[ eRestrictedLootTypes.VAULT ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+			file.restrictedLootInfo[ eRestrictedLootTypes.VAULT ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_VAULT_CONFIRM_HEADER"
+			file.restrictedLootInfo[ eRestrictedLootTypes.VAULT ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_VAULT_CONFIRM_BODY"
+			file.restrictedLootInfo[ eRestrictedLootTypes.VAULT ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_VAULT_DENY_BODY"
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+		
+		file.restrictedLootInfo[ eRestrictedLootTypes.SHIP_VAULT ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+			file.restrictedLootInfo[ eRestrictedLootTypes.SHIP_VAULT ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_BRIDGE_VAULT_CONFIRM_HEADER"
+			file.restrictedLootInfo[ eRestrictedLootTypes.SHIP_VAULT ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_BRIDGE_VAULT_CONFIRM_BODY"
+			file.restrictedLootInfo[ eRestrictedLootTypes.SHIP_VAULT ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_BRIDGE_VAULT_DENY_BODY"
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+		
+		file.restrictedLootInfo[ eRestrictedLootTypes.BLOODHOUND_TT ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+			file.restrictedLootInfo[ eRestrictedLootTypes.BLOODHOUND_TT ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_BLOODTT_CONFIRM_HEADER"
+			file.restrictedLootInfo[ eRestrictedLootTypes.BLOODHOUND_TT ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_BLOODTT_CONFIRM_BODY"
+			file.restrictedLootInfo[ eRestrictedLootTypes.BLOODHOUND_TT ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_BLOODTT_DENY_BODY"
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+		
+		file.restrictedLootInfo[ eRestrictedLootTypes.CAUSTIC_TT ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+
+
+
+			file.restrictedLootInfo[ eRestrictedLootTypes.CAUSTIC_TT ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_CAUSTICTT_CONFIRM_HEADER"
+			file.restrictedLootInfo[ eRestrictedLootTypes.CAUSTIC_TT ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_CAUSTICTT_CONFIRM_BODY"
+			file.restrictedLootInfo[ eRestrictedLootTypes.CAUSTIC_TT ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_CAUSTICTT_DENY_BODY"
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+
+			
+			file.restrictedLootInfo[ eRestrictedLootTypes.RAMPART_TT ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+				file.restrictedLootInfo[ eRestrictedLootTypes.RAMPART_TT ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_RAMPARTTT_CONFIRM_HEADER"
+				file.restrictedLootInfo[ eRestrictedLootTypes.RAMPART_TT ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_RAMPARTTT_CONFIRM_BODY"
+				file.restrictedLootInfo[ eRestrictedLootTypes.RAMPART_TT ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_RAMPARTTT_DENY_BODY"
+
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+
+			
+			file.restrictedLootInfo[ eRestrictedLootTypes.SPECTRE_SHACK ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+				file.restrictedLootInfo[ eRestrictedLootTypes.SPECTRE_SHACK ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_SMARTLOOT_CONFIRM_HEADER"
+				file.restrictedLootInfo[ eRestrictedLootTypes.SPECTRE_SHACK ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_SMARTLOOT_CONFIRM_BODY"
+				file.restrictedLootInfo[ eRestrictedLootTypes.SPECTRE_SHACK ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_SMARTLOOT_DENY_BODY"
+
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+
+			
+			file.restrictedLootInfo[ eRestrictedLootTypes.EXPLOSIVE_HOLDS ] <- emptyLoot
+
+
+
+
+
+
+
+
+
+				file.restrictedLootInfo[ eRestrictedLootTypes.EXPLOSIVE_HOLDS ].dialogPopupHeader = "#LOBA_ULT_BLACK_MARKET_EXPLOSIVEHOLD_CONFIRM_HEADER"
+				file.restrictedLootInfo[ eRestrictedLootTypes.EXPLOSIVE_HOLDS ].dialogPopupAreYouSure = "#LOBA_ULT_BLACK_MARKET_EXPLOSIVEHOLD_CONFIRM_BODY"
+				file.restrictedLootInfo[ eRestrictedLootTypes.EXPLOSIVE_HOLDS ].dialogPopupDeny = "#LOBA_ULT_BLACK_MARKET_EXPLOSIVEHOLD_DENY_BODY"
+
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+
+			
+			file.restrictedLootInfo[ eRestrictedLootTypes.PVE_AIRDROP ] <- emptyLoot
+
+
+
+
+
+
+	}
+
+	{
+		RestrictedLootInfo emptyLoot
+
+
+
+
+
+
+
+
+	}
+
+		{
+		RestrictedLootInfo emptyLoot
+
+
+
+
+
+
+
+
+
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Integrated_IncapShield_Enabled()
+{
+	bool enabled = GetCurrentPlaylistVarBool ( "Integrated_IncapShield_Enabled" , true )
+
+	return enabled
+}
+
+
+
+bool function HasLockedCorruptedAttachments()
+{
+	return GetCurrentPlaylistVarBool( "has_locked_corrupted_attachments", false )
+}
+
+bool function HasExclusiveCorruptedAttachments()
+{
+	return GetCurrentPlaylistVarBool( "has_exclusive_corrupted_attachments", true )
+}
+
+bool function IsAttachmentCorrupted( LootData data )
+{
+	return data.lootTags.contains( "corrupted_attachment" )
+}
+
+bool function IsStockpileWeapon (  string weaponName )
+{
+	if ( IsWeaponKeyFieldDefined ( weaponName , "non_crate_stockpile_weapon" ) && GetWeaponInfoFileKeyField_Global( weaponName, "non_crate_stockpile_weapon" ) == 1 )
+		return true
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+string function GetAttachmentPointName( string attachmentPoint )
+{
+	switch ( attachmentPoint )
+	{
+		case "barrel":
+			return "#SLOT_BARREL"
+
+		case "mag":
+			return "#SLOT_MAG"
+
+		case "grip":
+			return "#SLOT_GRIP"
+
+
+
+
+
+
+
+
+		case "hopup":
+		case "hopupMulti_a":
+		case "hopupMulti_b":
+			return "#SLOT_HOPUP"
+
+		case "sight":
+			return "#SLOT_SIGHT"
+	}
+
+	unreachable
+}

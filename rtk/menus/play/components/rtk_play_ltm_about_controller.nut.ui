@@ -1,0 +1,191 @@
+global function RTKPlayLTMAbout_OnInitialize
+global function RTKPlayLTMAbout_OnPreDestroy
+
+global struct RTKPlayLTMAbout_Properties
+{
+	rtk_behavior button
+}
+
+const string MODEL_ROOT = "play"
+const string MODEL_NAME = "aboutMode"
+
+void function RTKPlayLTMAbout_OnInitialize( rtk_behavior self )
+{
+	if( !IsFullyConnected() || !IsLobby() )
+		return
+
+	string bindingPath = "&" + RTK_MODELTYPE_MENUS + "." + MODEL_ROOT + "." + MODEL_NAME
+	self.GetPanel().SetBindingRootPath( bindingPath )
+
+	rtk_behavior ornull button = self.PropGetBehavior( "button" )
+	if ( button != null )
+	{
+		expect rtk_behavior( button )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			rtk_struct rootModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_ROOT, "RTKPlayMenuModelStruct" )
+			rtk_struct modelStruct = RTKStruct_GetOrCreateScriptStruct( rootModelStruct, MODEL_NAME, "RTKPlayLTMAboutModelStruct" )
+			if ( RTKStruct_GetBool( modelStruct, "visible" ) )
+				OpenPlaylistTutorialDialog( GamemodeUtility_GetPlaylist() )
+		})
+
+		self.AutoSubscribe( button, "onHighlightedOrFocused", function( rtk_behavior button, int prevState ) : ( self, bindingPath ) {
+			RTKDataModel_SetBool( bindingPath + ".hovered", true )
+		} )
+
+		self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, bindingPath ) {
+			RTKDataModel_SetBool( bindingPath + ".hovered", false )
+		} )
+	}
+
+	UpdateDataModel()
+
+	AddCallback_OnPartyUpdated( UpdateDataModel )
+	AddCallback_LobbyPlaylist_OnSelectedPlaylistChanged( Callback_SelectedPlaylistChanged )
+}
+
+void function RTKPlayLTMAbout_OnPreDestroy( rtk_behavior self )
+{
+	RemoveCallback_OnPartyUpdated( UpdateDataModel )
+	RemoveCallback_LobbyPlaylist_OnSelectedPlaylistChanged( Callback_SelectedPlaylistChanged )
+}
+
+void function Callback_SelectedPlaylistChanged( string newPlaylistName )
+{
+	if( !IsFullyConnected() || !IsLobby() )
+		return
+
+	UpdateDataModel()
+}
+
+void function UpdateDataModel()
+{
+	rtk_struct rootModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_ROOT, "RTKPlayMenuModelStruct" )
+	rtk_struct modelStruct = RTKStruct_GetOrCreateScriptStruct( rootModelStruct, MODEL_NAME, "RTKPlayLTMAboutModelStruct" )
+	string selectedPlaylist = LobbyPlaylist_GetSelectedPlaylist()
+	bool showLTMAboutButton = GetPlaylistVarBool( selectedPlaylist, "show_ltm_about_button", false )
+	bool showLTMAboutSplashTimer = GetPlaylistVarBool( selectedPlaylist, "show_ltm_about_splash_timer", false  )
+	bool LTMisTakeover = GetPlaylistVarBool( selectedPlaylist, "show_ltm_about_button_is_takeover", false )
+	string takeoverAbout = GetPlaylistVarString( selectedPlaylist, "survival_takeover_about", "" )
+
+	string splashArtString = GetPlaylistVarString( selectedPlaylist, "show_ltm_about_button_splash_art", "" )
+
+	
+#if SUPPORTS_COMPACT_UI
+        if ( IsUsingCompactUILayout() )
+            splashArtString = ""
+#endif
+
+	asset splashArtInner = splashArtString == "" ? $"" : GameMode_GetPlayImageInner( [ splashArtString ] )
+	asset splashArtOuter = splashArtString == "" ? $"" : GameMode_GetPlayImageOuter( [ splashArtString ] )
+
+	RTKStruct_SetBool( modelStruct, "visible", showLTMAboutButton )
+	bool hasSplashArt = splashArtInner != $""
+	RTKStruct_SetBool( modelStruct, "hasSplashArt", hasSplashArt )
+	RTKStruct_SetAssetPath( modelStruct, "splashArtInnerAssetPath", splashArtInner )
+	RTKStruct_SetAssetPath( modelStruct, "splashArtOuterAssetPath", splashArtOuter )
+	RTKStruct_SetInt( modelStruct, "comingSoonTime", -1 )
+
+	var hudElement = Hud_GetChild( Hud_GetChild( GetMenu( "LobbyMenu" ), "PlayPanel" ), "AboutButton" )
+	float yScaling = GetScreenSize().height / 720.0
+	float xScaling = GetScreenSize().width / 1280.0
+
+#if SUPPORTS_COMPACT_UI
+        if ( IsUsingCompactUILayout() )
+        {
+            Hud_SetY( hudElement, 6 * yScaling )
+        }
+        else
+#endif
+        {
+            Hud_SetWidth( hudElement, ( hasSplashArt ? 367 : 280) * xScaling )
+            Hud_SetHeight( hudElement, ( hasSplashArt ? 163 : 96 ) * yScaling )
+            Hud_SetY( hudElement, ( hasSplashArt ? 2 : 4 ) * yScaling )
+        }
+
+	if ( showLTMAboutButton )
+	{
+		string splashTitleText = GetPlaylistVarString( selectedPlaylist, "show_ltm_about_button_splash_title", "" )
+		if ( splashTitleText != "" )
+		{
+			RTKStruct_SetString( modelStruct, "splashTitleText", Localize( splashTitleText ) )
+		}
+		else
+		{
+			RTKStruct_SetString( modelStruct, "splashTitleText", "#ABOUT_GAMEMODE" )
+		}
+
+		if ( LTMisTakeover )
+		{
+			RTKStruct_SetBool( modelStruct, "extendBorder", true )
+			RTKStruct_SetString( modelStruct, "buttonText", GetPlaylistVarString( selectedPlaylist, "override_takeover_about_button_text", "#ABOUT_TAKEOVER" ) )
+		}
+		else
+		{
+			RTKStruct_SetBool( modelStruct, "extendBorder", false )
+			RTKStruct_SetString( modelStruct, "buttonText", "#ABOUT_GAMEMODE" )
+		}
+
+		asset emblemImage = GetModeEmblemImage( selectedPlaylist, hasSplashArt )
+
+		if ( emblemImage == $"" )
+		{
+			emblemImage = $"rui/menu/gamemode_emblem/generic_ltm"
+		}
+		RTKStruct_SetAssetPath( modelStruct, "emblemImage", emblemImage )
+
+		array<int> emblemColor = GetEmblemColor( selectedPlaylist )
+		RTKStruct_SetFloat3( modelStruct, "emblemColor", SrgbToLinear( <emblemColor[0], emblemColor[1], emblemColor[2]> / 255.0 ) )
+		RTKStruct_SetFloat( modelStruct, "emblemAlpha", emblemColor[3] / 255.0 )
+
+		
+		string ornull scheduleName = GetScheduleFromPlaylist( selectedPlaylist )
+		if ( scheduleName != null )
+		{
+			expect string( scheduleName )
+
+			string upcomingPlaylistName = GetNextPlaylistForSchedule( scheduleName )
+			if ( upcomingPlaylistName != "" )
+			{
+				int showUpcomingInXHours = GetPlaylistVarInt( upcomingPlaylistName, "show_coming_soon_x_hours_before", -1 )
+				TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( selectedPlaylist )
+				if ( showUpcomingInXHours >= 1 && showUpcomingInXHours <= 8760 && playlistTimeRange != null )
+				{
+					int remainingTimeSeconds = maxint( 0, expect TimestampRange( playlistTimeRange ).endUnixTime - GetUnixTimestamp() )
+					if ( remainingTimeSeconds > 0 && remainingTimeSeconds <= showUpcomingInXHours * 3600  )
+					{
+						RTKStruct_SetInt( modelStruct, "comingSoonTime", expect TimestampRange( playlistTimeRange ).endUnixTime )
+						RTKStruct_SetString( modelStruct, "comingSoonName", Localize( GetPlaylistVarString( upcomingPlaylistName, "title", "" ) ) )
+					}
+				}
+			}
+		}
+	}
+
+	if ( LTMisTakeover && takeoverAbout != "" )
+	{
+		RTKStruct_SetString( modelStruct, "titleText", GetPlaylistVarString( LobbyPlaylist_GetSelectedPlaylist(), "survival_takeover_title", "#PL_PLAY_APEX" ) )
+		RTKStruct_SetString( modelStruct, "descText", takeoverAbout )
+	}
+	else
+	{
+		RTKStruct_SetString( modelStruct, "titleText", "" )
+		RTKStruct_SetString( modelStruct, "descText", "" )
+	}
+
+	if ( showLTMAboutButton && showLTMAboutSplashTimer )
+	{
+		TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( selectedPlaylist )
+		if ( playlistTimeRange != null && ( expect TimestampRange( playlistTimeRange ).endUnixTime > GetUnixTimestamp() ) )
+		{
+			RTKStruct_SetInt( modelStruct, "endTime", expect TimestampRange( playlistTimeRange ).endUnixTime )
+		}
+		else
+		{
+			RTKStruct_SetInt( modelStruct, "endTime", 0 )
+		}
+	}
+	else
+	{
+		RTKStruct_SetInt( modelStruct, "endTime", 0 )
+	}
+}

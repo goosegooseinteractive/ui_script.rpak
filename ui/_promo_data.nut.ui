@@ -1,0 +1,447 @@
+global function InitPromoData
+global function GetPromoImage
+global function OpenPromoLink
+global function IsValidUMAction
+
+#if DEV
+global function DEV_PrintUMPromoData
+#endif
+
+
+global const string UM_LOCATION_PROMO_UM   = ""
+global const string UM_LOCATION_PROMO_MINI = ""
+global const string UM_LOCATION_BATTLEPASS = "battlepass"
+global const string UM_LOCATION_NEW_PLAYER_BATTLEPASS = "new_player_battlepass"
+
+global const string UM_LOCATION_LEGEND_BATTLEPASS = "legend_battlepass"
+
+global const string UM_LOCATION_RETURNING_PLAYER_BATTLEPASS = "returning_player_battlepass"
+global enum eBattlepassUMType
+{
+	NONE = 0,
+	MESSAGE = 1,
+	DEEPLINK = 2
+}
+
+struct
+{
+	table<string, asset> imageMap
+} file
+
+
+void function InitPromoData()
+{
+	var dataTable = GetDataTable( $"datatable/promo_images.rpak" )
+	for ( int i = 0; i < GetDataTableRowCount( dataTable ); i++ )
+	{
+		string name = GetDataTableString( dataTable, i, GetDataTableColumnByName( dataTable, "name" ) ).tolower()
+		asset image = GetDataTableAsset( dataTable, i, GetDataTableColumnByName( dataTable, "image" ) )
+		if ( name != "" )
+			file.imageMap[name] <- image
+	}
+}
+
+
+asset function GetPromoImage( string identifier )
+{
+	identifier = identifier.tolower()
+
+	asset image
+	if ( identifier in file.imageMap )
+		image = file.imageMap[identifier]
+	else
+		image = $"rui/promo/apex_title_blue"
+
+	return image
+}
+
+void function OpenPromoLink( string linkType, string link, string fromPageId = "" )
+{
+#if DEV
+	printt( "### OpenPromoLink - linkType:", linkType, "- link:", link, "- fromPageId:", fromPageId )
+#endif
+
+	switch ( linkType )
+	{
+		case "battlepass":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToSeasonTab( "RTKBattlepassPanel" )
+			break
+
+		case "battlepass_milestone":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToSeasonTab( "RTKBattlepassPanel" )
+			OpenBattlePassMilestoneDialog()
+			break
+
+		case "battlepass_level":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToSeasonTab( "RTKBattlepassPanel" )
+			BattlePass_PurchaseButton_OnActivate( null )
+			break
+
+		case "progression_modifiers":
+			EmitUISound( "UI_Menu_Accept" )
+			OpenProgressionModifiersMenu()
+			break
+
+		case "battlepass_purchase_premium":
+			OpenBattlepassPurchaseMenu( ePassPurchaseTab.PREMIUM )
+			break
+
+		case "battlepass_purchase_ultimate":
+			OpenBattlepassPurchaseMenu( ePassPurchaseTab.ULTIMATE )
+			break
+
+		case "battlepass_purchase_plus":
+		case "battlepass_purchase_ultimate_plus":
+			OpenBattlepassPurchaseMenu( ePassPurchaseTab.ULTIMATE_PLUS )
+			break
+
+		case "newplayerpass":
+			if ( PlayerPass_IsActive( GetLocalClientPlayer(), ePassType.NEWPLAYER ) )
+			{
+				EmitUISound( "UI_Menu_Accept" )
+				JumpToSeasonTab( "RTKNewplayerpassPanel" )
+			}
+#if DEV
+			else
+			{
+				Assert( false, "[Possible Misconfiguration] Attempted to deeplink to New Player Pass but there is no active pass.\n Please check your configuration." )
+			}
+#endif
+			break
+
+		case "returningplayerpass":
+			if ( PlayerPass_IsActive( GetLocalClientPlayer(), ePassType.RETURNING_PLAYER ) )
+			{
+				EmitUISound( "UI_Menu_Accept" )
+				JumpToSeasonTab( "RTKReturningplayerpassPanel" )
+			}
+#if DEV
+			else
+			{
+				Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Returning Player Pass but there is no active pass.\n Please check your configuration." )
+			}
+#endif
+			break
+
+
+
+
+
+
+
+		case "challenges":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToChallenges( link )
+			break
+
+		case "playapex":
+			EmitUISound( "UI_Menu_Accept" )
+			OpenGameModeSelectDialog()
+			break
+
+		case "storecharacter":
+			EmitUISound( "UI_Menu_Accept" )
+			entity player = GetLocalClientPlayer()
+			if ( IsValidItemFlavorCharacterRef( link ) )
+			{
+				ItemFlavor character = GetItemFlavorByCharacterRef( link )
+				if ( GRX_IsInventoryReady( player ) && Loadout_IsCharacterUnlockedForPlayer( player, character )  )
+					JumpToCharactersTab()
+				else
+					JumpToCharacterCustomize( character )
+			}
+			else if ( IsValidItemFlavorGUID( ConvertItemFlavorGUIDStringToGUID( link ) ) )
+			{
+				ItemFlavor character = GetItemFlavorByGUID( ConvertItemFlavorGUIDStringToGUID( link ) )
+				if ( GRX_IsInventoryReady( player ) && Loadout_IsCharacterUnlockedForPlayer( player, character ) )
+					JumpToCharactersTab()
+				else
+					JumpToCharacterCustomize( character )
+			}
+			else
+			{
+				JumpToCharactersTab()
+			}
+			break
+
+		case "collectionevent":
+			EmitUISound( "UI_Menu_Accept" )
+			ItemFlavor ornull activeCollectionEvent = GetActiveCollectionEvent( GetUnixTimestamp() )
+			if ( activeCollectionEvent != null )
+			{
+				EventsPanel_SetOpenPageIndex( eEventsPanelPage.COLLECTION_EVENT )
+				JumpToEventTab( "CollectionEventPanel" )
+			}
+			else
+			{
+				JumpToStoreTab()
+#if DEV
+					Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Collection Event but there is no active collection event.\n Please check your configuration." )
+#endif
+			}
+			break
+
+		case "url":
+			EmitUISound( "UI_Menu_Accept" )
+			LaunchExternalWebBrowser( link, WEBBROWSER_FLAG_NONE )
+			break
+
+
+		case "storyevent":
+			EmitUISound( "UI_Menu_Accept" )
+			array<ItemFlavor> storyChallengeEvents = GetActiveStoryChallengeEvents( GetUnixTimestamp() )
+			if ( storyChallengeEvents.len() <= 0 )
+				return
+			StoryEventAboutDialog_SetEvent( storyChallengeEvents[0] )
+			AdvanceMenu( GetMenu( "StoryEventAboutDialog" ) )
+			break
+
+		case "milestoneevent":
+			ItemFlavor ornull milestoneEvent = GetActiveEventTabMilestoneEvent( GetUnixTimestamp() )
+			if ( milestoneEvent != null )
+			{
+				switch ( link )
+				{
+					case "landingpage":
+						EventsPanel_SetOpenPageIndex( eEventsPanelPage.LANDING )
+						break
+
+					case "purchasepack":
+						EventsPanel_SetOpenPageIndex( eEventsPanelPage.MILESTONES )
+						break
+
+					case "freerewards":
+						ItemFlavor ornull activeEventShop = EventShop_GetCurrentActiveEventShop()
+						if ( activeEventShop == null )
+						{
+#if DEV
+								Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Milestone Event Event Shop but there is no available store.\n Please check your configuration." )
+#endif
+							return
+						}
+
+						EventsPanel_SetOpenPageIndex( eEventsPanelPage.EVENT_SHOP )
+						break
+
+					case "prizetrack":
+						bool hasActivePrizeTrack = GetActiveBuffetEventArray( GetUnixTimestamp() ).len() > 0
+						if ( !hasActivePrizeTrack )
+						{
+#if DEV
+								Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Milestone Event Prize Track but there is none available.\n Please check your configuration." )
+#endif
+							return
+						}
+						EventsPanel_SetOpenPageIndex( eEventsPanelPage.PRIZE_TRACKER )
+						break
+				}
+				JumpToEventTab( "RTKEventsPanel" )
+			}
+#if DEV
+			else
+			{
+				Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Milestone Event but there is no available Milestone Event.\n Please check your configuration." )
+			}
+#endif
+			break
+
+		case "storemilestoneevent":
+			array<ItemFlavor> storeMilestoneEvents = GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() )
+			if ( storeMilestoneEvents.len() > 0 )
+			{
+				JumpToStoreMilestoneEventsMenu( link, fromPageId )
+			}
+#if DEV
+			else
+			{
+				Assert( false, "[Possible Misconfiguration] Attempted to deeplink to Store Milestone Event but there is no available Store Event.\n Please check your configuration." )
+			}
+#endif
+			break
+
+		case "storeOfferShop":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToStoreSection( link )
+			break
+
+		case "storeMythicShop":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToMythicSection( link )
+			break
+
+		case "storePackShop":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToStorePacks()
+			break
+
+		case "rumble":
+			EmitUISound( "UI_Menu_Accept" )
+			GamemodeSelect_JumpToCups( null )
+			break
+
+
+		case "newplayerpasstutorial":
+			UI_OpenFeatureTutorialDialog( NEW_PLAYER_PASS_TUTORIAL )
+			break
+
+		case "newplayerpassinfo":
+			OpenNewPlayerPassInfo( ePassType.NEWPLAYER )
+			break
+
+		case "newplayerchallengeinfo":
+			OpenChallengesInfo()
+			break
+
+
+		case "returningplayerpasstutorial":
+			UI_OpenFeatureTutorialDialog( RETURNING_PLAYER_PASS_TUTORIAL )
+			break
+
+		case "returningplayerpassinfo":
+			OpenNewPlayerPassInfo( ePassType.RETURNING_PLAYER )
+			break
+
+		case "returningplayerchallengeinfo":
+			OpenChallengesInfo()
+			break
+
+
+		case "legendpassinfo":
+			ConfirmDialogData dialogData
+			dialogData.headerText = "#STORE_V2_SECTION_LEGENDPASS"
+			dialogData.messageText = Localize( "#LEGENDPASS_MORE_INFO_DESC" )
+			dialogData.contentHeight = 740
+			OpenOKDialogFromData( dialogData )
+			break
+
+
+		case "acwalletmodal":
+			if ( CanOpenWalletModal() )
+			{
+				OpenWalletModal( eTabbedModalType.WALLET_APEX_COINS )
+			}
+			break
+
+
+
+
+
+
+
+		case "storeSpecialOffersShop":
+			EmitUISound( "UI_Menu_Accept" )
+			JumpToSpecialOffersSection( link )
+			break
+
+
+		case "legendpass":
+		{
+			if ( link != "" )
+			{
+				int guid = ConvertItemFlavorGUIDStringToGUID( link )
+				if ( IsValidItemFlavorGUID( guid ) )
+				{
+					OpenCharacterLegendPass( guid )
+				}
+				else
+				{
+					OpenLegendPassPanel()
+				}
+			}
+			else
+			{
+				OpenLegendPassPanel()
+			}
+			break
+		}
+
+
+
+		case "roadToRankedTutorial":
+		{
+			UI_OpenFeatureTutorialDialog( ROAD_TO_RANKED_TUTORIAL )
+			break
+		}
+
+
+
+		case "rankedRumbleOverview":
+		{
+			EmitUISound( "UI_Menu_Accept" )
+			OpenRankedInfoPage( null )
+			if ( RankedInfo_IsTabVisible( "OverviewPanel" ) )
+			{
+				RankedInfo_SetInitialTab( "OverviewPanel" )
+			}
+			break
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		case "wishlist":
+		{
+			EmitUISound( "UI_Menu_Accept" )
+			OpenWishlistMenu()
+			break
+		}
+	}
+}
+
+string function GetLocationFromUMAction( UMAction action )
+{
+	foreach ( UMItem item in action.items )
+	{
+		if ( item.name == "Location" )
+		{
+			return item.value
+		}
+	}
+
+	return ""
+}
+
+bool function IsValidUMAction( UMAction action, string uiLocation )
+{
+	if ( GetLocationFromUMAction( action ) == uiLocation )
+	{
+		return true
+	}
+
+	return false
+}
+
+#if DEV
+void function DEV_PrintUMPromoData()
+{
+	UMData um = EADP_UM_GetPromoData()
+	printt( "triggerId:", um.triggerId )
+	printt( "triggerName:", um.triggerName )
+	foreach( int i, UMAction action in um.actions )
+	{
+		printt( "action", i, "name:", action.name, "- trackingId:", action.trackingId)
+		foreach( int j, UMItem item in action.items )
+		{
+			printt( "\titem", j, "type:", item.type, "- name:", item.name, "value:", item.value )
+			foreach( int k, UMAttribute attr in item.attributes )
+			{
+				printt( "\t\tattr", k, "key:", attr.key, "value:", attr.value )
+			}
+		}
+	}
+}
+#endif

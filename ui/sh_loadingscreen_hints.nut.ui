@@ -1,0 +1,190 @@
+
+
+
+
+
+
+global function LoadingScreenHints_ClientToUI_GetHintsData
+
+
+const string SHOW_LOADING_HINTS_PVAR = "show_loading_hints"
+const int MAX_HINT_COUNT = 3	
+
+
+
+
+
+
+
+
+
+
+
+
+struct
+{
+
+
+
+
+} file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function LoadingScreenHints_ClientToUI_GetHintsData()
+{
+	thread LoadingScreenHints_ClientToUI_GetHintsData_Thread()
+}
+
+
+void function LoadingScreenHints_ClientToUI_GetHintsData_Thread()
+{
+	AssertIsNewThread()
+
+	while ( !IsFullyConnected() )
+	{
+		WaitFrame()
+	}
+
+	string currentPlaylist = GamemodeUtility_GetPlaylist()
+	string playlistRules = GetPlaylist_UIRules( currentPlaylist )
+	array< featureTutorialTab > featureTutorialData = FeatureTutorial_GetFeatureTabs( playlistRules )
+
+	int hintCount = 0
+	foreach ( featureTutorialTab tab in featureTutorialData )
+	{
+		foreach ( featureTutorialData rule in tab.rules )
+		{
+			if ( hintCount >= MAX_HINT_COUNT )
+				return
+
+			string title = Localize( rule.title )
+			string description = FeatureTutorial_GetLocalizedDescription( rule )	
+
+			if ( CanRunClientScript() )
+			{
+				RunClientScript( "LoadingScreenHints_UIToClient_UpdateHintsRui", hintCount, title, description, rule.image )
+			}
+
+			hintCount++
+		}
+	}
+}
+

@@ -1,0 +1,439 @@
+global function RTKUniversalMeleeInspectScreen_OnInitialize
+global function RTKUniversalMeleeInspectScreen_OnDestroy
+global function RTKUniversalMeleeInspectScreen_InspectOffer
+
+global struct RTKUniversalMeleeInspectScreen_Properties
+{
+	rtk_behavior universalMeleeInspectBehavior
+}
+
+struct
+{
+	GRXScriptOffer& offer
+} file
+
+const string UNIVERSAL_MELEE_MODEL_PATH = "universalMeleeInspect"
+const string UNIVERSAL_MELEE_INSPECT_VGUI_MENU = "RTKUniversalMeleeInspectMenu"
+const string UNIVERSAL_MELEE_INSPECT_RTK_SCREEN = "RTKUniversalMeleeInspectScreen"
+
+void function RTKUniversalMeleeInspectScreen_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior universalMeleeIspect = self.PropGetBehavior( "universalMeleeInspectBehavior" )
+
+	
+	RTKInspectScreen_OverrideScreenDataModel( universalMeleeIspect, void function() : ( universalMeleeIspect ) {
+		RTKUniversalMeleeInspectScreen_SetScreenDataModel( universalMeleeIspect )
+	} )
+	RTKInspectScreen_OverridePurchaseButtonFunction( universalMeleeIspect, void function( rtk_behavior button, int keycode, int prevState ) : ( universalMeleeIspect ) {
+		RTKUniversalMeleeInspectScreen_OnPurchaseButtonPressed( universalMeleeIspect )
+	} )
+	RTKInspectScreen_OverrideOnPreviewGridIndexChanged( universalMeleeIspect, void function() : ( universalMeleeIspect ) {
+		RTKUniversalMeleeInspectScreen_OnPreviewGridIndexChanged( universalMeleeIspect )
+	} )
+
+	array<ItemFlavor> offerItems = file.offer.output.flavors
+	ItemFlavor offerMeleeSkinOrFirstItem = GetMeleeSkinFromOfferFlavors( file.offer.output.flavors )
+	ItemFlavor baseItem = CosmeticSet_GetBaseItems( offerMeleeSkinOrFirstItem )[ 0 ]
+
+	
+	RTKInspectScreen_ShowModelPreview( universalMeleeIspect, offerMeleeSkinOrFirstItem )
+	RTKInspectScreen_SetIsGiftingEnabled( universalMeleeIspect, false )
+	RTKInspectScreen_SetSubtitle( universalMeleeIspect, "#MYTHIC_WEAPON_USABILITY" )
+
+	string disclaimer2Text = Localize( "#MYTHIC_WEAPON_DISCLAIMER_2_DESCRIPTION", Localize( ItemFlavor_GetLongName( baseItem ) ) )
+	RTKInspectScreen_SetDisclaimer2( universalMeleeIspect, disclaimer2Text )
+
+	
+	RegisterWalletButtonPressCallbacks()
+	RTKUniversalMeleeInspectScreen_AddWalletButtonHandlers()
+
+	var menu = GetMenu( UNIVERSAL_MELEE_INSPECT_VGUI_MENU )
+	if ( IsValid( menu ) )
+	{
+		AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+		UpdateFooterOptions()
+	}
+}
+
+void function RTKUniversalMeleeInspectScreen_OnDestroy( rtk_behavior self )
+{
+	
+	DeregisterWalletButtonPressCallbacks()
+	RTKUniversalMeleeInspectScreen_RemoveWalletButtonHandlers()
+
+	var menu = GetMenu( UNIVERSAL_MELEE_INSPECT_VGUI_MENU )
+	if ( IsValid( menu ) )
+		ClearMenuFooterOptions( menu )
+}
+
+void function RTKUniversalMeleeInspectScreen_AddWalletButtonHandlers()
+{
+	var menu = GetMenu( UNIVERSAL_MELEE_INSPECT_VGUI_MENU )
+	if ( !IsValid( menu ) )
+		return
+
+	var coinsPopUpButton = Hud_GetChild( menu, "CoinsPopUpButton" )
+	if ( IsValid( coinsPopUpButton ) )
+	{
+		Hud_AddEventHandler( coinsPopUpButton, UIE_CLICK, OpenVCPopUp )
+		RuiSetBool( Hud_GetRui( coinsPopUpButton ), "hasACBonus", GRX_IsPlayerEligibleForACBonus() )
+	}
+
+	var exoticShardsPopUpButton = Hud_GetChild( menu, "ExoticShardsPopUpButton" )
+	if ( IsValid( exoticShardsPopUpButton ) )
+		Hud_AddEventHandler( exoticShardsPopUpButton, UIE_CLICK, OpenExoticShardsModal )
+}
+
+void function RTKUniversalMeleeInspectScreen_RemoveWalletButtonHandlers()
+{
+	var menu = GetMenu( UNIVERSAL_MELEE_INSPECT_VGUI_MENU )
+	if ( !IsValid( menu ) )
+		return
+
+	var coinsPopUpButton = Hud_GetChild( menu, "CoinsPopUpButton" )
+	if ( IsValid( coinsPopUpButton ) )
+		Hud_RemoveEventHandler( coinsPopUpButton, UIE_CLICK, OpenVCPopUp )
+
+	var exoticShardsPopUpButton = Hud_GetChild( menu, "ExoticShardsPopUpButton" )
+	if ( IsValid( exoticShardsPopUpButton ) )
+		Hud_RemoveEventHandler( exoticShardsPopUpButton, UIE_CLICK, OpenExoticShardsModal )
+}
+
+
+
+
+void function RTKUniversalMeleeInspectScreen_OnPurchaseButtonPressed( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return
+
+	ItemFlavorBag price = file.offer.prices[ 0 ]
+	ItemFlavor item = file.offer.output.flavors[ 0 ]
+
+	if ( CosmeticSet_IsBaseItem( item ) && CosmeticSet_IsRewardForAnyActiveEvent( item ) )
+	{
+		if ( GRX_IsOfferRestricted() && CosmeticSet_IsRewardForMilestoneEventWithWishlistEnabled( item ) )
+			return
+
+		if ( CosmeticSet_IsRewardForActiveStoreOnlyMilestoneEvent( item ) )
+		{
+			array<ItemFlavor> activeStoreOnlyMilestoneEvents = GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() )
+
+			foreach ( activeEvent in activeStoreOnlyMilestoneEvents )
+			{
+				string milestoneId = MilestoneEvent_GetEventId( activeEvent )
+				JumpToStoreMilestoneEventsMenu( milestoneId )
+				break
+			}
+		}
+		else if ( CosmeticSet_IsRewardForActiveMilestoneEvent( item ) )
+		{
+			EventsPanel_SetOpenPageIndex( eEventsPanelPage.MILESTONES )
+			JumpToEventTab( "RTKEventsPanel" )
+		}
+		else if( CosmeticSet_IsRewardForActiveCollectionEvent( item ) )
+		{
+			EventsPanel_SetOpenPageIndex( eEventsPanelPage.COLLECTION_EVENT )
+			JumpToEventTab( "RTKEventsPanel" )
+		}
+	}
+	else if ( !GRX_CanAfford( price, 1 ) )
+	{
+		switch( price.flavors[ 0 ] )
+		{
+			case GRX_CURRENCIES[ GRX_CURRENCY_PREMIUM ]:
+				OpenVCPopUp( null )
+				break
+			case GRX_CURRENCIES[ GRX_CURRENCY_EXOTIC ]:
+				OpenExoticShardsModal( null )
+				break
+			case GRX_CURRENCIES[ GRX_CURRENCY_HEIRLOOM ]:
+				PurchaseDialogConfig pdc
+				pdc.offer = file.offer
+				pdc.quantity = 1
+
+				PurchaseDialog( pdc )
+				break
+		}
+	}
+	else
+	{
+		PurchaseDialogConfig pdc
+		pdc.offer = file.offer
+		pdc.quantity = 1
+
+		PurchaseDialog( pdc )
+	}
+}
+
+void function RTKUniversalMeleeInspectScreen_SetScreenDataModel( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return
+
+	array<ItemFlavor> offerItems = file.offer.output.flavors
+	ItemFlavor offerMeleeSkinOrFirstItem = GetMeleeSkinFromOfferFlavors( file.offer.output.flavors )
+	ItemFlavor baseItem = CosmeticSet_GetBaseItems( offerMeleeSkinOrFirstItem )[ 0 ]
+
+	if ( offerItems.len() == 0 )
+		return
+
+	RTKInspectScreenModel inspectModel
+
+	inspectModel.offerTitle = file.offer.titleText
+	inspectModel.offerSubtitle = "#INSPECT_SCREEN_QUALITY_HEADER"
+	inspectModel.isGridEnabled = true
+	inspectModel.isBundle = offerItems.len() > 1
+	inspectModel.canAfford = GRX_CanAfford( file.offer.prices[ 0 ], 1 )
+	inspectModel.isPartOfEvent = CosmeticSet_IsRewardForAnyActiveEvent( offerMeleeSkinOrFirstItem )
+
+	if ( CosmeticSet_IsRecolor( offerMeleeSkinOrFirstItem ) )
+	{
+		offerItems = CosmeticSet_GetRecolors( offerMeleeSkinOrFirstItem )
+	}
+	else
+	{
+		offerItems = CosmeticSet_GetCosmeticSetItems( offerMeleeSkinOrFirstItem )
+	}
+
+	foreach ( item in offerItems )
+	{
+		inspectModel.inspectItems.push( RTKUniversalMeleeInspectScreen_SetScreenItemDataModel( item ) )
+	}
+
+	inspectModel.previewGridIndex = offerItems.find( GetMeleeSkinFromOfferFlavors( file.offer.output.flavors ) )
+	inspectModel.previewItem = inspectModel.inspectItems[ inspectModel.previewGridIndex ]
+	inspectModel.purchaseButton = RTKUniversalMeleeInspectScreen_SetScreenPurchaseButtonDataModel()
+	inspectModel.offerSubtitle = "#MYTHIC_WEAPON_USABILITY"
+
+	
+	string disclaimer2Text = Localize( "#MYTHIC_WEAPON_DISCLAIMER_2_DESCRIPTION", Localize( ItemFlavor_GetLongName( baseItem ) ) )
+	inspectModel.disclaimer2Text = disclaimer2Text
+
+	if ( inspectModel.previewItem.isBaseItem )
+	{
+		string disclaimer1Title = Localize( ( inspectModel.previewItem.isOwned ? "#INSPECT_SCREEN_BASE_OWNED" : "#INSPECT_SCREEN_BASE_UNOWNED" ), Localize( ItemFlavor_GetLongName( offerMeleeSkinOrFirstItem ) ) )
+		string disclaimer1Text = Localize( "#MYTHIC_WEAPON_DISCLAIMER_1_DESCRIPTION", Localize( ItemFlavor_GetLongName( offerMeleeSkinOrFirstItem ) ), Localize( ItemFlavor_GetLongName( baseItem ) ) )
+
+		inspectModel.disclaimer1Title = disclaimer1Title
+		inspectModel.disclaimer1Text = disclaimer1Text
+	}
+
+	rtk_struct inspectScreenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, UNIVERSAL_MELEE_MODEL_PATH, "RTKInspectScreenModel" )
+	RTKStruct_SetValue( inspectScreenStruct, inspectModel )
+}
+
+RTKInspectScreenItemModel function RTKUniversalMeleeInspectScreen_SetScreenItemDataModel( ItemFlavor item )
+{
+	array<ItemFlavor> offerItems = file.offer.output.flavors
+	ItemFlavor offerMeleeSkinOrFirstItem = GetMeleeSkinFromOfferFlavors( offerItems )
+
+	RTKInspectScreenItemModel itemModel
+
+	itemModel.guid = item.guid
+	itemModel.name = ItemFlavor_GetLongName( item )
+	itemModel.icon = ItemFlavor_GetIcon( item )
+	itemModel.quality = ItemFlavor_GetQuality( item, eRarityTier.MYTHIC )
+	itemModel.isInBundle = offerItems.contains( item )
+
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.ONE_OF_MULTIPLE )
+	{
+		itemModel.isInBundle = CosmeticSet_IsOneOfManyOwnershipOfASetItem( item )
+	}
+
+	itemModel.isBaseItem = CosmeticSet_IsBaseItem( item )
+	itemModel.showArrows = !CosmeticSet_GetLastSetItems( item ).contains( item )
+
+	if ( itemModel.isInBundle && CosmeticSet_IsRecolor( item ) )
+	{
+		itemModel.showArrows = false
+	}
+
+	itemModel.isLinked = CosmeticSet_IsLinkedItem( item ) && item != CosmeticSet_GetLinkedItems( item )[ 0 ]
+	itemModel.itemType = ItemFlavor_GetType( item )
+	itemModel.itemTypeText = Localize( "#INSPECT_SCREEN_BUNDLE_INFO_FORMAT", Localize( "#MYTHIC_WEAPON" ), ItemFlavor_GetRewardShortDescription( item ) )
+	itemModel.isOwned = GRX_IsItemOwnedByPlayer( item )
+
+	
+	if ( itemModel.isOwned )
+	{
+		itemModel.state = item == offerMeleeSkinOrFirstItem ? eMeleeCustomizationItemState.SELECTED_AND_EQUIPPED : eMeleeCustomizationItemState.EQUIPPED
+	}
+	else if ( !CosmeticSet_HasAllPreviousItems( item ) )
+	{
+		itemModel.state = item == offerMeleeSkinOrFirstItem ? eMeleeCustomizationItemState.SELECTED_AND_LOCKED : eMeleeCustomizationItemState.LOCKED
+	}
+	else
+	{
+		itemModel.state = item == offerMeleeSkinOrFirstItem ? eMeleeCustomizationItemState.SELECTED : eMeleeCustomizationItemState.AVAILABLE
+	}
+
+	array<ItemFlavorBag> offerPrices = file.offer.prices
+	foreach ( priceBag in offerPrices )
+	{
+		RTKCurrencyDisplayModel price
+		price.currencyIcon = ItemFlavor_GetIcon( priceBag.flavors[ 0 ] )
+		price.currencyAmount = priceBag.quantities[ 0 ]
+		itemModel.price = price
+		break
+	}
+
+	return itemModel
+}
+
+RTKInspectScreenPurchaseButtonModel function RTKUniversalMeleeInspectScreen_SetScreenPurchaseButtonDataModel()
+{
+	ItemFlavor item = file.offer.output.flavors[ 0 ]
+	ItemFlavorBag price = file.offer.prices[ 0 ]
+
+	bool isOwned = GRX_IsItemOwnedByPlayer( item )
+	bool isBaseItem = CosmeticSet_IsBaseItem( item )
+	bool canAfford = GRX_CanAfford( price, 1 )
+	bool isHeirloomCurrency = price.flavors[ 0 ] == GRX_CURRENCIES[ GRX_CURRENCY_HEIRLOOM ]
+
+	int state = eInspectScreenItemState.UNAVAILABLE
+	string title = ""
+	string subtitle = ""
+
+	if ( isOwned )
+	{
+		subtitle = Localize( "#OWNED" )
+		state = eInspectScreenItemState.OWNED
+	}
+	else if ( isBaseItem && CosmeticSet_IsRewardForAnyActiveEvent( item ) )
+	{
+		if ( GRX_IsOfferRestricted() && CosmeticSet_IsRewardForMilestoneEventWithWishlistEnabled( item ) )
+		{
+			subtitle = Localize( "#UNAVAILABLE" )
+			state = eInspectScreenItemState.UNAVAILABLE
+		}
+		else
+		{
+			subtitle = Localize( "#TAB_EVENT" )
+			state = eInspectScreenItemState.EVENT_REWARD
+		}
+	}
+	else if ( !isBaseItem && !CosmeticSet_AreBaseItemsOwned( item ) )
+	{
+		string baseItemName = ""
+		array< ItemFlavor > baseItems = CosmeticSet_GetBaseItems( item )
+		foreach ( baseItem in baseItems )
+		{
+			if ( !GRX_IsItemOwnedByPlayer( baseItem ) )
+			{
+				baseItemName = Localize( ItemFlavor_GetLongName( baseItem ) )
+				break
+			}
+		}
+
+		title = baseItemName
+		subtitle = Localize( "#BASE_UNIVERSAL_MELEE_REQUIRED", baseItemName )
+		state = eInspectScreenItemState.BASE_ITEM_REQUIRED
+	}
+	else if ( !CosmeticSet_HasAllPreviousItems( item ) )
+	{
+		ItemFlavor ornull firstUnownedSetItem = CosmeticSet_GetFirstUnownedSetItem( item )
+
+		if ( firstUnownedSetItem != null )
+		{
+			expect ItemFlavor( firstUnownedSetItem )
+			subtitle = Localize( ItemFlavor_GetLongName( firstUnownedSetItem ) )
+		}
+		title = "#UNIVERSAL_MELEE_REQUIRED_PREVIOUS"
+		state = eInspectScreenItemState.SET_ITEM_REQUIRED
+	}
+	else if ( !isHeirloomCurrency && !canAfford )
+	{
+		subtitle = "#CONFIRM_GET_EXOTIC"
+		state = eInspectScreenItemState.UNAFFORDABLE_EXOTIC_SHARDS
+	}
+	else
+	{
+		subtitle = "#PURCHASE"
+		title = GRX_GetFormattedPrice( price )
+		state = eInspectScreenItemState.AVAILABLE
+	}
+
+	RTKInspectScreenPurchaseButtonModel purchaseButton
+
+	purchaseButton.title = title
+	purchaseButton.subtitle = subtitle
+	purchaseButton.state = state
+
+	return purchaseButton
+}
+
+void function RTKUniversalMeleeInspectScreen_OnPreviewGridIndexChanged( rtk_behavior self )
+{
+	rtk_struct inspectScreenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, UNIVERSAL_MELEE_MODEL_PATH, "RTKInspectScreenModel" )
+	int previewGridIndex = RTKStruct_GetInt( inspectScreenStruct, "previewGridIndex" )
+
+	rtk_array inspectItems = RTKStruct_GetArray( inspectScreenStruct, "inspectItems" )
+	for ( int i = 0; i < RTKArray_GetCount( inspectItems ); i++ )
+	{
+		rtk_struct inspectItem = RTKArray_GetStruct( inspectItems, i )
+		int state = RTKStruct_GetInt( inspectItem, "state" )
+
+		if ( i == previewGridIndex )
+		{
+			switch( state )
+			{
+				case eMeleeCustomizationItemState.AVAILABLE:
+					state = eMeleeCustomizationItemState.SELECTED
+					break
+				case eMeleeCustomizationItemState.LOCKED:
+					state = eMeleeCustomizationItemState.SELECTED_AND_LOCKED
+					break
+				case eMeleeCustomizationItemState.EQUIPPED:
+					state = eMeleeCustomizationItemState.SELECTED_AND_EQUIPPED
+					break
+			}
+		}
+		else
+		{
+			switch( state )
+			{
+				case eMeleeCustomizationItemState.SELECTED:
+					state = eMeleeCustomizationItemState.AVAILABLE
+					break
+				case eMeleeCustomizationItemState.SELECTED_AND_LOCKED:
+					state = eMeleeCustomizationItemState.LOCKED
+					break
+				case eMeleeCustomizationItemState.SELECTED_AND_EQUIPPED:
+					state = eMeleeCustomizationItemState.EQUIPPED
+					break
+			}
+		}
+
+		RTKStruct_SetInt( inspectItem, "state", state )
+	}
+
+	rtk_struct previewItem = RTKArray_GetStruct( inspectItems, previewGridIndex )
+
+	RTKStruct_SetStruct( inspectScreenStruct, "previewItem", previewItem )
+
+	RTKInspectScreen_ShowModelPreview( self, GetItemFlavorByGUID( RTKStruct_GetInt( previewItem, "guid" ) ), false )
+}
+
+ItemFlavor function GetMeleeSkinFromOfferFlavors( array< ItemFlavor > offerFlavs )
+{
+	foreach ( itemFlav in offerFlavs )
+	{
+		if ( ItemFlavor_GetType ( itemFlav ) == eItemType.melee_skin )
+			return itemFlav
+	}
+
+	return offerFlavs[ 0 ]
+}
+
+
+
+
+void function RTKUniversalMeleeInspectScreen_InspectOffer( GRXScriptOffer offer )
+{
+	var menu = GetMenu( UNIVERSAL_MELEE_INSPECT_VGUI_MENU )
+
+	file.offer = offer
+
+	AdvanceMenu( menu )
+}

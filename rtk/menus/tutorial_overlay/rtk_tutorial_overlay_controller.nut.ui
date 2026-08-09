@@ -1,0 +1,246 @@
+
+global function InitTutorialOverlay
+
+
+global function RTKTutorialOverlay_InitMetaData
+global function RTKTutorialOverlay_OnInitialize
+global function RTKTutorialOverlay_OnDestroy
+
+
+global function RTKTutorialOverlay_Activate
+global function RTKTutorialOverlay_Deactivate
+global function RTKTutorialOverlay_IsActive
+
+global enum eTutorialOverlayID
+{
+	
+	READY_UP,
+	APEX_PACK,
+	SEASONAL_REPUTATION,
+	SOCIAL,
+	SETTINGS,
+	GLOBAL_PROGRESSION,
+	RANKED_UNLOCK
+}
+
+global enum eTutorialAnchor
+{
+	LEFT,
+	RIGHT
+}
+
+global struct RTKTutorialOverlayModel
+{
+	string titleText
+	string bodyText
+	vector position
+	int anchor
+
+	vector targetTopLeft
+	vector targetBottomRight
+	float targetWidth
+
+	float screenWidth
+	float screenHeight
+}
+
+const string MODEL_TUTORIAL_OVERLAY = "tutorialOverlay"
+
+struct FileStruct
+{
+	var panel
+	LobbyPopup lobbyPopup
+	table < int, var > tutorialBlocks
+
+	int activeID = -1
+	var target = null
+	int anchor = eTutorialAnchor.LEFT
+	void functionref() onValidInputHandle
+
+	
+	UIPos& targetPos
+}
+FileStruct& file
+
+void function InitTutorialOverlay( var panel )
+{
+	
+	file.tutorialBlocks.clear()
+	FileStruct newFile
+	file = newFile
+	file.panel = panel
+
+	
+	var tutorialArrayBlock = GetSettingsBlockForAsset( $"settings/uidata/tutorial_overlays.rpak" )
+	if ( tutorialArrayBlock != null )
+	{
+		var tutorialArray = GetSettingsBlockArray( tutorialArrayBlock, "entries" )
+		if ( tutorialArray != null )
+		{
+			foreach ( var tutorialBlock in IterateSettingsArray( tutorialArray ) )
+			{
+				int tutorialID = GetSettingsBlockInt( tutorialBlock, "tutorialID" )
+				if( tutorialBlock != null && ( ( strip( GetSettingsBlockString( tutorialBlock, "title" ) ) != "" ) || ( strip( GetSettingsBlockString( tutorialBlock, "text" ) ) != "" ) ) )
+				{
+					file.tutorialBlocks[ tutorialID ] <- tutorialBlock
+				}
+			}
+		}
+	}
+
+	file.lobbyPopup.onClose = TutorialOverlay_OnClose
+	file.lobbyPopup.checkBlocksInput = TutorialOverlay_CheckBlocksInput
+	file.lobbyPopup.handleInput = TutorialOverlay_HandleInput
+}
+
+void function TutorialOverlay_OnClose()
+{
+	RTKTutorialOverlay_Deactivate( file.activeID )
+}
+
+bool function TutorialOverlay_CheckBlocksInput( int inputID )
+{
+	return true
+}
+
+bool function TutorialOverlay_HandleInput( int inputID )
+{
+	if ( inputID == BUTTON_A || inputID == KEY_ENTER || inputID == MOUSE_LEFT )
+	{
+		if ( file.onValidInputHandle != null )
+		{
+			file.onValidInputHandle()
+		}
+
+		RTKTutorialOverlay_Deactivate( file.activeID )
+	}
+
+	return true
+}
+
+void function RTKTutorialOverlay_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "KillExistingTutorialThreads" )
+}
+
+void function RTKTutorialOverlay_OnInitialize( rtk_behavior self )
+{
+	if ( !( file.activeID in file.tutorialBlocks ) )
+		return
+
+	rtk_struct dataModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, MODEL_TUTORIAL_OVERLAY, "RTKTutorialOverlayModel" )
+	UpdateModel( dataModel )
+	thread WatchTargetPosition_Thread( self, dataModel )
+}
+
+void function RTKTutorialOverlay_OnDestroy( rtk_behavior self )
+{
+	Signal( self, "KillExistingTutorialThreads" )
+	TutorialOverlay_OnClose()
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_TUTORIAL_OVERLAY )
+}
+
+void function RTKTutorialOverlay_Activate( int id, var vguiTarget, int anchorToTarget, void functionref() onValidInputHandle )
+{
+	if ( vguiTarget == null )
+		return
+
+	if ( RTKTutorialOverlay_IsActive() )
+		return
+
+	if ( !( id in file.tutorialBlocks ) )
+		return
+
+	file.activeID = id
+	file.target = vguiTarget
+	file.anchor = anchorToTarget
+	file.onValidInputHandle = onValidInputHandle
+
+	if ( HasActiveLobbyPopup() )
+		ClearActiveLobbyPopup()
+
+	Hud_Show( file.panel )
+	Hud_SetEnabled( file.panel, true )
+	SetActiveLobbyPopup( file.lobbyPopup )
+}
+
+void function RTKTutorialOverlay_Deactivate( int id )
+{
+	if ( file.activeID != id )
+		return
+
+	ClearActiveLobbyPopup()
+	Hud_Hide( file.panel )
+	Hud_SetEnabled( file.panel, false )
+
+	file.activeID = -1
+}
+
+bool function RTKTutorialOverlay_IsActive()
+{
+	return ( file.activeID != -1 )
+}
+
+void function WatchTargetPosition_Thread( rtk_behavior self, rtk_struct dataModel )
+{
+	Signal( self, "KillExistingTutorialThreads" )
+	EndSignal( self, "KillExistingTutorialThreads" )
+
+	while ( true )
+	{
+		WaitFrame()
+
+		UIPos targetPos = REPLACEHud_GetAbsPos( file.target )
+		if ( targetPos.x != file.targetPos.x || targetPos.y != file.targetPos.y )
+		{
+			file.targetPos = targetPos
+
+			UpdateModel( dataModel )
+		}
+	}
+}
+
+void function UpdateModel( rtk_struct dataModel )
+{
+	if ( file.activeID == -1 )
+		return
+
+	
+	UISize vguiscreenSize = GetScreenSize()
+	vector rtkScreenSize = RTK_GetVirtualScreenSize()
+	vector screenScale = < rtkScreenSize.x / vguiscreenSize.width, rtkScreenSize.y / vguiscreenSize.height, 0 >
+
+	
+	file.targetPos = REPLACEHud_GetAbsPos( file.target )
+	UISize targetSize = REPLACEHud_GetSize( file.target )
+	vector targetPosScaled = < file.targetPos.x * screenScale.x, file.targetPos.y * screenScale.y, 0 >
+	vector targetSizeScaled = < targetSize.width * screenScale.x, targetSize.height * screenScale.y, 0 >
+
+	vector position = < 0, 0, 0 >
+	switch( file.anchor )
+	{
+		case eTutorialAnchor.LEFT:
+			position = < targetPosScaled.x, targetPosScaled.y + (targetSizeScaled.y / 2), 0 >
+			break
+		case eTutorialAnchor.RIGHT:
+		default:
+			position = < targetPosScaled.x + targetSizeScaled.x, targetPosScaled.y + (targetSizeScaled.y / 2), 0 >
+			break
+	}
+
+	RTKStruct_SetFloat3( dataModel, "position", position )
+	RTKStruct_SetInt( dataModel, "anchor", file.anchor )
+	RTKStruct_SetFloat3( dataModel, "targetTopLeft", < targetPosScaled.x, targetPosScaled.y, 0 > )
+	RTKStruct_SetFloat3( dataModel, "targetBottomRight", < targetPosScaled.x + targetSizeScaled.x, targetPosScaled.y + targetSizeScaled.y, 0 > )
+	RTKStruct_SetFloat( dataModel, "targetWidth", targetSizeScaled.x )
+	RTKStruct_SetFloat( dataModel, "screenWidth", rtkScreenSize.x )
+	RTKStruct_SetFloat( dataModel, "screenHeight", rtkScreenSize.y )
+
+	
+	var tutorialBlock = file.tutorialBlocks[file.activeID]
+	if( tutorialBlock != null && ( ( strip( GetSettingsBlockString( tutorialBlock, "title" ) ) != "" ) || ( strip( GetSettingsBlockString( tutorialBlock, "text" ) ) != "" ) ) )
+	{
+		RTKStruct_SetString( dataModel, "bodyText", GetSettingsBlockString( tutorialBlock, "text" ) )
+		RTKStruct_SetString( dataModel, "titleText", GetSettingsBlockString( tutorialBlock, "title" ) )
+	}
+}

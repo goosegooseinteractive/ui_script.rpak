@@ -1,0 +1,1583 @@
+global function ShPassiveUpgradeCore_Init
+global function ShPassiveUpgradeCore_LobbyInit
+global function ShPassiveUpgradeCore_NetvarsInit
+
+global function UpgradeCore_GetUpgradesForCharacter
+global function UpgradeCore_GetUpgradesForPlayer
+global function UpgradeCore_IsEquipmentArmorCore
+global function UpgradeCore_GetSelectedUpgrades
+global function UpgradeCore_IsUpgradeSelectable
+global function UpgradeCore_IsUpgradeSelected
+global function UpgradeCore_GetLevelForUpgrade
+global function UpgradeCore_GetArmorTierForLevel
+global function UpgradeCore_GetPlayerArmorTier
+global function UpgradeCore_IsArmorRefTierValidForPlayerLevel
+global function GetShieldCoreIconFromShieldAmount
+global function UpgradeCore_ParseUpgradeOverrides
+global function UpgradeCore_ShouldArmorMatchPlayerLevel
+global function UpgradeCore_DelayedParseUpgradeOverrides
+
+global function UpgradeCore_InitTuningValues
+global function UpgradeCore_SetupEvoLevelSystem
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function UpgradeCore_SetUpgradesLocked
+global function UpgradeCore_AreUpgradesLocked
+global function UpgradeCore_GladCardShowUpgrades
+global function UpgradeCore_ShowHudUpgradeSelection
+global function UpgradeCore_ShowUpgradeTreeInventory
+global function UpgradeCore_ShowUpgradesUnitframe
+global function UpgradeCore_IsEnabled
+global function UpgradeCore_ArmorTiedToUpgrades
+
+global function UpgradeCore_ArmorUpdates_MythicArmorUpgrade_Enabled
+global function UpgradeCore_ArmorUpdates_S24_EVOTuning_Enabled
+
+global function UpgradeCore_RegisterUpgradesForCharacter
+
+global function UpgradeCore_GetUpgradeChoiceStructByIndex
+
+global function UpgradeCore_ShowUpgradeTree_LobbyMenu
+global function UpgradeCore_ShowUpgradeTree_SkillsMenu
+global function UpgradeCore_ShowUpgradeTree_CharacterSelect
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct AdrenalineStatusEffectIndexes
+{
+	int speedBoostID
+	int adrenalineVisualsID
+}
+
+struct
+{
+	table< ItemFlavor, array< ItemFlavor > > characterToPassiveUpgrades
+	table< ItemFlavor, array<SettingsAssetGUID> > characterToPassiveUpgradeOverrides
+	table< ItemFlavor , UpgradeChoice > passiveFlavorToUpgradeData
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+} file
+
+struct
+{
+	bool shouldArmorTierMatchPlayerLevel = false 
+
+	bool showGladCardUpgrades = true
+	bool showHudUpgradeSelection = true
+	bool showUpgradeTreeInventory = true
+	bool showUpgradesUnitframe = true
+	bool isEnabled = true
+	bool upgradesLocked = false
+	bool  armorTiedToUpgrades = true
+
+		bool  mythicArmorUpgradeEnabled = false
+		bool  mythicArmorUpgradeTuningEnabled = true
+		string updateArmorEVOThresholds = "450 1700"
+
+	float upgradeSelectionReminderDelay = 60.0
+	bool showUpgradeTreeLobbyMenu = true
+	bool showUpgradeTreeSkillsMenu = true
+	bool showUpgradeTreeCharacterSelect = true
+	bool cancelLevelUpRegenOnDamage = true
+} tuning
+
+
+global const string FUNCNAME_ServerToClient_UpgradeCore_RefreshArmorHud = "ServerToClient_UpgradeCore_RefreshArmorHud"
+global const string FUNCNAME_ServerToClient_AcknowledgeUpgradeSelection = "ServerToClient_AcknowledgeUpgradeSelection"
+const string FUNCNAME_ClientToServer_UpgradeCore_HandleUpgradeSelection = "Server_UpgradeCore_HandleSelection"
+
+
+
+global const asset UPGRADE_CORE_ICON = $"rui/hud/gametype_icons/survival/data_knife"
+global const asset SHIELD_CORE_PARTICLE_SYSTEM =  $"P_Lgnd_Upgrade_Armor_Holo"
+global const string UPGRADE_SELECTED_SOUND = "UI_InGame_Ability_UpgradeSelected"
+const asset TROPHY_ELECTRICITY_FX = $"P_wpn_trophy_loop_2"
+const string EVO_LEVELUP_LVL1_SFX_1P = "LevelUp_LegendsUpgrade_lvl1_1P"
+const string EVO_LEVELUP_LVL2_SFX_1P = "LevelUp_LegendsUpgrade_lvl2_1P"
+const string EVO_LEVELUP_LVL3_SFX_1P = "LevelUp_LegendsUpgrade_lvl3_1P"
+const string EVO_LEVELUP_LVL1_SFX_3P = "LevelUp_LegendsUpgrade_lvl1_3P"
+const string EVO_LEVELUP_LVL2_SFX_3P = "LevelUp_LegendsUpgrade_lvl2_3P"
+const string EVO_LEVELUP_LVL3_SFX_3P = "LevelUp_LegendsUpgrade_lvl3_3P"
+
+
+global const string UPGRADE_CORE_SELECTED_UPGRADES = SELECTED_UPGRADE_SHARED_NETVAR
+
+
+
+global const int UPGRADE_CORE_NUM_EXPECTED_UPGRADES = 4
+global const int UPGRADE_CORE_MAX_EXPECTED_LEVEL = 4
+global const int UPGRADE_CORE_NUM_EXPECTED_UPGRADES_PER_LEVEL = 2
+
+global const string UPGRADE_CORE_GOLD_UPGRADE_REF = "helmet_pickup_lv4_armor_upgrade"
+global const string UPGRADE_CORE_MYTHIC_UPGRADE_REF = "helmet_pickup_lv5_armor_upgrade"
+
+
+
+
+const string UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER = "450 1350 2000"
+const string UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER_DUOS = "400 1100 1700"
+const string UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_FOUR_TIER = "450 750 800 1000"
+
+const int CAUSTIC_AMOUNT_SLOTS = 4
+
+
+
+
+
+void function ShPassiveUpgradeCore_Init()
+{
+
+
+
+
+	UpgradeCore_InitTuningValues()
+	if( !UpgradeCore_IsEnabled() )
+		return
+
+
+
+
+
+
+
+	UpgradeCore_SetupEvoLevelSystem()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	thread UpgradeCore_DelayedParseUpgradeOverrides()
+
+
+
+
+
+}
+
+void function UpgradeCore_DelayedParseUpgradeOverrides()
+{
+	WaitFrame()
+	thread UpgradeCore_ParseUpgradeOverrides()
+}
+
+void function UpgradeCore_InitTuningValues()
+{
+
+
+
+
+	tuning.isEnabled = GetCurrentPlaylistVarBool( "passive_upgrade_core_enabled", true )
+
+
+		tuning.mythicArmorUpgradeEnabled = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_mythic_armor_upgrade_enabled", false )
+		tuning.mythicArmorUpgradeTuningEnabled = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_mythic_armor_upgrade_tuning_enabled", true )
+		tuning.updateArmorEVOThresholds = GetCurrentPlaylistVarString( "passive_upgrade_core_updated_armor_xp_thresholds", tuning.updateArmorEVOThresholds )
+
+	tuning.shouldArmorTierMatchPlayerLevel = GetCurrentPlaylistVarBool( "passive_upgrade_core_armor_match_player_level", tuning.shouldArmorTierMatchPlayerLevel )
+	tuning.showGladCardUpgrades = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_glad_card_show_upgrades", true )
+	tuning.showHudUpgradeSelection = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_show_hud_selection", true )
+	tuning.showUpgradeTreeInventory = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_show_upgrade_tree_inventory", true )
+	tuning.showUpgradesUnitframe = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_show_upgrade_unitframe", true )
+	tuning.armorTiedToUpgrades = UpgradeCore_IsEnabled() && GetCurrentPlaylistVarBool( "passive_upgrade_armor_tied_to_upgrades", true )
+	tuning.upgradeSelectionReminderDelay = GetCurrentPlaylistVarFloat( "passive_upgrade_core_reminder_hint_delay", tuning.upgradeSelectionReminderDelay )
+	tuning.showUpgradeTreeLobbyMenu = GetCurrentPlaylistVarBool( "lobby_characters_upgrade_tree_enabled", true )
+	tuning.showUpgradeTreeSkillsMenu = GetCurrentPlaylistVarBool( "skills_menu_upgrade_tree_enabled", true )
+	tuning.showUpgradeTreeCharacterSelect = GetCurrentPlaylistVarBool( "character_select_upgrade_tree_enabled", true )
+	tuning.cancelLevelUpRegenOnDamage = GetCurrentPlaylistVarBool( "cancel_level_up_regen_on_damage", true )
+}
+
+void function ShPassiveUpgradeCore_NetvarsInit()
+{
+	RegisterNetworkedVariable( UPGRADE_CORE_SELECTED_UPGRADES, SNDC_PLAYER_GLOBAL, SNVT_INT , 0.0 )
+}
+
+void function ShPassiveUpgradeCore_LobbyInit()
+{
+	ShPassiveUpgradeCore_NetvarsInit()
+	UpgradeCore_InitTuningValues()
+
+	thread ShPassiveUpgradeCore_LobbyInit_DelayedUpgradeOverridesParse()
+}
+
+void function ShPassiveUpgradeCore_LobbyInit_DelayedUpgradeOverridesParse()
+{
+	
+	WaitFrame()
+	UpgradeCore_ParseUpgradeOverrides()
+
+
+
+}
+
+void function UpgradeCore_RegisterUpgradesForCharacter( ItemFlavor character, array<ItemFlavor> upgrades )
+{
+	UpgradeHelper_RegisterUpgradesForCharacter( character, upgrades, file.characterToPassiveUpgrades, file.passiveFlavorToUpgradeData, file.characterToPassiveUpgradeOverrides )
+}
+
+void function UpgradeCore_ParseUpgradeOverrides()
+{
+	int expectedLength = UPGRADE_CORE_NUM_EXPECTED_UPGRADES + 1
+
+	UpgradeHelper_ParseUpgradeOverrides( expectedLength, "passive_upgrade_core_overrides",
+	file.characterToPassiveUpgrades, file.characterToPassiveUpgradeOverrides )
+}
+
+const array<string> ALL_ARMOR_CORE_REFS = [
+
+
+
+	"armor_core_pickup_lv1",
+	"armor_core_pickup_lv2",
+	"armor_core_pickup_lv3",
+	"armor_core_pickup_lv5"
+]
+
+bool function UpgradeCore_IsEquipmentArmorCore( string ref )
+{
+	return ALL_ARMOR_CORE_REFS.contains( ref )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function UpgradeCore_GladCardShowUpgrades()
+{
+	return tuning.showGladCardUpgrades
+}
+
+bool function UpgradeCore_ShowHudUpgradeSelection()
+{
+	return tuning.showHudUpgradeSelection
+}
+
+bool function UpgradeCore_ShowUpgradeTreeInventory()
+{
+	return tuning.showUpgradeTreeInventory
+}
+
+bool function UpgradeCore_ShowUpgradesUnitframe()
+{
+	return tuning.showUpgradesUnitframe
+}
+
+bool function UpgradeCore_IsEnabled()
+{
+	return tuning.isEnabled
+}
+
+bool function UpgradeCore_ArmorTiedToUpgrades()
+{
+	return tuning.armorTiedToUpgrades
+}
+
+
+bool function UpgradeCore_ArmorUpdates_MythicArmorUpgrade_Enabled()
+{
+	return tuning.mythicArmorUpgradeEnabled
+}
+
+bool function UpgradeCore_ArmorUpdates_S24_EVOTuning_Enabled()
+{
+	return tuning.mythicArmorUpgradeTuningEnabled
+}
+
+string function UpgradeCore_ArmorUpdates_Get_NewEVOThresholds()
+{
+	return tuning.updateArmorEVOThresholds
+}
+
+
+bool function UpgradeCore_ShowUpgradeTree_LobbyMenu()
+{
+	return tuning.showUpgradeTreeLobbyMenu
+}
+
+bool function UpgradeCore_ShowUpgradeTree_SkillsMenu()
+{
+	return tuning.showUpgradeTreeSkillsMenu
+}
+
+bool function UpgradeCore_ShowUpgradeTree_CharacterSelect()
+{
+	return tuning.showUpgradeTreeCharacterSelect
+}
+
+
+array<int> function UpgradeCore_GetLevelXpThresholds()
+{
+	string defaults = UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER
+	if( GetCurrentPlaylistVarString( "pin_match_type", "survival" ) == "duo" )
+	{
+		defaults = UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER_DUOS
+	}
+
+
+	if ( UpgradeCore_ArmorUpdates_S24_EVOTuning_Enabled() )
+	{
+		defaults = UpgradeCore_ArmorUpdates_Get_NewEVOThresholds()
+	}
+
+
+	string playlistStr = GetCurrentPlaylistVarString( "passive_upgrade_core_xp_thresholds", defaults )
+
+
+	array<int> xpRequirements = ParseStringIntoIntArray( playlistStr )
+	int cumulativeXp = 0
+	array<int> result
+	for( int i=0; i < xpRequirements.len(); i++ )
+	{
+		cumulativeXp += xpRequirements[i]
+		result.append( cumulativeXp )
+	}
+	return result
+}
+
+void function UpgradeCore_SetupEvoLevelSystem()
+{
+
+
+
+
+	EvoLevelSystem system
+
+	system.systemType = eEvoLevelSystemType.UPGRADE_CORE
+
+	system.GetLevelXpThresholdsCallback = UpgradeCore_GetLevelXpThresholds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	EvoLevels_RegisterEvoLevelSystem( system )
+
+	Assert( EvoLevels_GetMaxUpgradeLevels() <= UPGRADE_CORE_MAX_EXPECTED_LEVEL, "More levels than expected. Please upgate UPGRADE_CORE_MAX_EXPECTED_LEVEL" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function UpgradeCore_SetUpgradesLocked( bool val )
+{
+	tuning.upgradesLocked = val
+
+
+
+
+
+
+
+
+
+
+}
+
+bool function UpgradeCore_AreUpgradesLocked()
+{
+	return tuning.upgradesLocked
+}
+
+array< UpgradeChoice > function UpgradeCore_GetUpgradesForPlayer( entity player )
+{
+	ItemFlavor characterItemFlavor = LoadoutSlot_GetItemFlavor( ToEHI( player ), Loadout_Character() )
+	return UpgradeCore_GetUpgradesForCharacter( characterItemFlavor )
+}
+
+array< UpgradeChoice > function UpgradeCore_GetUpgradesForCharacter( ItemFlavor characterItemFlavor )
+{
+	array< UpgradeChoice > upgrades =  UpgradeCore_GetDefinedUpgradesForCharacter( characterItemFlavor )
+
+	if( upgrades.len() > 0 )
+		return upgrades
+
+	UpgradeChoice armorChoice
+
+	armorChoice.shortDesc = "#BOT_ROYALE_ARMOR_CHOICE_SHORT_DESCRIPTION"
+	armorChoice.icon = $"rui/hud/loot/loot_armor_1"
+	armorChoice.desc = "#BOT_ROYALE_ARMOR_CHOICE_DESCRIPTION"
+	armorChoice.title = "#BOT_ROYALE_ARMOR_CHOICE_TITLE"
+
+	armorChoice.passiveIndex = ePassives.INVALID
+	return [armorChoice, armorChoice, armorChoice, armorChoice, armorChoice, armorChoice]
+}
+
+array< UpgradeChoice > function UpgradeCore_GetDefinedUpgradesForCharacter( ItemFlavor characterItemFlavor )
+{
+	if( characterItemFlavor in file.characterToPassiveUpgrades )
+	{
+		array< UpgradeChoice > result
+		foreach( ItemFlavor passiveFlavor in file.characterToPassiveUpgrades[characterItemFlavor] )
+		{
+			result.append( file.passiveFlavorToUpgradeData[ passiveFlavor ] )
+		}
+		return result
+	}
+	array< UpgradeChoice > emptyResult
+	return emptyResult
+}
+
+array< string > function UpgradeCore_GetUpgradeNamesForPlayer( entity player )
+{
+	ItemFlavor characterItemFlavor = LoadoutSlot_GetItemFlavor( ToEHI( player ), Loadout_Character() )
+	if( !( characterItemFlavor in file.characterToPassiveUpgrades ) )
+	{
+		return []
+	}
+	array<string> result
+	foreach( upgrade in file.characterToPassiveUpgrades[characterItemFlavor] )
+	{
+		result.append( ItemFlavor_GetHumanReadableRefForPIN_Slow( upgrade ) )
+	}
+	return result
+}
+
+
+bool function UpgradeCore_IsLootRef_MythicArmorUpgrade( string ref )
+{
+
+
+
+	return ref == UPGRADE_CORE_MYTHIC_UPGRADE_REF
+
+}
+
+
+array<UpgradeChoice> function UpgradeCore_GetSelectedUpgrades( entity player )
+{
+	int selectedUpgradesInt = player.GetPlayerNetInt( UPGRADE_CORE_SELECTED_UPGRADES )
+	array<UpgradeChoice> upgrades = UpgradeCore_GetUpgradesForPlayer( player )
+	array<UpgradeChoice> selectedUpgrades
+	for( int i=0; i < UPGRADE_CORE_NUM_EXPECTED_UPGRADES; i++ )
+	{
+		int bit = 1 << i
+		if( IsBitFlagSet( selectedUpgradesInt, bit ) )
+		{
+			selectedUpgrades.append( upgrades[i] )
+		}
+	}
+	return selectedUpgrades
+}
+
+bool function UpgradeCore_IsUpgradeSelectable( entity player, int index, bool checkLevel = true )
+{
+	if ( !UpgradeCore_IsEnabled() )
+		 return false
+	int upgradesBitFlag = player.GetPlayerNetInt( UPGRADE_CORE_SELECTED_UPGRADES )
+		if( CausticResearch_CanPlayerChooseUpgrade( player, index ) )
+		{
+			return true
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	if( checkLevel )
+	{
+		int level = EvoLevels_GetPlayerLevel( player )
+		int levelForUpgrade = UpgradeCore_GetLevelForUpgrade( index )
+		if( level < levelForUpgrade )
+			return false
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+	int levelUpgradeStart = ( index / 2 ) * 2
+	return !UpgradeCore_IsUpgradeSelected( player, levelUpgradeStart ) && !UpgradeCore_IsUpgradeSelected( player, levelUpgradeStart + 1 )
+}
+
+bool function UpgradeCore_IsUpgradeSelected( entity player, int index )
+{
+	int upgradesBitFlag = player.GetPlayerNetInt( UPGRADE_CORE_SELECTED_UPGRADES )
+	return IsBitFlagSet( upgradesBitFlag, ( 1 << index )  )
+}
+
+int function UpgradeCore_GetLevelForUpgrade( int index )
+{
+	return index / 2 + 1
+}
+
+int function UpgradeCore_GetArmorTierForLevel( int level, bool skipGold = true  )
+{
+
+		if( level == 4 && skipGold)
+		{
+			level = 5
+		}
+
+
+
+
+
+
+	return level
+}
+
+int function UpgradeCore_GetPlayerArmorTier( entity player, bool skipGold = true, bool skipHelmet = false )
+{
+	int level = UpgradeCore_ShouldArmorMatchPlayerLevel() ? EvoLevels_GetPlayerLevel( player ) : EvoLevels_GetPlayerLevel( player ) + 1
+
+
+
+
+		bool skipGoldForce = true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		return UpgradeCore_GetArmorTierForLevel( level, skipGoldForce )
+
+
+
+}
+
+bool function UpgradeCore_IsArmorRefTierValidForPlayerLevel( int armorTier, entity player )
+{
+	int playerArmorTier = UpgradeCore_GetPlayerArmorTier( player )
+	return UpgradeCore_ShouldArmorMatchPlayerLevel() ? playerArmorTier == armorTier : playerArmorTier > armorTier
+}
+
+
+const array<asset> ARMOR_CORE_ICONS = [
+	$"rui/hud/loot/loot_upgrade_core_0",
+	$"rui/hud/loot/loot_upgrade_core_1",
+	$"rui/hud/loot/loot_upgrade_core_2",
+	$"rui/hud/loot/loot_upgrade_core_3",
+	$"",
+	$"rui/hud/loot/loot_upgrade_core_4",
+]
+
+asset function GetShieldCoreIconFromShieldAmount( int amount )
+{
+	int tier = GetShieldTierFromShieldAmount( amount )
+	int index = int( clamp( tier, 0, ARMOR_CORE_ICONS.len() - 1 ) )
+
+	return ARMOR_CORE_ICONS[ index ]
+}
+
+bool function UpgradeCore_ShouldArmorMatchPlayerLevel()
+{
+	return tuning.shouldArmorTierMatchPlayerLevel
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+UpgradeChoice function UpgradeCore_GetUpgradeChoiceStructByIndex( entity player, int upgradeIndex )
+{
+	array<UpgradeChoice> upgradesList = UpgradeCore_GetUpgradesForPlayer( player )
+	if( upgradeIndex < 0 || upgradeIndex >= upgradesList.len() )
+	{
+		UpgradeChoice invalidUpgrade
+		invalidUpgrade.passiveIndex = ePassives.INVALID
+		return invalidUpgrade
+	}
+	return clone upgradesList[upgradeIndex]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________RUI___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function Passive_OnPassiveChanged( entity player, int passive, bool didHave, bool nowHas )
+{
+
+
+
+
+
+
+
+}
+
+
+void function Helmet_Gold_OnPassiveChanged( entity player, int passive, bool didHave, bool nowHas )
+{
+
+	if ( didHave )
+	{
+
+
+
+
+
+
+	}
+
+	if ( nowHas )
+	{
+
+
+
+
+
+
+
+
+
+	}
+
+
+
+
+
+
+}
+
+void function Helmet_Red_OnPassiveChanged( entity player, int passive, bool didHave, bool nowHas )
+{
+	if ( didHave )
+	{
+
+	}
+
+	if ( nowHas )
+	{
+
+
+
+
+	}
+
+
+
+
+
+
+}
+
+void function UpgradeCore_HelmetUpgrade_ShieldRegen ( entity player )
+{
+
+
+
+
+
+
+
+
+
+
+}
+
+void function UpgradeCore_HelmetUpgrade_UI_Refresh ( entity player )
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+

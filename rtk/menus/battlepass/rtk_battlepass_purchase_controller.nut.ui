@@ -1,0 +1,782 @@
+global function InitRTKBattlePassPurchaseMenu
+global function RTKBattlepassPurchasePanel_OnInitialize
+global function RTKBattlepassPurchasePanel_OnDestroy
+global function RTKBattlepassPurchasePanel_InitMetaData
+global function OpenBattlepassPurchaseMenu
+
+global enum ePassPurchaseTab
+{
+	INVALID = -1,
+	PREMIUM = 0,
+	ULTIMATE = 1,
+	ULTIMATE_PLUS = 2,
+}
+
+global struct RTKBattlepassPurchasePanel_Properties
+{
+	rtk_behavior purchasePremiumButton
+	rtk_behavior giftPremiumButton
+	rtk_behavior purchaseUltimateButton
+	rtk_behavior purchaseUltimatePlusButton
+	rtk_behavior moreInfoButton
+	rtk_behavior tabController
+}
+
+global struct RTKBattlepassPurchasePanel_ModelStruct
+{
+	bool   showPremiumTab = true
+	bool   userCanUpgradePass = false
+	bool   showUltimateTab = false
+	bool   showUltimatePlusTab = false
+	int	   bpOwnershipTier = eBattlePassV2OwnershipTier.INVALID
+	bool   hasDiscount = false
+	bool   tabDisplaysDiscount = true
+	bool   isPlayStation = false
+	bool   enablePurchaseButtons = true 
+	bool   enableGiftPurchaseButtons = true
+	bool   giftPurchaseButtonInteractive = false
+	bool   userHasPremiumPass = false
+	string priceStringPremium = ""
+	string priceStringUltimate = ""
+	string originalPriceStringUltimate = ""
+	string priceStringUltimatePlus = ""
+	string originalPriceStringUltimatePlus = ""
+	string taxNoticeMessage = ""
+	asset premiumBG = $""
+	asset premiumFeaturedSkins = $""
+	asset premiumItemsLeft = $""
+	asset premiumItemsRight = $""
+	asset ultimateBG = $""
+	asset ultimateFeaturedSkins = $""
+	asset ultimateItemsLeft = $""
+	asset ultimateItemsRight = $""
+	asset ultimatePlusBG = $""
+	asset ultimatePlusFeaturedSkins = $""
+	asset ultimatePlusItemsLeft = $""
+	string ultimatePlusVideo = $""
+	vector glowColor = <0, 0, 0>
+	vector barColor = <0, 0, 0>
+}
+
+struct PrivateData
+{
+	void functionref() OnGRXStateChanged
+	void functionref( var button ) openPreviousTab
+	void functionref( var button ) openNextTab
+	rtk_behavior ornull tabController
+	bool purchaseAttempted = false
+}
+
+struct
+{
+	var menu
+	rtk_behavior self
+	int targetTab = 1
+	table< int, bool > purchasedEntitlements
+} file
+
+void function RTKBattlepassPurchasePanel_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+	file.self = self
+
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "bpPurchase", true ) )
+
+	AddCallback_OnEntitlementPurchased( OnEntitlementPurchased )
+
+	ItemFlavor ornull bpFlavor = GetActiveBattlePassV2()
+	if ( bpFlavor == null )
+	{
+		return
+	}
+	expect ItemFlavor( bpFlavor )
+
+	PrivateData p
+	self.Private( p )
+
+	p.openPreviousTab = void function( var button ) : ( self, p ) {
+		OpenPreviousTab( self )
+	}
+
+	p.openNextTab     = void function( var button ) : ( self, p ) {
+		OpenNextTab( self )
+	}
+
+	rtk_panel panel = self.GetPanel()
+	p.tabController = panel.FindBehaviorByTypeName( "TabController" )
+
+	if ( p.tabController != null )
+	{
+		rtk_behavior tabController = expect rtk_behavior( p.tabController )
+		tabController.PropSetInt( "initialTab", file.targetTab )
+
+		RTKTabController_OnInitialize( tabController )
+
+		
+		RTKBattlepassPassPurchasePanel_OnTabChanged( RTKTabController_GetCurrentTabIndex( tabController ) )
+
+		void functionref( rtk_behavior, int ) onTabChanged = ( void function( rtk_behavior tabController, int currentTab ) : ( )
+		{
+			RTKBattlepassPassPurchasePanel_OnTabChanged( currentTab )
+		} )
+		RTKTabController_SetTabChangedCallback( tabController, onTabChanged )
+	}
+
+	RegisterButtonPressedCallback( BUTTON_SHOULDER_LEFT, p.openPreviousTab)
+	RegisterButtonPressedCallback( BUTTON_SHOULDER_RIGHT, p.openNextTab)
+
+	rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+	RTKBattlepassPurchasePanel_SetUpPurchaseButtons( file.self, bpPurchaseModelStruct, bpFlavor )
+
+	asset bpAsset = ItemFlavor_GetAsset( bpFlavor )
+
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "premiumBG",  GetGlobalSettingsAsset( bpAsset, "premiumBG" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "premiumFeaturedSkins",  GetGlobalSettingsAsset( bpAsset, "premiumFeaturedSkins" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "premiumItemsLeft",  GetGlobalSettingsAsset( bpAsset, "premiumItemsLeft" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "premiumItemsRight",  GetGlobalSettingsAsset( bpAsset, "premiumItemsRight" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimateBG",  GetGlobalSettingsAsset( bpAsset, "ultimateBG" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimateFeaturedSkins",  GetGlobalSettingsAsset( bpAsset, "ultimateFeaturedSkins" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimateItemsLeft",  GetGlobalSettingsAsset( bpAsset, "ultimateItemsLeft" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimateItemsRight",  GetGlobalSettingsAsset( bpAsset, "ultimateItemsRight" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimatePlusBG",  GetGlobalSettingsAsset( bpAsset , "ultimatePlusBG") )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimatePlusFeaturedSkins",  GetGlobalSettingsAsset( bpAsset, "ultimatePlusFeaturedSkins" ) )
+	RTKStruct_SetAssetPath( bpPurchaseModelStruct, "ultimatePlusItemsLeft",  GetGlobalSettingsAsset( bpAsset, "ultimatePlusItemsLeft" ) )
+	RTKStruct_SetString( bpPurchaseModelStruct, "ultimatePlusVideo",  GetGlobalSettingsString( bpAsset, "ultimatePlusVideo" ) )
+	RTKStruct_SetFloat3( bpPurchaseModelStruct, "glowColor",  GetGlobalSettingsVector( bpAsset, "purchaseTabGlowColor" ) )
+	RTKStruct_SetFloat3( bpPurchaseModelStruct, "barColor",  GetGlobalSettingsVector( bpAsset, "purchaseTabBarColor" ) )
+
+	bool isAlreadyMaxOwnershipTier = DoesPlayerOwnBattlePassTier( GetLocalClientPlayer(), bpFlavor, eBattlePassV2OwnershipTier.ULTIMATE_PLUS ) ||
+			                         ( GRX_IsOfferRestricted() && DoesPlayerOwnBattlePassTier( GetLocalClientPlayer(), bpFlavor, eBattlePassV2OwnershipTier.PREMIUM ) )
+
+	p.OnGRXStateChanged = ( void function() : ( self, isAlreadyMaxOwnershipTier )
+	{
+		if ( !GRX_IsInventoryReady() )
+			return
+
+		if ( !GRX_AreOffersReady() )
+			return
+
+		ItemFlavor ornull bpFlavor = GetActiveBattlePassV2()
+		if ( bpFlavor == null )
+		{
+			return
+		}
+		expect ItemFlavor( bpFlavor )
+
+		rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+		RTKBattlepassPurchasePanel_UpdatePurchaseButtons( file.self, bpPurchaseModelStruct, bpFlavor )
+
+		entity LocalPlayer = GetLocalClientPlayer()
+		bool hasUltimatePlusPass = DoesPlayerOwnBattlePassTier( LocalPlayer, bpFlavor, eBattlePassV2OwnershipTier.ULTIMATE_PLUS )
+		bool isRestricted = GRX_IsOfferRestricted()
+
+		PrivateData p
+		self.Private( p )
+
+		bool isExpired = BattlePassV2_GetFinishUnixTime( bpFlavor ) <= GetUnixTimestamp() + 1
+
+		
+		if ( IsFullyConnected() && isExpired )
+		{
+			CloseAllMenus()
+			AdvanceMenu( GetMenu( "LobbyMenu" ) )
+			return
+		}
+
+		if ( !isAlreadyMaxOwnershipTier && ( hasUltimatePlusPass || ( isRestricted && DoesPlayerOwnBattlePassTier( LocalPlayer, bpFlavor, eBattlePassV2OwnershipTier.PREMIUM ) ) ) )
+			OnMenuClose() 
+
+		if ( p.purchaseAttempted && p.tabController != null  )
+		{
+			rtk_behavior tabController = expect rtk_behavior( p.tabController )
+			int currentTab = RTKTabController_GetCurrentTabIndex( tabController )
+			if ( !IsTabIndexUnlocked( currentTab ) )
+			{
+				p.purchaseAttempted = false
+
+				
+				RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons",  true )
+				RTKStruct_SetBool( bpPurchaseModelStruct, "giftPurchaseButtonInteractive", true )
+
+				if ( !hasUltimatePlusPass && !isRestricted )
+				{
+					file.targetTab = ePassPurchaseTab.ULTIMATE_PLUS
+					RTKTabController_OnTabButtonClick( tabController, ePassPurchaseTab.ULTIMATE_PLUS )
+				}
+				else
+				{
+					OnMenuClose()
+				}
+			}
+		}
+	})
+
+	AddCallbackAndCallNow_OnGRXOffersRefreshed( p.OnGRXStateChanged )
+	AddCallback_OnGRXInventoryStateChanged( p.OnGRXStateChanged )
+
+	thread Temp_PollInventory( self, isAlreadyMaxOwnershipTier ) 
+}
+
+void function Temp_PollInventory( rtk_behavior self, bool isAlreadyMaxOwnershipTier )
+{
+	Signal( uiGlobal.signalDummy, "RTKBattlepass_EndTempPollInventory" )
+	EndSignal( uiGlobal.signalDummy, "RTKBattlepass_EndTempPollInventory" )
+
+	ItemFlavor ornull bpFlavor = GetActiveBattlePassV2()
+	if ( bpFlavor == null )
+		return
+	expect ItemFlavor( bpFlavor )
+
+	entity LocalPlayer     = GetLocalClientPlayer()
+	int oldBpOwnershipTier = GetPlayerBattlePassTier( LocalPlayer, bpFlavor )
+	bool isRestricted      = GRX_IsOfferRestricted()
+
+	wait 1.0 
+
+	while ( true )
+	{
+		while ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+			wait 0.25
+
+		rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+		RTKBattlepassPurchasePanel_UpdatePurchaseButtons( file.self, bpPurchaseModelStruct, bpFlavor )
+
+		PrivateData p
+		self.Private( p )
+
+		if ( p.purchaseAttempted && p.tabController != null  )
+		{
+			rtk_behavior tabController = expect rtk_behavior( p.tabController )
+
+			bool hasUltimatePlusPass = DoesPlayerOwnBattlePassTier( LocalPlayer, bpFlavor, eBattlePassV2OwnershipTier.ULTIMATE_PLUS )
+			if ( !isAlreadyMaxOwnershipTier && ( hasUltimatePlusPass || ( isRestricted && DoesPlayerOwnBattlePassTier( LocalPlayer, bpFlavor, eBattlePassV2OwnershipTier.PREMIUM ) ) ) )
+				OnMenuClose() 
+
+			int currentTab = RTKTabController_GetCurrentTabIndex( tabController )
+			if ( IsTabIndexUnlocked( currentTab ) )
+			{
+				int currentBpOwnershipTier = GetPlayerBattlePassTier( LocalPlayer, bpFlavor )
+				p.purchaseAttempted = false
+
+				
+				RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons",  true )
+
+				if ( currentBpOwnershipTier != oldBpOwnershipTier )
+				{
+					if ( !hasUltimatePlusPass && !isRestricted )
+					{
+						file.targetTab = ePassPurchaseTab.ULTIMATE_PLUS
+						RTKTabController_OnTabButtonClick( tabController, ePassPurchaseTab.ULTIMATE_PLUS )
+					}
+					else
+					{
+						OnMenuClose()
+					}
+				}
+			}
+		}
+
+		wait 0.25
+	}
+}
+
+void function RTKBattlepassPurchasePanel_OnDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKBattlepass_EndTempPollInventory" )
+
+	PrivateData p
+	self.Private( p )
+
+	RemoveCallback_OnGRXOffersRefreshed( p.OnGRXStateChanged )
+	RemoveCallback_OnGRXInventoryStateChanged( p.OnGRXStateChanged )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "bpPurchase")
+
+	DeregisterButtonPressedCallback( BUTTON_SHOULDER_LEFT, p.openPreviousTab)
+	DeregisterButtonPressedCallback( BUTTON_SHOULDER_RIGHT, p.openNextTab)
+
+	RemoveCallback_OnEntitlementPurchased( OnEntitlementPurchased )
+}
+
+void function RTKBattlepassPurchasePanel_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "RTKBattlepass_EndTempPollInventory" )
+}
+
+bool function IsTabIndexUnlocked( int index )
+{
+	ItemFlavor ornull bpFlavor = GetActiveBattlePassV2()
+	if ( bpFlavor == null )
+	{
+		return false
+	}
+	expect ItemFlavor( bpFlavor )
+
+	entity LocalPlayer = GetLocalClientPlayer()
+	int bpOwnershipTier = GetPlayerBattlePassTier( LocalPlayer, bpFlavor )
+	bool isRestricted = GRX_IsOfferRestricted()
+	if ( isRestricted && index > 0 )
+		return false
+
+	return bpOwnershipTier < index + 1
+}
+
+void function OpenNextTab( rtk_behavior self )
+{
+	rtk_behavior tabController = self.PropGetBehavior( "tabController" )
+
+	if ( tabController != null )
+	{
+		RTKTabController_NextTab( tabController )
+	}
+}
+
+void function OpenPreviousTab(rtk_behavior self )
+{
+	rtk_behavior tabController = self.PropGetBehavior( "tabController" )
+
+	if ( tabController != null )
+	{
+		RTKTabController_PrevTab( tabController )
+	}
+}
+
+void function InitRTKBattlePassPurchaseMenu( var newMenuArg )
+{
+	file.menu = newMenuArg
+	SetDialog( newMenuArg, false )
+	AddMenuFooterOption( newMenuArg, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK", HandleBackButton )
+	AddMenuEventHandler( newMenuArg, eUIEvent.MENU_CLOSE, OnMenuClose )
+	AddMenuEventHandler( newMenuArg, eUIEvent.MENU_NAVIGATE_BACK, OnMenuClose )
+}
+
+void function RTKBattlepassPurchasePanel_SetUpPurchaseButtons( rtk_behavior self, rtk_struct modelStruct, ItemFlavor activePass )
+{
+	rtk_behavior ornull giftPremiumButton = self.PropGetBehavior( "giftPremiumButton" )
+	if ( giftPremiumButton != null )
+	{
+		expect rtk_behavior( giftPremiumButton )
+
+		self.AutoSubscribe( giftPremiumButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, activePass ) {
+			PIN_UIInteraction_OnClick( "menu_rtkbattlepasspurchasemenu", button.GetPanel().GetDisplayName() )
+
+			array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( activePass, "battlepass" )
+			if ( offers.len() == 0 )
+			{
+				Assert( false, "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: offer list was empty" )
+				return
+			}
+			GRXScriptOffer basicPurchaseOffer
+
+			bool isOnlyGiftable = false
+			for( int i = 0; i < offers.len(); i++ )
+			{
+				GRXScriptOffer currentOffer = offers[i]
+				if ( currentOffer.isOnlyGiftable )
+				{
+					basicPurchaseOffer = currentOffer
+					isOnlyGiftable = true
+					break
+				}
+			}
+			if( !isOnlyGiftable )
+			{
+				basicPurchaseOffer = offers[0]
+			}
+
+			OpenGiftingDialog( basicPurchaseOffer )
+
+			PrivateData p
+			self.Private( p )
+			p.purchaseAttempted = true
+			
+			rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+			RTKStruct_SetBool( bpPurchaseModelStruct, "giftPurchaseButtonInteractive", false )
+		} )
+	}
+
+	rtk_behavior ornull purchasePremiumButton = self.PropGetBehavior( "purchasePremiumButton" )
+	if ( purchasePremiumButton != null )
+	{
+		expect rtk_behavior( purchasePremiumButton )
+
+		self.AutoSubscribe( purchasePremiumButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, activePass ) {
+			PIN_UIInteraction_OnClick( "menu_rtkbattlepasspurchasemenu", button.GetPanel().GetDisplayName() )
+
+			PlayerGRXScriptState scriptState = GetPlayerGRXScriptState( GetLocalClientPlayer() )
+			if( !scriptState.isInventoryReady )
+			{
+				return
+			}
+
+			array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( activePass, "battlepass" )
+			if ( offers.len() == 0 )
+			{
+				Assert( false, "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: offer list was empty" )
+				return
+			}
+			GRXScriptOffer basicPurchaseOffer
+
+			bool isOnlyGiftable = true
+			for( int i = 0; i < offers.len(); i++ )
+			{
+				GRXScriptOffer currentOffer = offers[i]
+				if ( !currentOffer.isOnlyGiftable )
+				{
+					basicPurchaseOffer = currentOffer
+					isOnlyGiftable = false
+					break
+				}
+			}
+			if( isOnlyGiftable )
+			{
+				basicPurchaseOffer = offers[0]
+			}
+
+			PurchaseDialogConfig pdc
+			pdc.offer = basicPurchaseOffer
+			pdc.quantity = 1
+			pdc.onPurchaseResultCallback = (void function( bool successful ) : (  ) {  } )
+			pdc.purchaseSoundOverride = "UI_Menu_BattlePass_Purchase"
+			PurchaseDialog( pdc )
+
+			PrivateData p
+			self.Private( p )
+			p.purchaseAttempted = true
+			
+			rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+			RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons", false )
+		} )
+	}
+
+	rtk_behavior ornull purchaseUltimateButton = self.PropGetBehavior( "purchaseUltimateButton" )
+	if ( purchaseUltimateButton != null )
+	{
+		expect rtk_behavior( purchaseUltimateButton )
+
+		self.AutoSubscribe( purchaseUltimateButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			array<int> bpTierEntitlements = [ BattlepassGetEntitlementUltimate() ]
+			array<string> bpTierCurrentPriceStrings =  GetEntitlementPricesAsStr( bpTierEntitlements )
+			array<string> bpTierOriginalPriceStrings = GetEntitlementOriginalPricesAsStr( bpTierEntitlements )
+
+			if ( bpTierCurrentPriceStrings.len() != 1 || bpTierOriginalPriceStrings.len() != 1 )
+			{
+				Assert( false, "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: entitlements array was invalid" )
+				return
+			}
+
+			if ( bpTierCurrentPriceStrings[0] == "" )
+			{
+				Warning( "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: price was empty" )
+				return
+			}
+			PIN_UIInteraction_OnClick( "menu_rtkbattlepasspurchasemenu", button.GetPanel().GetDisplayName() )
+			AttemptBattlePassPurchase( bpTierEntitlements[0] )
+
+			PrivateData p
+			self.Private( p )
+			p.purchaseAttempted = true
+			
+			rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+			RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons", false )
+		} )
+	}
+
+	rtk_behavior ornull purchaseUltimatePlusButton = self.PropGetBehavior( "purchaseUltimatePlusButton" )
+	if ( purchaseUltimatePlusButton != null )
+	{
+		expect rtk_behavior( purchaseUltimatePlusButton )
+
+		self.AutoSubscribe( purchaseUltimatePlusButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, activePass ) {
+			entity localPlayer = GetLocalClientPlayer()
+			bool hasPremiumPass = DoesPlayerOwnBattlePassTier( localPlayer, activePass, eBattlePassV2OwnershipTier.PREMIUM )
+			bool hasUltimatePass = DoesPlayerOwnBattlePassTier( localPlayer, activePass, eBattlePassV2OwnershipTier.ULTIMATE )
+			bool hasUltimatePlusPass = DoesPlayerOwnBattlePassTier( localPlayer, activePass, eBattlePassV2OwnershipTier.ULTIMATE_PLUS )
+			bool isRestricted = GRX_IsOfferRestricted()
+			bool canUpgradePass = hasUltimatePass && !hasUltimatePlusPass && !isRestricted 
+
+			array<int> bpTierEntitlements = [ BattlepassGetEntitlementUltimatePlus(), BattlepassGetEntitlementUltToUltPlus() ]
+			array<string> bpTierCurrentPriceStrings =  GetEntitlementPricesAsStr( bpTierEntitlements )
+			array<string> bpTierOriginalPriceStrings = GetEntitlementOriginalPricesAsStr( bpTierEntitlements )
+
+			if ( bpTierCurrentPriceStrings.len() != 2 || bpTierOriginalPriceStrings.len() != 2 )
+			{
+				Assert( false, "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: entitlements array was invalid" )
+				return
+			}
+
+			PIN_UIInteraction_OnClick( "menu_rtkbattlepasspurchasemenu", button.GetPanel().GetDisplayName() )
+
+			if ( !canUpgradePass )
+			{
+				if ( bpTierCurrentPriceStrings[0] == "" )
+				{
+					Warning( "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: price was empty" )
+					return
+				}
+				AttemptBattlePassPurchase( bpTierEntitlements[0], bpTierEntitlements[1] )
+
+				PrivateData p
+				self.Private( p )
+				p.purchaseAttempted = true
+				
+				rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+				RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons",  false )
+			}
+			else
+			{
+				if ( bpTierCurrentPriceStrings[1] == "" )
+				{
+					Warning( "RTKBattlepassPurchasePanel_SetUpPurchaseButtons: price was empty" )
+					return
+				}
+				AttemptBattlePassPurchase( bpTierEntitlements[1] )
+
+				PrivateData p
+				self.Private( p )
+				p.purchaseAttempted = true
+				
+				rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+				RTKStruct_SetBool( bpPurchaseModelStruct, "enablePurchaseButtons",  false )
+			}
+		} )
+	}
+
+	rtk_behavior ornull moreInfoButton = self.PropGetBehavior( "moreInfoButton" )
+	if ( moreInfoButton != null )
+	{
+		expect rtk_behavior ( moreInfoButton )
+
+		self.AutoSubscribe( moreInfoButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			CloseAllMenus()
+			AdvanceMenu( GetMenu( "RTKBattlePassMoreInfoMenu" ) )
+		} )
+	}
+
+}
+
+void function RTKBattlepassPurchasePanel_UpdatePurchaseButtons( rtk_behavior self, rtk_struct modelStruct, ItemFlavor activePass )
+{
+	PrivateData p
+	self.Private( p )
+
+	entity LocalPlayer = GetLocalClientPlayer()
+	bool showPremiumTab = true
+	bool hasPremiumPass = DoesPlayerOwnBattlePassTier( LocalPlayer, activePass, eBattlePassV2OwnershipTier.PREMIUM )
+	bool hasUltimatePass = DoesPlayerOwnBattlePassTier( LocalPlayer, activePass, eBattlePassV2OwnershipTier.ULTIMATE )
+	bool hasUltimatePlusPass = DoesPlayerOwnBattlePassTier( LocalPlayer, activePass, eBattlePassV2OwnershipTier.ULTIMATE_PLUS )
+	bool isRestricted = GRX_IsOfferRestricted()
+	bool canUpgradePass = hasUltimatePass && !hasUltimatePlusPass && !isRestricted 
+	int bpOwnershipTier = GetPlayerBattlePassTier( LocalPlayer, activePass )
+	bool canGift = CanLocalPlayerGift() && IsBattlepassGiftingEnabled()
+
+	RTKStruct_SetBool( modelStruct, "showPremiumTab", showPremiumTab )
+	RTKStruct_SetBool( modelStruct, "userCanUpgradePass", hasPremiumPass )
+	RTKStruct_SetBool( modelStruct, "userHasPremiumPass", hasPremiumPass )
+	RTKStruct_SetBool( modelStruct, "showUltimateTab", !hasUltimatePass && !isRestricted )
+	RTKStruct_SetBool( modelStruct, "showUltimatePlusTab", !hasUltimatePlusPass && !isRestricted  )
+	RTKStruct_SetInt( modelStruct, "bpOwnershipTier", bpOwnershipTier )
+
+
+
+
+
+	RTKStruct_SetBool( modelStruct, "enableGiftPurchaseButtons", true )
+	if ( RTKStruct_GetBool( modelStruct, "giftPurchaseButtonInteractive" ) != canGift )
+	{
+		RTKStruct_SetBool( modelStruct, "giftPurchaseButtonInteractive", canGift )
+	}
+
+	array<int> bpTierEntitlements = [ BattlepassGetEntitlementUltimate(), BattlepassGetEntitlementUltimatePlus(), BattlepassGetEntitlementUltToUltPlus() ]
+	array<string> bpTierCurrentPriceStrings =  GetEntitlementPricesAsStr( bpTierEntitlements )
+	array<string> bpTierOriginalPriceStrings = GetEntitlementOriginalPricesAsStr( bpTierEntitlements )
+
+	array<GRXScriptOffer> premiumPassOfferArray = GRX_GetItemDedicatedStoreOffers( activePass, "battlepass" )
+	if ( premiumPassOfferArray.len() > 0 )
+	{
+		string priceStringPremium = Localize( GRX_GetFormattedPrice( premiumPassOfferArray[0].prices[0], 1 ) )
+		RTKStruct_SetString( modelStruct, "priceStringPremium",  priceStringPremium )
+	}
+	else
+	{
+		Assert( false,"RTKBattlepassPurchasePanel_SetUpPurchaseButtons: premiumPassOfferArray was empty" )
+	}
+
+	if ( bpTierCurrentPriceStrings.len() == 3 && bpTierOriginalPriceStrings.len() == 3 )
+	{
+		if ( !Script_UserHasEAAccess() )
+		{
+			RTKStruct_SetString( modelStruct, "priceStringUltimate", bpTierCurrentPriceStrings[0] )
+			RTKStruct_SetString( modelStruct, "originalPriceStringUltimate", "" )
+			RTKStruct_SetString( modelStruct, "originalPriceStringUltimatePlus", "" )
+
+			if ( !canUpgradePass )
+			{
+				RTKStruct_SetString( modelStruct, "priceStringUltimatePlus", bpTierCurrentPriceStrings[1] )
+			}
+			else
+			{
+				RTKStruct_SetString( modelStruct, "priceStringUltimatePlus", bpTierCurrentPriceStrings[2] )
+			}
+		}
+		else
+		{
+			RTKStruct_SetBool( modelStruct, "hasDiscount", true )
+
+			RTKStruct_SetString( modelStruct, "priceStringUltimate", bpTierCurrentPriceStrings[0] )
+			RTKStruct_SetString( modelStruct, "originalPriceStringUltimate", bpTierOriginalPriceStrings[0] )
+			if ( !canUpgradePass )
+			{
+				RTKStruct_SetString( modelStruct, "priceStringUltimatePlus", bpTierCurrentPriceStrings[1] )
+				RTKStruct_SetString( modelStruct, "originalPriceStringUltimatePlus", bpTierOriginalPriceStrings[1] )
+			}
+			else
+			{
+				RTKStruct_SetString( modelStruct, "priceStringUltimatePlus", bpTierCurrentPriceStrings[2] )
+				RTKStruct_SetString( modelStruct, "originalPriceStringUltimatePlus", bpTierOriginalPriceStrings[2] )
+			}
+		}
+	}
+
+
+
+
+
+
+
+}
+
+void function OnEntitlementPurchased( int entitlementID )
+{
+	if ( entitlementID in file.purchasedEntitlements )
+	{
+		return
+	}
+
+	file.purchasedEntitlements[entitlementID] <- true
+}
+
+void function AttemptBattlePassPurchase( int entitlementID, int secondaryEntitlementID = -1 )
+{
+	if ( entitlementID in file.purchasedEntitlements || ( secondaryEntitlementID >= 0 && secondaryEntitlementID in file.purchasedEntitlements ) )
+	{
+		
+		return
+	}
+
+
+		if ( !PCPlat_IsOverlayAvailable() )
+		{
+			string platname = PCPlat_IsOrigin() ? "ORIGIN" : "STEAM"
+			ConfirmDialogData dialogData
+			dialogData.headerText = ""
+			dialogData.messageText = "#" + platname + "_INGAME_REQUIRED"
+			dialogData.contextImage = $"ui/menu/common/dialog_notice"
+
+			OpenOKDialogFromData( dialogData )
+			return
+		}
+
+
+
+
+
+
+
+
+
+
+
+	PurchaseEntitlement( entitlementID )
+}
+
+void function OpenBattlepassPurchaseMenu( int tab = ePassPurchaseTab.ULTIMATE_PLUS, bool forceSet = false )
+{
+	var menu = GetMenu("RTKBattlepassPurchaseMenu")
+	if ( GetActiveMenu() == menu )
+		return
+
+	ItemFlavor ornull bpFlavor = GetActiveBattlePassV2()
+	if ( bpFlavor == null )
+	{
+		return
+	}
+	expect ItemFlavor( bpFlavor )
+
+	entity localPlayer = GetLocalClientPlayer()
+	bool hasUltimatePlusPass = DoesPlayerOwnBattlePassTier( localPlayer, bpFlavor, eBattlePassV2OwnershipTier.ULTIMATE_PLUS )
+	bool hasUltimatePass = DoesPlayerOwnBattlePassTier( localPlayer, bpFlavor, eBattlePassV2OwnershipTier.ULTIMATE )
+	bool hasPremiumPass = DoesPlayerOwnBattlePassTier( localPlayer, bpFlavor, eBattlePassV2OwnershipTier.PREMIUM )
+	bool isRestricted = GRX_IsOfferRestricted( localPlayer )
+
+	if ( !forceSet )
+	{
+		if ( isRestricted && tab > ePassPurchaseTab.PREMIUM )
+		{
+			tab = ePassPurchaseTab.PREMIUM
+		}
+		else if ( hasPremiumPass && tab == ePassPurchaseTab.PREMIUM )
+		{
+			tab = ePassPurchaseTab.ULTIMATE_PLUS
+		}
+		else if ( hasUltimatePass && tab == ePassPurchaseTab.ULTIMATE )
+		{
+			tab = ePassPurchaseTab.ULTIMATE_PLUS
+		}
+	}
+
+	file.targetTab = tab
+
+	AdvanceMenu( menu )
+}
+
+void function HandleBackButton( var unused )
+{
+	SetDialogFlowDisabledState( true )
+	CloseAllMenus()
+	AdvanceMenu( GetMenu( "LobbyMenu" ) )
+	JumpToSeasonTab( "RTKBattlepassPanel" )
+	SetDialogFlowDisabledState( false )
+}
+
+void function OnMenuClose()
+{
+	if ( !IsFullyConnected() )
+		return
+
+	OnCloseDLCStore()
+
+	if ( GetActiveMenu() == file.menu )
+	{
+		SetDialogFlowDisabledState( true )
+		CloseAllMenus()
+		AdvanceMenu( GetMenu( "LobbyMenu" ) )
+		JumpToSeasonTab( "RTKBattlepassPanel" )
+		SetDialogFlowDisabledState( false )
+	}
+}
+
+void function RTKBattlepassPassPurchasePanel_OnTabChanged( int tabIndex )
+{
+	rtk_struct bpPurchaseModelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "bpPurchase", "RTKBattlepassPurchasePanel_ModelStruct" )
+
+	switch ( tabIndex )
+	{
+		case ePassPurchaseTab.PREMIUM:
+			EmitUISound( "UI_Menu_BattlePass_TierSelect_Premium" )
+			OnCloseDLCStore()
+			RTKStruct_SetBool( bpPurchaseModelStruct, "tabDisplaysDiscount", false )
+			break
+		case ePassPurchaseTab.ULTIMATE:
+			EmitUISound( "UI_Menu_BattlePass_TierSelect_PremiumPlus" )
+			OnOpenDLCStore()
+			RTKStruct_SetBool( bpPurchaseModelStruct, "tabDisplaysDiscount", true )
+			break
+		case ePassPurchaseTab.ULTIMATE_PLUS:
+			EmitUISound( "UI_Menu_BattlePass_TierSelect_UltimatePlus" )
+			OnOpenDLCStore()
+			RTKStruct_SetBool( bpPurchaseModelStruct, "tabDisplaysDiscount", true )
+			break
+	}
+}
+

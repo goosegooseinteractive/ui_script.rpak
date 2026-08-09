@@ -1,0 +1,54 @@
+
+global function StatsRegister_MythicS24
+
+
+
+
+
+
+
+void function StatsRegister_MythicS24()
+{
+	CAREER_STATS.feature_mythic_s24_r301_take_care_package	= RegisterAccumulatedStat_Int( null, "feature_mythic_s24_r301_take_care_package", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.feature_mythic_s24_r301_damage_total		= RegisterAccumulatedStat_Int( null, "feature_mythic_s24_r301_damage_total", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

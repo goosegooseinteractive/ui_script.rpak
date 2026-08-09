@@ -1,0 +1,1507 @@
+global function RTKMilestoneEventPanelController_InitMetaData
+global function RTKMilestoneEventPanelController_OnInitialize
+global function RTKMilestoneEventPanelController_OnDestroy
+global function RTKMilestoneEventPanelController_OnDisable
+global function RTKMilestoneEventPanelController_OnUpdate
+global function RTKMilestoneEventPanelController_SetMilestoneEvent
+
+const int SINGLE_BUTTON_PACK_QUANTITY = 1
+const int MULTIPLE_BUTTON_PACK_QUANTITY = 4
+const float ITEM_RESELECT_DELAY_TIME = 0.6
+
+const float PANEL_FIRST_DELAY = 0.05
+const float PANEL_FADE_IN_DURATION = 0.2
+const float PANEL_FADE_IN_ALPHA_FROM = 0.0
+const float PANEL_FADE_OUT_DURATION = 0.1
+const float PANEL_FADE_OUT_ALPHA_FROM = 0.7
+const float PANEL_FADE_OUT_DELAY = 0.15
+
+const float PRESTIGE_SKIN_CAROUSEL_DELAY = 3
+
+const string MODEL_PATH_NAME = "milestoneEvent"
+
+enum eMilestoneItemType
+{
+	ITEM    = 0
+	STACK   = 1
+	DIVIDER = 2
+}
+
+global struct RTKMilestoneEventPanelController_Properties
+{
+	rtk_panel offersGrid
+	rtk_behavior gridPagination
+	rtk_behavior giftButton
+	rtk_behavior purchaseButton
+	rtk_behavior informationButton
+	rtk_panel progressTrackerMilestones
+	rtk_panel progressTrackerMilestonesDrawer
+}
+
+
+
+
+
+global struct RTKMilestoneCollectedItemInfoTooltip
+{
+	string titleText
+	string descText
+}
+global struct RTKMilestoneCollectedItemInfo
+{
+	int quality
+	int state
+	bool isOwned
+	bool isPurchasable
+	bool isChaseItem
+	bool isStackable
+	bool hasShimmer
+	int gridRowSpan
+	int gridColSpan
+	int quantity
+	asset icon
+	int price
+	RTKMilestoneCollectedItemInfoTooltip& tooltipInfo
+	SettingsAssetGUID itemGuid
+}
+
+global struct RTKMilestoneProgressTrackerTierInfo
+{
+	int grantLevel
+	int tierStartLevel
+	int totalCollectedItems
+	int currentLevel
+	array<RTKMilestoneCollectedItemInfo> items
+	int prefabIndex
+	int amountOfRewards
+}
+
+global struct RTKMilestoneDrawerModel
+{
+	bool visible
+	float posX
+	RTKMilestoneProgressTrackerTierInfo& milestoneInfo
+}
+
+global struct RTKMilestoneEventPanelModel
+{
+	vector titleColor
+	vector titleBgColor
+	vector subtitleColor
+	vector disclaimerBoxColor
+	string completionPercentage
+	string nextMilestoneText
+	int totalItems
+	int currentCollectedItems
+	int endtime
+	bool isRestricted
+	asset trackerBoxBGImage
+	bool trackerBoxBlurBg
+	asset trackerBoxBlurImage
+	vector trackerProgressBarColor
+	vector trackerProgressBarBGColor
+	bool eventShopHasMilestonePack
+	bool hasGuaranteedPack
+	string guaranteedInfo
+	bool isWishlistEnabled
+}
+
+global struct RTKMilestoneEventCollectionPanelModel
+{
+	string eventDescription
+	string guaranteedInfo
+	vector color
+	vector titleBgColor
+	float fullscreenBgDarkeningOpacity
+	int totalItems
+	int collectedItems
+	asset collectionBoxBGImage
+	bool collectionBoxBlur
+	asset collectionBoxBlurImage
+	asset infoBoxBGImage
+	bool infoBoxBlur
+	asset infoBoxBlurImage
+	asset eventKeyArt
+	bool isRestricted
+}
+
+global struct RTKMilestoneCollectedCategoryInfo
+{
+	int quality
+	int quantity
+	int maxQuantity
+}
+
+global struct RTKMilestoneTitleInfo
+{
+	string headerText
+	string subheaderText
+	asset eventIcon
+	int endTime
+	bool bgBlur
+	asset bgBlurImage
+	float bgDarkening
+	asset bgImage
+	vector headerTextColor
+	vector subheaderTextColor
+	vector timeRemainingColor
+}
+
+global struct RTKMilestonePackPricingModel
+{
+	int discount
+	string originalPrice
+	int quantity
+	string price
+	bool isPaidPack = true
+	bool doesOfferExist = false
+}
+
+global struct RTKMilestoneGiftButtonData
+{
+	int state = 0
+}
+
+global struct RTKMilestonePurchaseButtonData
+{
+	int state = 0
+}
+
+global struct RTKMilestoneCarouselPanelInfo
+{
+	string name
+	string itemTypeDescription
+	int quality
+	bool isOwned
+	bool isRestricted
+	asset packIcon
+	asset coinIcon
+	string packName
+	int price
+
+	float eventOverviewPanelAlpha
+	float itemViewerPanelAlpha
+}
+
+struct PrivateData
+{
+	ItemFlavor ornull activeEvent = null
+	array<ItemFlavor> items
+	array<ItemFlavor> chaseItems
+
+	rtk_struct milestoneEventModel
+	rtk_struct trackingPanelModel
+	rtk_struct ornull itemViewerModel
+
+	array<rtk_behavior> hoveredItemButtons
+	bool hasEnteredItem
+
+	RTKMilestoneDrawerModel milestoneDrawerInfo
+	array<RTKMilestoneProgressTrackerTierInfo> milestoneTierInfo
+	array<MilestoneEventGrantReward> milestones
+
+	bool isWishlistEnabled = false
+
+	float itemPanelAnimationTime = 0.0
+	float eventPanelAnimationTime = 0.0
+	float itemPanelAlpha = 0.0
+	float eventPanelAlpha = 0.0
+	float panelAnimationDelay = 0.0
+
+	
+	void functionref() OnGRXStateChanged
+}
+
+
+struct
+{
+	table<int, int> eventGUIDTolastGridPage
+} file
+
+void function RTKMilestoneEventPanelController_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "EndPrestigeSkinCarousel" )
+}
+
+void function RTKMilestoneEventPanelController_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+
+	SetupCallbacks( self )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME + string(self.GetInternalId()), true ) )
+}
+
+void function RTKMilestoneEventPanelController_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RemoveCallback_OnGRXOffersRefreshed( p.OnGRXStateChanged )
+	RemoveCallback_OnGRXInventoryStateChanged( p.OnGRXStateChanged )
+	RunClientScript( "ClearBattlePassItem" )
+	Signal( uiGlobal.signalDummy, "EndPrestigeSkinCarousel" )
+
+	rtk_behavior ornull gridPagination = self.PropGetBehavior( "gridPagination" )
+	if ( gridPagination != null )
+	{
+		expect rtk_behavior( gridPagination )
+
+		if ( p.activeEvent == null )
+			return
+		ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+		file.eventGUIDTolastGridPage[ ItemFlavor_GetGUID( event ) ] = RTKPagination_GetCurrentPage( gridPagination )
+	}
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME + string(self.GetInternalId()) )
+}
+
+void function RTKMilestoneEventPanelController_OnDisable( rtk_behavior self )
+{
+	ResetPanelAnimations( self )
+}
+
+void function RTKMilestoneEventPanelController_OnUpdate( rtk_behavior self, float dt )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.itemViewerModel == null )
+		return
+
+	rtk_struct itemViewerModel = expect rtk_struct( p.itemViewerModel )
+	if ( p.hasEnteredItem )
+	{
+		
+		if ( p.hoveredItemButtons.len() > 0 || p.panelAnimationDelay > 0.0)
+		{
+			if ( p.itemPanelAlpha < 1.0 )
+			{
+				p.itemPanelAnimationTime = p.itemPanelAnimationTime + dt
+				p.itemPanelAlpha = ( p.itemPanelAnimationTime >= PANEL_FADE_IN_DURATION ) ? 1.0 : LerpFloat( PANEL_FADE_IN_ALPHA_FROM, 1.0, p.itemPanelAnimationTime / PANEL_FADE_IN_DURATION )
+				RTKStruct_SetFloat( itemViewerModel, "itemViewerPanelAlpha", p.itemPanelAlpha )
+			}
+
+			if ( p.eventPanelAlpha > 0.0 )
+			{
+				p.eventPanelAnimationTime = p.eventPanelAnimationTime + dt
+				p.eventPanelAlpha = ( p.eventPanelAnimationTime >= PANEL_FADE_OUT_DURATION ) ? 0.0 : LerpFloat( PANEL_FADE_OUT_ALPHA_FROM, 0.0, p.eventPanelAnimationTime / PANEL_FADE_OUT_DURATION )
+				RTKStruct_SetFloat( itemViewerModel, "eventOverviewPanelAlpha", p.eventPanelAlpha )
+			}
+
+			p.panelAnimationDelay = p.panelAnimationDelay - dt
+			if ( p.hoveredItemButtons.len() == 0 && p.panelAnimationDelay <= 0.0 )
+			{
+				p.itemPanelAnimationTime = 0.0
+				p.eventPanelAnimationTime = 0.0
+			}
+		}
+		else
+		{
+			if ( p.eventPanelAlpha < 1.0 )
+			{
+				p.eventPanelAnimationTime = p.eventPanelAnimationTime + dt
+				p.eventPanelAlpha = ( p.eventPanelAnimationTime >= PANEL_FADE_IN_DURATION ) ? 1.0 : LerpFloat( PANEL_FADE_IN_ALPHA_FROM, 1.0, p.eventPanelAnimationTime / PANEL_FADE_IN_DURATION )
+				RTKStruct_SetFloat( itemViewerModel, "eventOverviewPanelAlpha", p.eventPanelAlpha )
+			}
+
+			if ( p.itemPanelAlpha > 0.0 )
+			{
+				p.itemPanelAnimationTime = p.itemPanelAnimationTime + dt
+				if ( p.itemPanelAnimationTime >= PANEL_FADE_OUT_DURATION )
+				{
+					p.itemPanelAlpha = 0.0
+					RunClientScript( "ClearBattlePassItem" )
+				}
+				else
+				{
+					p.itemPanelAlpha = LerpFloat( PANEL_FADE_OUT_ALPHA_FROM, 0.0, p.itemPanelAnimationTime / PANEL_FADE_OUT_DURATION )
+				}
+				RTKStruct_SetFloat( itemViewerModel, "itemViewerPanelAlpha", p.itemPanelAlpha )
+			}
+		}
+	}
+	else
+	{
+		
+		if ( p.panelAnimationDelay > 0.0 )
+		{
+			p.panelAnimationDelay = p.panelAnimationDelay - dt
+			if ( p.panelAnimationDelay <= 0.0 )
+			{
+				p.itemPanelAnimationTime = 0.0
+				p.eventPanelAnimationTime = 0.0
+			}
+		}
+		else
+		{
+			if ( p.eventPanelAlpha < 1.0 )
+			{
+				p.eventPanelAnimationTime = p.eventPanelAnimationTime + dt
+				p.eventPanelAlpha = ( p.eventPanelAnimationTime >= PANEL_FADE_IN_DURATION ) ? 1.0 : LerpFloat( PANEL_FADE_IN_ALPHA_FROM, 1.0, p.eventPanelAnimationTime / PANEL_FADE_IN_DURATION )
+				RTKStruct_SetFloat( itemViewerModel, "eventOverviewPanelAlpha", p.eventPanelAlpha )
+			}
+		}
+	}
+}
+
+
+void function SetupButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+	rtk_behavior ornull informationButton = self.PropGetBehavior( "informationButton" )
+	self.AutoSubscribe( informationButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( p, event ) {
+		if ( IsMilestoneEventStoreOnly( event ) )
+		{
+			StoreMilestoneEvents_SendPageViewInfoPage( "packInfoDialog" )
+		}
+		else
+		{
+			RTKEventsPanelController_SendPageViewInfoPage( "packInfoDialog" )
+		}
+
+		OpenMilestonePackInfoDialog( event )
+	} )
+
+	SetUpGridButtons( self )
+	SetupMilestoneButtons( self )
+	SetupMilestoneDrawerButtons( self )
+	SetUpPurchaseButtons( self )
+}
+
+void function SetUpGridButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+
+	rtk_panel ornull offersGrid = self.PropGetPanel( "offersGrid" )
+	if ( offersGrid != null )
+	{
+		expect rtk_panel( offersGrid )
+
+		self.AutoSubscribe( offersGrid, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, event, p ) {
+			array< rtk_behavior > gridItems = newChild.FindBehaviorsByTypeName( "Button" )
+
+			foreach( button in gridItems )
+			{
+				self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, newChildIndex, event, p ) {
+					ItemFlavor item = p.items[newChildIndex]
+
+				
+				if ( IsItemWishlistTracker( self, item ) )
+					return
+
+					if ( Mythics_IsItemFlavorMythicSkin( item ) )
+					{
+						thread RTKMilestoneEventPanelController_CarouselPrestigeSkin_Thread( self, item )
+					}
+					else
+					{
+						BuildMilestoneItemViewerModel( self, item )
+					}
+
+					OnItemButtonEnter( self, button )
+					UpdateMilestoneDrawerInfo( self, false, -1, 0 )
+				} )
+
+				self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, newChildIndex ) {
+					Signal( uiGlobal.signalDummy, "EndPrestigeSkinCarousel" )
+					OnItemButtonExit( self, button )
+				} )
+
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex, event, p ) {
+					if ( !GRX_AreOffersReady() )
+						return
+
+
+					ItemFlavor currentItem = p.items[newChildIndex]
+					array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( currentItem, MilestoneEvent_GetFrontPageGRXOfferLocation( event, GRX_IsOfferRestricted() ) )
+
+					if ( IsItemWishlistTracker( self, currentItem ) )
+					{
+						OpenWishlistMenu()
+						return
+					}
+
+					if ( offers.len() > 0 )
+					{
+						GRXScriptOffer offer = offers[0]
+
+						bool isStoreOnly = IsMilestoneEventStoreOnly( event )
+
+						if ( isStoreOnly )
+						{
+							StoreMilestoneEvents_SendPageViewMilestoneOffer( newChildIndex, ItemFlavor_GetLongName( currentItem ) )
+						}
+						else
+						{
+							RTKEventsPanelController_SendPageViewEventOffer( self, newChildIndex, ItemFlavor_GetLongName( currentItem ) )
+						}
+
+						StoreInspectMenu_AttemptOpenWithOffer( offer )
+					}
+					else if ( Mythics_IsItemFlavorMythicSkin( currentItem ) )
+					{
+						OpenMythicSkinFakeOfferPreview( event, currentItem )
+					}
+					else
+					{
+						bool isStoreOnly = IsMilestoneEventStoreOnly( event )
+
+						string title = GRX_IsOfferRestricted() ? "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_TITLE" : ( isStoreOnly ? "#MILESTONE_STORE_PURCHASE_PRESENTATION_BUTTON_TITLE" : "#MILESTONE_EVENT_PURCHASE_PRESENTATION_BUTTON_TITLE" )
+						string desc = isStoreOnly ? "#MILESTONE_STORE_PURCHASE_PRESENTATION_BUTTON_DESC" : "#MILESTONE_EVENT_PURCHASE_PRESENTATION_BUTTON_DESC"
+						if ( GRX_IsOfferRestricted() )
+							desc = isStoreOnly ? "#MILESTONE_STORE_LOCKED_PRESENTATION_BUTTON_DESC" : "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_DESC"
+
+						if ( isStoreOnly )
+						{
+							StoreMilestoneEvents_SendPageViewMilestoneOffer( newChildIndex, ItemFlavor_GetLongName( currentItem ) )
+						}
+						else
+						{
+							RTKEventsPanelController_SendPageViewEventOffer( self, newChildIndex, ItemFlavor_GetLongName( currentItem ) )
+						}
+
+						int displayQuantity = 0
+						if ( ItemFlavor_GetType( currentItem ) == eItemType.reward_set_tracker )
+						{
+							if ( RewardSetTracker_IsStackable( currentItem ) )
+							{
+								displayQuantity = RewardSetTracker_GetDisplayQuantity( currentItem )
+							}
+						}
+						if ( displayQuantity > 0 )
+						{
+							SetGenericItemPresentationModeActiveWithNavBack( p.items[newChildIndex], title, desc, void function() : () {}, displayQuantity )
+						}
+						else
+						{
+							SetGenericItemPresentationModeActiveWithNavBack( p.items[newChildIndex], title, desc, void function() : () {} )
+						}
+					}
+				} )
+			}
+		} )
+	}
+}
+
+void function SetupMilestoneButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+	rtk_panel ornull milestonesList = self.PropGetPanel( "progressTrackerMilestones" )
+	if ( milestonesList != null )
+	{
+		expect rtk_panel( milestonesList )
+
+		self.AutoSubscribe( milestonesList, "onChildAdded", function ( rtk_panel newChild, int tierIndex ) : ( self, event, p ) {
+
+			rtk_behavior prefabInstantiator = newChild.FindBehaviorByTypeName( "PrefabInstantiator" )
+			self.AutoSubscribe( prefabInstantiator, "onPrefabInstantiated", function ( int index, rtk_panel newInstance ) : ( self, tierIndex, event, p ) {
+				if ( p.milestoneTierInfo[tierIndex].prefabIndex == eMilestoneItemType.ITEM )
+				{
+					
+					rtk_panel ornull itemsPanel = newInstance.FindDescendantByName( "Items" )
+					if ( itemsPanel == null )
+						return
+					expect rtk_panel( itemsPanel )
+					
+					
+					self.AutoSubscribe( itemsPanel, "onChildAdded", function ( rtk_panel newChild, int rewardIndex ) : ( self, tierIndex, event, p ) {
+
+						array< rtk_behavior > rewardButtons = newChild.FindBehaviorsByTypeName( "Button" )
+						foreach ( button in rewardButtons )
+						{
+							SettingsAssetGUID itemGuid = p.milestoneTierInfo[tierIndex].items[rewardIndex].itemGuid
+							int itemQuantity           = p.milestoneTierInfo[tierIndex].items[rewardIndex].quantity
+							ItemFlavor item            = GetItemFlavorByGUID( itemGuid )
+
+							self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, item ) {
+								BuildMilestoneItemViewerModel( self, item )
+								OnItemButtonEnter( self, button )
+								UpdateMilestoneDrawerInfo( self, false, -1, 0 )
+							} )
+
+							self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+								OnItemButtonExit( self, button )
+							} )
+
+							self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, rewardIndex, item, event, itemQuantity, p ) {
+								bool isStoreOnly = IsMilestoneEventStoreOnly( event )
+								string desc      = isStoreOnly ? "#MILESTONE_STORE_LOCKED_PRESENTATION_BUTTON_DESC" : "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_DESC"
+								string itemName  = "milestoneReward_" + ItemFlavor_GetLongName( item )
+
+								if ( isStoreOnly )
+								{
+									StoreMilestoneEvents_SendPageViewMilestoneOffer( rewardIndex, itemName, true )
+								}
+								else
+								{
+									RTKEventsPanelController_SendPageViewEventOffer( self, rewardIndex, itemName, true )
+								}
+
+								SetGenericItemPresentationModeActiveWithNavBack( item, "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_TITLE", desc, void function() : () {}, itemQuantity )
+							} )
+						}
+					} )
+				}
+				else if ( p.milestoneTierInfo[tierIndex].prefabIndex == eMilestoneItemType.STACK )
+				{
+					foreach ( int rewardIndex, reward in p.milestoneTierInfo[tierIndex].items )
+					{
+						if ( rewardIndex > 2 )
+							break
+
+						rtk_behavior button = newInstance.FindDescendantByName( "Items" ).FindDescendantByName( "Reward_" + rewardIndex ).FindBehaviorByTypeName( "Button" )
+
+						SettingsAssetGUID itemGuid = p.milestoneTierInfo[tierIndex].items[rewardIndex].itemGuid
+						int itemQuantity           = p.milestoneTierInfo[tierIndex].items[rewardIndex].quantity
+						ItemFlavor item            = GetItemFlavorByGUID( itemGuid )
+
+						self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, item, tierIndex ) {
+							BuildMilestoneItemViewerModel( self, item )
+							OnItemButtonEnter( self, button )
+							rtk_panel ornull milestonesList = self.PropGetPanel( "progressTrackerMilestones" )
+							if ( milestonesList )
+							{
+								expect rtk_panel( milestonesList )
+								UISize vguiscreenSize = GetScreenSize()
+								vector rtkScreenSize = RTK_GetVirtualScreenSize()
+								UpdateMilestoneDrawerInfo( self, true, tierIndex, ( button.GetPanel().GetAbsolutePositionX() - milestonesList.GetAbsolutePositionX() ) * rtkScreenSize.x / vguiscreenSize.width )
+							}
+						} )
+
+						self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, rewardIndex ) {
+							OnItemButtonExit( self, button )
+						} )
+
+						self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, rewardIndex, item, event, itemQuantity, p ) {
+							bool isStoreOnly = IsMilestoneEventStoreOnly( event )
+							string desc      = isStoreOnly ? "#MILESTONE_STORE_LOCKED_PRESENTATION_BUTTON_DESC" : "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_DESC"
+							string itemName  = "milestoneReward_" + ItemFlavor_GetLongName( item )
+
+							if ( isStoreOnly )
+							{
+								StoreMilestoneEvents_SendPageViewMilestoneOffer( rewardIndex, itemName, true )
+							}
+							else
+							{
+								RTKEventsPanelController_SendPageViewEventOffer( self, rewardIndex, itemName, true )
+							}
+
+							SetGenericItemPresentationModeActiveWithNavBack( item, "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_TITLE", desc, void function() : () {}, itemQuantity )
+						} )
+					}
+				}
+			} )
+		} )
+	}
+}
+
+void function SetUpPurchaseButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	rtk_behavior ornull giftButton = self.PropGetBehavior( "giftButton" )
+	rtk_behavior ornull purchaseButton = self.PropGetBehavior( "purchaseButton" )
+	array<GRXScriptOffer> singlePurchaseOffers = MilestoneEvent_GetSinglePackOffers( event )
+
+	self.ClearAutoSubscribe( giftButton, "onPressed" )
+	self.AutoSubscribe( giftButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( singlePurchaseOffers, event, p ) {
+		int state = GetEventGiftButtonState( singlePurchaseOffers )
+		switch ( state )
+		{
+			case eEventGiftingButtonState.AVAILABLE:
+				if ( IsMilestoneEventStoreOnly( event ) )
+				{
+					StoreMilestoneEvents_SendPageViewPurchaseDialog( true )
+				}
+				else
+				{
+					RTKEventsPanelController_SendPageViewPurchaseDialog( true )
+				}
+
+				OpenPurchasePackSelectionDialog( true, event )
+				break
+			case eEventGiftingButtonState.TWO_FACTOR_DISABLED:
+				OpenTwoFactorInfoDialog( null )
+				break
+			case eEventGiftingButtonState.GIFTING_EXCEEDED:
+			case eEventGiftingButtonState.NOT_ENOUGH_LEVEL:
+			case eEventGiftingButtonState.UNAVAILABLE:
+				return
+		}
+	} )
+
+	self.ClearAutoSubscribe( purchaseButton, "onPressed" )
+	self.AutoSubscribe( purchaseButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( singlePurchaseOffers, event, p ) {
+		int state = GetEventPurchaseButtonState( singlePurchaseOffers )
+		switch ( state )
+		{
+			case eEventPackPurchaseButtonState.AVAILABLE:
+				if ( IsMilestoneEventStoreOnly( event ) )
+					StoreMilestoneEvents_SendPageViewPurchaseDialog( false )
+				else
+					RTKEventsPanelController_SendPageViewPurchaseDialog( false )
+
+				OpenPurchasePackSelectionDialog( false, event )
+				break
+			default:
+				EmitUISound( "menu_deny" )
+				return
+		}
+	} )
+
+	BuildPurchaseButtonDataModel( self )
+}
+
+void function SetupMilestoneDrawerButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+
+	rtk_panel ornull milestonesDrawerList = self.PropGetPanel( "progressTrackerMilestonesDrawer" )
+	if ( milestonesDrawerList != null )
+	{
+		expect rtk_panel( milestonesDrawerList )
+
+		
+		rtk_panel ornull itemsPanel = milestonesDrawerList.FindDescendantByName( "Items" )
+		if ( itemsPanel == null )
+			return
+		expect rtk_panel( itemsPanel )
+
+		
+		self.AutoSubscribe( itemsPanel, "onChildAdded", function ( rtk_panel newChild, int rewardIndex ) : ( self, event, p ) {
+
+			array< rtk_behavior > rewardButtons = newChild.FindBehaviorsByTypeName( "Button" )
+			foreach( button in rewardButtons )
+			{
+				self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, rewardIndex, p ) {
+					ItemFlavor item = GetItemFlavorByGUID( p.milestoneDrawerInfo.milestoneInfo.items[rewardIndex].itemGuid )
+					BuildMilestoneItemViewerModel( self, item )
+					OnItemButtonEnter( self, button )
+				} )
+
+				self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, rewardIndex ) {
+					OnItemButtonExit( self, button )
+				} )
+
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, event, rewardIndex, p ) {
+					ItemFlavor item = GetItemFlavorByGUID( p.milestoneDrawerInfo.milestoneInfo.items[rewardIndex].itemGuid )
+					int itemQuantity = p.milestoneDrawerInfo.milestoneInfo.items[rewardIndex].quantity
+
+					bool isStoreOnly = IsMilestoneEventStoreOnly( event )
+					string desc = isStoreOnly ? "#MILESTONE_STORE_LOCKED_PRESENTATION_BUTTON_DESC" : "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_DESC"
+					string itemName = "milestoneReward_" + ItemFlavor_GetLongName( item )
+
+					if ( isStoreOnly )
+						StoreMilestoneEvents_SendPageViewMilestoneOffer( rewardIndex, itemName, true )
+					else
+						RTKEventsPanelController_SendPageViewEventOffer( self, rewardIndex, itemName, true )
+
+					SetGenericItemPresentationModeActiveWithNavBack( item, "#MILESTONE_EVENT_LOCKED_PRESENTATION_BUTTON_TITLE", desc, void function() : () {}, itemQuantity )
+				} )
+			}
+		} )
+
+		rtk_behavior cursorArea = milestonesDrawerList.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( cursorArea, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+			UpdateMilestoneDrawerInfo( self, false, -1, 0 )
+		} )
+
+	}
+}
+
+void function OnItemButtonEnter( rtk_behavior self, rtk_behavior button )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.hasEnteredItem = true
+	p.hoveredItemButtons.append( button )
+}
+
+void function OnItemButtonExit( rtk_behavior self, rtk_behavior button )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.hoveredItemButtons.fastremovebyvalue( button )
+	p.panelAnimationDelay = p.itemPanelAlpha > 0.0 ? PANEL_FADE_OUT_DELAY : 0.0
+}
+
+
+void function BuildDataModels( rtk_behavior self )
+{
+	BuildMilestonePanelDataModel( self )
+	BuildProgressTrackerDataModel( self )
+}
+
+void function BuildProgressTrackerDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct trackingPanel = RTKStruct_GetOrCreateScriptStruct( p.milestoneEventModel, "trackingPage", "RTKMilestoneEventPanelModel" )
+	p.trackingPanelModel = trackingPanel
+
+	BuildMilestoneTrackingPanelInfo( self )
+	BuildMilestoneRewardsItemsInfo( self )
+	UpdateMilestoneDrawerInfo( self, false, -1, 0 )
+	BuildPackPricingDataModel( self )
+}
+
+void function BuildPackPricingDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+	array<GRXScriptOffer> singlePurchaseOffers = MilestoneEvent_GetSinglePackOffers( event )
+	array<GRXScriptOffer> multiplePurchaseOffers = MilestoneEvent_GetMultiPackOffers( event )
+
+	array<RTKMilestonePackPricingModel> pricingDataModel
+	RTKMilestonePackPricingModel singlePurchaseDataModel = GetMilestonePricingDataModelFromOffers( singlePurchaseOffers, SINGLE_BUTTON_PACK_QUANTITY )
+	RTKMilestonePackPricingModel multiplePurchaseDataModel = GetMilestonePricingDataModelFromOffers( multiplePurchaseOffers, MULTIPLE_BUTTON_PACK_QUANTITY )
+
+	pricingDataModel.append( singlePurchaseDataModel )
+	pricingDataModel.append( multiplePurchaseDataModel )
+
+	rtk_array pricingDataData = RTKStruct_GetOrCreateScriptArrayOfStructs( p.trackingPanelModel, "packPricingData", "RTKMilestonePackPricingModel" )
+	RTKArray_SetValue( pricingDataData, pricingDataModel )
+}
+
+void function BuildMilestonePanelDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct milestoneEvent = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME + string(self.GetInternalId()), "RTKMilestoneEventCollectionPanelModel" )
+	p.milestoneEventModel = milestoneEvent
+
+	BuildMilestoneGeneralPanelInfo( self )
+
+	BuildMilestoneTitleDataModel( self )
+	BuildMilestoneCollectedCategoryInfo( self )
+	BuildMilestoneCollectedItemsInfo( self )
+	BuildPackProbabilitiesDataModel( self )
+	BuildMilestoneItemViewerModel( self, null )
+}
+
+void function BuildMilestoneRewardsItemsInfo( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	array<RTKMilestoneCollectedItemInfo> rewardsItemsModel = []
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+
+	array<MilestoneEventGrantReward> milestones = MilestoneEvent_GetMilestoneGrantRewards( event, GRX_IsOfferRestricted() )
+	p.milestones = milestones
+
+	string eventName = Localize( ItemFlavor_GetLongName( event ) )
+	table< int, array< RTKMilestoneCollectedItemInfo > > itemsTiers
+	foreach ( milestone in milestones )
+	{
+		
+		int milestoneLevel = milestone.grantingLevel
+		if ( !( milestoneLevel in itemsTiers ) )
+			itemsTiers[milestoneLevel] <- []
+
+		
+		RTKMilestoneCollectedItemInfo infoData
+		ItemFlavor item = milestone.rewardFlav
+		infoData.quality = GRX_GetRarityOverrideFromQuantity( item, ItemFlavor_GetQuality( item ), milestone.quantity )
+		infoData.icon = milestone.customImage == "" ? CustomizeMenu_GetRewardButtonImage( item ) : milestone.customImage
+		infoData.isStackable = milestone.isStackable
+		infoData.isOwned = milestone.isStackable ? false : GRX_IsItemOwnedByPlayer( item )
+		infoData.state = infoData.isOwned ? eShopItemState.OWNED : eShopItemState.AVAILABLE
+		infoData.isPurchasable = false
+		infoData.price = -1
+		infoData.quantity = milestone.quantity
+		infoData.tooltipInfo.titleText = milestone.customName == "" ? ItemFlavor_GetLongName( item ) : milestone.customName
+
+		
+		if ( ItemFlavor_GetType( item ) == eItemType.account_pack && ItemFlavor_GetAccountPackType( item ) == eAccountPackType.RETRO_PACK )
+		{
+			array<ItemFlavor> packContent = GRXPack_GetPackContents( item )
+			foreach ( itemFlav in packContent )
+			{
+				if ( ItemFlavor_GetType( itemFlav ) == eItemType.weapon_skin && WeaponSkin_DoesReactToKills( itemFlav ) )
+				{
+					infoData.hasShimmer = true
+					break
+				}
+			}
+		}
+
+		if ( milestoneLevel == 1 ) 
+		{
+			infoData.tooltipInfo.descText = GRX_IsOfferRestricted() ? Localize( "#MILESTONE_ITEM_TOOLTIP_DESC_RESTRICTED_SINGULAR", milestoneLevel, eventName ) : Localize( "#MILESTONE_ITEM_TOOLTIP_DESC_SINGULAR", milestoneLevel, eventName )
+		}
+		else
+		{
+			infoData.tooltipInfo.descText = GRX_IsOfferRestricted() ? Localize( "#MILESTONE_ITEM_TOOLTIP_DESC_RESTRICTED", milestoneLevel, eventName ) : Localize( "#MILESTONE_ITEM_TOOLTIP_DESC", milestoneLevel, eventName )
+		}
+
+		infoData.itemGuid = item.guid
+		itemsTiers[milestoneLevel].append( infoData )
+	}
+
+	int totalCollectedItems = MilestoneEvent_GetProgressBasedOnRewardSetTracker( GetLocalClientPlayer(), event, GRX_IsOfferRestricted() )
+
+	
+	p.milestoneTierInfo.clear()
+
+	int index = 0
+	int currentTierStartLevel = 0
+	foreach ( grantLevel, rewardsArray in itemsTiers )
+	{
+		
+		RTKMilestoneProgressTrackerTierInfo tier
+		tier.grantLevel = grantLevel
+		tier.tierStartLevel = currentTierStartLevel
+		foreach ( RTKMilestoneCollectedItemInfo reward in rewardsArray )
+		{
+			reward.isOwned = reward.isOwned || ( reward.isStackable && totalCollectedItems >= grantLevel )
+			if ( reward.isStackable )
+				reward.state = reward.isOwned ? eShopItemState.OWNED : eShopItemState.AVAILABLE
+		}
+		tier.items = rewardsArray
+		tier.currentLevel = minint( grantLevel, totalCollectedItems )
+		tier.prefabIndex = rewardsArray.len() == 1 ? eMilestoneItemType.ITEM : eMilestoneItemType.STACK
+		tier.amountOfRewards = rewardsArray.len()
+
+		p.milestoneTierInfo.append( tier )
+
+		
+		if ( index != itemsTiers.len() - 1 )
+		{
+			RTKMilestoneProgressTrackerTierInfo dividerTier
+			dividerTier.grantLevel = grantLevel
+			dividerTier.currentLevel = minint( grantLevel, totalCollectedItems )
+			dividerTier.prefabIndex = eMilestoneItemType.DIVIDER
+			p.milestoneTierInfo.append( dividerTier )
+		}
+
+		currentTierStartLevel = grantLevel
+		index++
+	}
+
+	rtk_array rewardTiers = RTKStruct_GetOrCreateScriptArrayOfStructs( p.trackingPanelModel, "rewardTiersModel", "RTKMilestoneProgressTrackerTierInfo" )
+	RTKArray_SetValue( rewardTiers, p.milestoneTierInfo )
+}
+
+void function UpdateMilestoneDrawerInfo( rtk_behavior self, bool visible = false, int tierIndex = -1, float posX = 0 )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.milestoneDrawerInfo.visible = visible
+	p.milestoneDrawerInfo.posX = posX
+
+	if ( tierIndex != -1 )
+		p.milestoneDrawerInfo.milestoneInfo = p.milestoneTierInfo[tierIndex]
+
+	rtk_struct drawerInfo = RTKStruct_GetOrCreateScriptStruct( p.trackingPanelModel, "rewardTierDrawerModel", "RTKMilestoneDrawerModel" )
+	RTKStruct_SetValue( drawerInfo, p.milestoneDrawerInfo )
+}
+
+void function BuildMilestoneGeneralPanelInfo( rtk_behavior self )
+{
+	bool isRestricted = GRX_IsOfferRestricted()
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent != null )
+	{
+		RTKMilestoneEventCollectionPanelModel generalModel
+		ItemFlavor ornull event = p.activeEvent
+		expect ItemFlavor(event)
+
+		generalModel.color = MilestoneEvent_GetTitleCol( event )
+		generalModel.titleBgColor = MilestoneEvent_GetTitleBGColor( event )
+		generalModel.fullscreenBgDarkeningOpacity = MilestoneEvent_GetFullscreenBGDarkening( event )
+		p.items = MilestoneEvent_GetEventItems( event, isRestricted )
+		p.items.reverse() 
+		p.chaseItems = MilestoneEvent_GetMythicEventItems( event, isRestricted )
+		generalModel.totalItems = MilestoneEvent_GetTotalItemsInPoolIncludingTrackerTiers( event, isRestricted )
+		generalModel.collectedItems = MilestoneEvent_GetProgressBasedOnRewardSetTracker( GetLocalClientPlayer(), event, isRestricted )
+		generalModel.collectionBoxBGImage = MilestoneEvent_GetCollectionBoxBGImage( event )
+		generalModel.collectionBoxBlur = MilestoneEvent_GetCollectionBoxBlur( event )
+		generalModel.collectionBoxBlurImage = MilestoneEvent_GetCollectionBoxBlurImage( event )
+		generalModel.infoBoxBGImage = MilestoneEvent_GetInfoBoxBGImage( event )
+		generalModel.infoBoxBlur = MilestoneEvent_GetInfoBoxBlur( event )
+		generalModel.infoBoxBlurImage = MilestoneEvent_GetInfoBoxBlurImage( event )
+		generalModel.guaranteedInfo = MilestoneEvent_GetGuaranteedPackText( event )
+		generalModel.eventKeyArt = MilestoneEvent_GetEventKeyArt( event )
+		generalModel.isRestricted = isRestricted
+
+		RTKStruct_SetValue( p.milestoneEventModel, generalModel )
+	}
+}
+
+void function BuildMilestoneCollectedCategoryInfo( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	array<RTKMilestoneCollectedCategoryInfo> collectedInfoModel = []
+
+	if ( p.activeEvent == null )
+		return
+
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	bool isRestricted = GRX_IsOfferRestricted()
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+
+	array<CollectionEventRewardGroup> rewardGroups = MilestoneEvent_GetRewardGroups( event, isRestricted )
+	foreach ( rewardGroup in rewardGroups )
+	{
+		
+		int nonItemPoolItemCount = 0
+		int ownedItemsNotInPool = 0
+		foreach ( rewardItem in rewardGroup.rewards )
+		{
+			if ( !MilestoneEvent_IsItemInPool( event, rewardItem.grxIndex, isRestricted ) )
+			{
+				nonItemPoolItemCount++
+
+				if ( GRX_IsItemOwnedByPlayer( rewardItem ) )
+					ownedItemsNotInPool++
+			}
+		}
+
+		RTKMilestoneCollectedCategoryInfo tierData
+		tierData.quantity = GetNumberOfOwnedRewardsPerCategory( self, rewardGroup ) - ownedItemsNotInPool
+
+		if ( MilestoneEvent_HasRewardSetTracker( event, rewardGroup.quality, isRestricted  ) )
+		{
+			tierData.maxQuantity = MilestoneEvent_GetRewardTrackerQuantityForTier( event, rewardGroup.quality, isRestricted )
+		}
+		else
+		{
+			tierData.maxQuantity = rewardGroup.rewards.len()
+		}
+		tierData.maxQuantity -= nonItemPoolItemCount
+		tierData.quality = rewardGroup.quality
+		collectedInfoModel.append( tierData )
+	}
+
+	
+	collectedInfoModel.reverse()
+
+	rtk_array collectedInfo = RTKStruct_GetOrCreateScriptArrayOfStructs( p.milestoneEventModel, "collectedInfo", "RTKMilestoneCollectedCategoryInfo" )
+	RTKArray_SetValue( collectedInfo, collectedInfoModel )
+}
+
+void function BuildMilestoneCollectedItemsInfo( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	array<RTKMilestoneCollectedItemInfo> collectedItemsModel = []
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+	foreach ( item in p.items )
+	{
+		bool isChaseItem = MilestoneEvent_IsChaseItem( event, item.grxIndex, GRX_IsOfferRestricted() )
+		asset customImage = MilestoneEvent_GetCustomIconForItemIdx( event, item.grxIndex, GRX_IsOfferRestricted() )
+		vector gridSizeOverride = MilestoneEvent_GetGridSizeOverride( event, item.grxIndex, GRX_IsOfferRestricted() )
+		array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( item, MilestoneEvent_GetFrontPageGRXOfferLocation( event, GRX_IsOfferRestricted() ) )
+
+		RTKMilestoneCollectedItemInfo infoData
+		infoData.quality = ItemFlavor_GetQuality( item )
+		infoData.icon = customImage != "" ? customImage : CustomizeMenu_GetRewardButtonImage( item )
+		infoData.isOwned = ItemFlavorIsStackable( item ) ? false : GRX_IsItemOwnedByPlayer( item )
+		infoData.state = infoData.isOwned ? eShopItemState.OWNED : eShopItemState.AVAILABLE
+		infoData.isPurchasable = offers.len() > 0
+		infoData.isChaseItem = isChaseItem
+		infoData.gridColSpan = int(gridSizeOverride.x) != 0 ? int(gridSizeOverride.x) : ( isChaseItem ? 2 : 1 )
+		infoData.gridRowSpan = int(gridSizeOverride.y) != 0 ? int(gridSizeOverride.y) : 1
+		infoData.price = infoData.isPurchasable ? GRXOffer_GetPremiumPriceQuantity( offers[0] ) : -1
+		infoData.tooltipInfo.titleText = ItemFlavor_GetLongName( item )
+		if ( IsItemWishlistTracker( self, item ) )
+			infoData.tooltipInfo.descText = "#WISHLIST_MILESTONE_EVENT_TRACKER_TOOLTIP_DESC"
+
+		collectedItemsModel.append( infoData )
+	}
+
+	rtk_array collectedInfo = RTKStruct_GetOrCreateScriptArrayOfStructs( p.milestoneEventModel, "collectedItemsModel", "RTKMilestoneCollectedItemInfo" )
+	RTKArray_SetValue( collectedInfo, collectedItemsModel )
+}
+
+void function BuildMilestoneTrackingPanelInfo( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent != null )
+	{
+		RTKMilestoneEventPanelModel generalModel
+		ItemFlavor ornull event = p.activeEvent
+		expect ItemFlavor(event)
+		int remainingItemsForMile =  MilestoneEvent_GetRemainingCompletionItemsForCurrentMilestone( event )
+
+		generalModel.titleColor = MilestoneEvent_GetTitleCol( event )
+		generalModel.titleBgColor = MilestoneEvent_GetTitleBGColor( event )
+		generalModel.subtitleColor = MilestoneEvent_GetMilestoneBoxTitleColor( event )
+		generalModel.disclaimerBoxColor = MilestoneEvent_GetDisclaimerBoxColor( event )
+		generalModel.endtime =  CalEvent_GetFinishUnixTime( event )
+		generalModel.totalItems = MilestoneEvent_GetTotalItemsInPoolIncludingTrackerTiers( event, GRX_IsOfferRestricted() )
+		generalModel.currentCollectedItems = MilestoneEvent_GetProgressBasedOnRewardSetTracker( GetLocalClientPlayer(), event, GRX_IsOfferRestricted() )
+		if ( remainingItemsForMile == 0  )
+			generalModel.nextMilestoneText = Localize( "#MILESTONE_EVENT_TRACKING_BOX_COMPLETED_MILES" )
+		else
+			generalModel.nextMilestoneText = Localize( GRX_IsOfferRestricted() ? "#MILESTONE_EVENT_TRACKING_BOX_NEXT_MILE_RESTRICT" : "#MILESTONE_EVENT_TRACKING_BOX_NEXT_MILE", remainingItemsForMile )
+
+		
+		if ( generalModel.totalItems > 0 )
+		{
+			float percent = float( generalModel.currentCollectedItems ) / float( generalModel.totalItems )
+			generalModel.completionPercentage = Localize( "#MILESTONE_TRACKER_PERCENT_COMPLETE", FormatNumber( "1", percent * 100 ) )
+		}
+		else
+		{
+			generalModel.completionPercentage = ""
+		}
+
+		p.isWishlistEnabled = MilestoneEvent_IsWishlistEnabled( event )
+		generalModel.isWishlistEnabled = p.isWishlistEnabled
+		generalModel.isRestricted = GRX_IsOfferRestricted()
+		generalModel.trackerBoxBGImage = MilestoneEvent_GetTrackerBoxBGImage( event )
+		generalModel.trackerBoxBlurBg = MilestoneEvent_GetTrackerBoxBlur( event )
+		generalModel.trackerBoxBlurImage = MilestoneEvent_GetTrackerBoxBlurImage( event )
+		generalModel.trackerProgressBarColor = MilestoneEvent_GetMilestoneTrackerProgressBarColor( event )
+		generalModel.trackerProgressBarBGColor = MilestoneEvent_GetMilestoneTrackerProgressBarBGColor( event )
+		generalModel.eventShopHasMilestonePack = IsMilestoneEventStoreOnly( event ) ? false : EventShop_HasMilestoneEventPack()
+		generalModel.hasGuaranteedPack = MilestoneEvent_GetGuaranteedMultiPackOffers( event ).len() > 0
+		generalModel.guaranteedInfo = MilestoneEvent_GetGuaranteedPackText( event )
+		
+		RTKStruct_SetValue( p.trackingPanelModel, generalModel )
+	}
+}
+
+void function BuildPackProbabilitiesDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor ornull event = p.activeEvent
+	expect ItemFlavor(event)
+
+	RTKPackProbabilitiesStrings probabilityStrings = MilestoneEvent_GetPackProbabilitiesStrings( event )
+
+	rtk_struct probabilityModel = RTKStruct_GetOrCreateScriptStruct( p.milestoneEventModel, "packProbabilities", "RTKPackProbabilitiesStrings" )
+	RTKStruct_SetValue( probabilityModel, probabilityStrings )
+}
+
+void function BuildPurchaseButtonDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent == null )
+		return
+
+	ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	array<GRXScriptOffer> singlePurchaseOffers = MilestoneEvent_GetSinglePackOffers( event )
+
+	RTKMilestoneGiftButtonData giftButtonModel
+	giftButtonModel.state = GetEventGiftButtonState( singlePurchaseOffers )
+
+	rtk_struct giftButtonData = RTKStruct_GetOrCreateScriptStruct( p.trackingPanelModel, "giftButtonData", "RTKMilestoneGiftButtonData" )
+	RTKStruct_SetValue( giftButtonData, giftButtonModel )
+
+	RTKMilestonePurchaseButtonData purchaseButtonModel
+	purchaseButtonModel.state = GetEventPurchaseButtonState( singlePurchaseOffers )
+
+	if ( !GRX_AreOffersReady() )
+		purchaseButtonModel.state = eEventPackPurchaseButtonState.UNAVAILABLE
+
+	rtk_struct purchaseButtonData = RTKStruct_GetOrCreateScriptStruct( p.trackingPanelModel, "purchaseButtonData", "RTKMilestonePurchaseButtonData" )
+	RTKStruct_SetValue( purchaseButtonData, purchaseButtonModel )
+}
+
+void function BuildMilestoneTitleDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent != null )
+	{
+		ItemFlavor ornull event = p.activeEvent
+		expect ItemFlavor(event)
+
+		RTKMilestoneTitleInfo titleModel
+		titleModel.headerText = MilestoneEvent_GetTitleHeaderText( event )
+		titleModel.subheaderText = MilestoneEvent_GetTitleSubheaderText( event )
+		titleModel.eventIcon = MilestoneEvent_GetTitleMainIcon( event )
+		titleModel.bgBlur = MilestoneEvent_GetTitleUseBackgroundBlur( event )
+		titleModel.bgBlurImage = MilestoneEvent_GetTitleBlurImage( event )
+		titleModel.bgDarkening = MilestoneEvent_GetTitleBackgroundDarkening( event )
+		titleModel.bgImage = MilestoneEvent_GetTitleBackgroundImage( event )
+		titleModel.headerTextColor = MilestoneEvent_GetTitleHeaderColor( event )
+		titleModel.subheaderTextColor = MilestoneEvent_GetTitleSubheaderColor( event )
+		titleModel.timeRemainingColor = MilestoneEvent_GetTimeRemainingColor( event )
+		titleModel.endTime = CalEvent_GetFinishUnixTime( event )
+
+		rtk_struct titleCard = RTKStruct_GetOrCreateScriptStruct( p.milestoneEventModel, "titleCard", "RTKMilestoneTitleInfo" )
+		RTKStruct_SetValue( titleCard, titleModel )
+	}
+}
+
+void function BuildMilestoneItemViewerModel( rtk_behavior self, ItemFlavor ornull itemToDisplay )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.activeEvent != null )
+	{
+		if ( !GRX_IsInventoryReady() )
+			return
+
+		
+		rtk_struct itemViewerModel = RTKStruct_GetOrCreateScriptStruct( p.milestoneEventModel, "carouselInfo", "RTKMilestoneCarouselPanelInfo" )
+		p.itemViewerModel = itemViewerModel
+
+		
+		ItemFlavor ornull event = p.activeEvent
+		expect ItemFlavor( event )
+
+		if ( itemToDisplay == null )
+			return
+
+		ItemFlavor ornull item = itemToDisplay
+		expect ItemFlavor( item )
+
+		RTKMilestoneCarouselPanelInfo itemInfo
+
+		itemInfo.eventOverviewPanelAlpha = p.eventPanelAlpha
+		itemInfo.itemViewerPanelAlpha = p.itemPanelAlpha
+
+		if ( IsItemFlavorRewardItem( self, item ) )
+		{
+			itemInfo.isOwned = true
+		}
+		else
+		{
+			if ( ItemFlavorIsStackable( item ) )
+				itemInfo.isOwned = false
+			else
+				itemInfo.isOwned = GRX_IsItemOwnedByPlayer( item )
+		}
+
+		itemInfo.quality = ItemFlavor_GetQuality( item )
+		itemInfo.name = ItemFlavor_GetLongName( item )
+		itemInfo.itemTypeDescription = MilestoneEvent_GetCarouselItemDescriptionText(item )
+		itemInfo.packIcon = MilestoneEvent_GetMainPackImage( event )
+		itemInfo.packName = Localize( MilestoneEvent_GetMainPackShortPluralName( event ) )
+		ItemFlavor currencyFlav = GRX_CURRENCIES[GRX_CURRENCY_PREMIUM]
+		itemInfo.coinIcon = ItemFlavor_GetIcon( currencyFlav )
+		itemInfo.isRestricted = GRX_IsOfferRestricted()
+		array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( item, MilestoneEvent_GetFrontPageGRXOfferLocation( event, GRX_IsOfferRestricted() ) )
+		if ( !GRX_IsOfferRestricted() )
+		{
+			ItemFlavor ornull activeThemedShopEvent = GetActiveThemedShopEvent( GetUnixTimestamp() )
+			if ( activeThemedShopEvent != null )
+			{
+				expect ItemFlavor( activeThemedShopEvent )
+				offers.extend( GRX_GetItemDedicatedStoreOffers( item, ThemedShopEvent_GetGRXOfferLocation( activeThemedShopEvent ) ) )
+			}
+		}
+		itemInfo.price = offers.len() > 0 ? GRXOffer_GetPremiumPriceQuantity( offers[0] ) : -1
+
+		RTKStruct_SetValue( itemViewerModel, itemInfo )
+		if ( IsValidItemFlavorGUID( ItemFlavor_GetGUID( item ) ) )
+		{
+			bool isCompactUI = false
+#if SUPPORTS_COMPACT_UI
+				isCompactUI = IsUsingCompactUILayout()
+#endif
+			RunClientScript( "UIToClient_ItemPresentation", ItemFlavor_GetGUID( item ) , -1, 1.19, Battlepass_ShouldShowLow( item ), null, true, "collection_event_ref", isCompactUI, true, false, false )
+		}
+	}
+}
+
+void function RTKMilestoneEventPanelController_CarouselPrestigeSkin_Thread( rtk_behavior self, ItemFlavor item )
+{
+	Signal( uiGlobal.signalDummy, "EndPrestigeSkinCarousel" )
+	EndSignal( uiGlobal.signalDummy, "EndPrestigeSkinCarousel" )
+
+	if ( !Mythics_IsItemFlavorMythicSkin( item ) )
+		return
+
+	int displayTier = 0
+	while( true )
+	{
+		if ( displayTier > 2 ) 
+			displayTier = 0
+
+		ItemFlavor ornull displayItem = Mythics_GetItemTierForSkin( item, displayTier )
+		displayTier++
+		BuildMilestoneItemViewerModel( self, displayItem )
+
+		wait PRESTIGE_SKIN_CAROUSEL_DELAY
+	}
+}
+
+void function RTKMilestoneEventPanelController_SetMilestoneEvent( rtk_behavior self, ItemFlavor event )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.activeEvent = event
+
+	
+	SetCollectionEventAboutPageEvent( p.activeEvent )
+
+	int eventGUID = ItemFlavor_GetGUID( event )
+	if ( !(eventGUID in file.eventGUIDTolastGridPage) )
+	{
+		file.eventGUIDTolastGridPage[ eventGUID ] <- 0
+	}
+
+	
+	BuildDataModels( self )
+	SetupButtons( self )
+	ResetPanelAnimations( self )
+	SetInitialGridPaginationPage( self )
+}
+
+
+void function SetupCallbacks( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.OnGRXStateChanged = ( void function() : ( self ) {
+		OnGRXStateChanged( self )
+	} )
+
+	AddCallback_OnGRXOffersRefreshed( p.OnGRXStateChanged )
+	AddCallback_OnGRXInventoryStateChanged( p.OnGRXStateChanged )
+}
+
+void function OnGRXStateChanged( rtk_behavior self )
+{
+	bool ready = GRX_IsInventoryReady() && GRX_AreOffersReady() && IsPersistenceAvailable()
+
+	if ( !ready )
+		return
+
+	BuildMilestoneTrackingPanelInfo( self )
+	BuildMilestoneCollectedCategoryInfo( self )
+	BuildMilestoneCollectedItemsInfo( self )
+	BuildPackPricingDataModel( self )
+	BuildPurchaseButtonDataModel( self )
+	SetUpPurchaseButtons( self )
+}
+
+
+int function GetNumberOfOwnedRewardsPerCategory( rtk_behavior self, CollectionEventRewardGroup rewardGroup )
+{
+	int counter = 0
+	foreach	( flav in rewardGroup.rewards )
+	{
+		if ( !ItemFlavorIsStackable( flav ) )
+		{
+			if ( GRX_IsItemOwnedByPlayer( flav ) )
+				counter++
+		}
+		else if ( IsItemWishlistTracker( self, flav ) )
+		{
+			return GRX_GetConsumableCount( ItemFlavor_GetGRXIndex( flav ) )
+		}
+
+	}
+	return counter
+}
+
+RTKMilestonePackPricingModel function GetMilestonePricingDataModelFromOffers( array<GRXScriptOffer> offers, int defaultQuantity )
+{
+	RTKMilestonePackPricingModel offerModel
+	if ( offers.len() > 0 )
+	{
+		GRXScriptOffer offer = offers[0]
+		if ( offer.prices.len() == 2 )
+		{
+			string firstPrice = "%$" + ItemFlavor_GetIcon( GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] ) + "% " + FormatAndLocalizeNumber( "1", float( GRXOffer_GetPremiumPriceQuantity( offer ) ), true )
+			string secondPrice = "%$" + ItemFlavor_GetIcon( GRX_CURRENCIES[GRX_CURRENCY_CRAFTING] ) + "% " + FormatAndLocalizeNumber( "1", float( GRXOffer_GetCraftingPriceQuantity( offer ) ), true )
+			offerModel.price = Localize( "#STORE_PRICE_N_N", firstPrice, secondPrice )
+		}
+		else
+		{
+			offerModel.price = GRX_GetFormattedPrice( offer.prices[0], 1 )
+		}
+		offerModel.isPaidPack = GRXOffer_GetPremiumPriceQuantity( offer ) > 1 
+		offerModel.doesOfferExist = true
+		int originalPrice = GRXOffer_GetOriginalPremiumPriceQuantity( offer )
+		int price = GRXOffer_GetPremiumPriceQuantity( offer )
+		if ( originalPrice > 0 )
+		{
+			offerModel.discount = int( (float((originalPrice - price )) / float(originalPrice)) * 100 )
+			offerModel.originalPrice = "%$" + ItemFlavor_GetIcon( GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] ) + "% " + FormatAndLocalizeNumber( "1", float(originalPrice), true )
+		}
+	}
+	else
+	{
+		offerModel.price = ""
+		offerModel.discount = 0
+		offerModel.originalPrice = ""
+		offerModel.doesOfferExist = false
+	}
+	offerModel.quantity = defaultQuantity
+	return offerModel
+}
+
+bool function IsItemFlavorRewardItem( rtk_behavior self, ItemFlavor item )
+{
+	PrivateData p
+	self.Private( p )
+
+	foreach ( milestone in p.milestones )
+	{
+		if ( milestone.rewardFlav.guid == item.guid )
+			return true
+	}
+	return false
+}
+
+void function ResetPanelAnimations( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.itemViewerModel == null )
+		return
+
+	rtk_struct itemViewerModel = expect rtk_struct(p.itemViewerModel)
+
+	p.hasEnteredItem = false
+	p.itemPanelAnimationTime = 0.0
+	p.eventPanelAnimationTime = 0.0
+	p.panelAnimationDelay = PANEL_FIRST_DELAY
+	p.itemPanelAlpha = 0.0
+	p.eventPanelAlpha = 0.0
+	RTKStruct_SetFloat( itemViewerModel, "itemViewerPanelAlpha", p.itemPanelAlpha )
+	RTKStruct_SetFloat( itemViewerModel, "eventOverviewPanelAlpha", p.eventPanelAlpha )
+}
+
+void function SetInitialGridPaginationPage( rtk_behavior self )
+{
+	rtk_behavior ornull gridPagination = self.PropGetBehavior( "gridPagination" )
+	if ( gridPagination != null )
+	{
+		expect rtk_behavior( gridPagination )
+		PrivateData p
+		self.Private( p )
+		if ( p.activeEvent == null )
+			return
+		ItemFlavor event = expect ItemFlavor( p.activeEvent )
+
+		gridPagination.PropSetInt( "startPageIndex", file.eventGUIDTolastGridPage[ ItemFlavor_GetGUID( event ) ] )
+	}
+}
+
+void function OpenMythicSkinFakeOfferPreview( ItemFlavor event, ItemFlavor skin )
+{
+	array<ItemFlavor> contents = Mythics_GetAllSkinsFromBase( skin )
+	GRXScriptOffer fakeOffer
+	fakeOffer.titleText = ItemFlavor_GetLongName( skin )
+	fakeOffer.descText = ""
+	fakeOffer.prereq = event
+
+	ItemFlavorBag priceBag
+	priceBag.flavors.append( GRX_CURRENCIES[GRX_CURRENCY_HEIRLOOM] )
+	priceBag.quantities.append( 999999999 )
+	fakeOffer.prices.append( priceBag )
+
+	foreach ( item in contents )
+	{
+		AddItemToFakeOffer( fakeOffer, item )
+	}
+
+	StoreMythicInspectMenu_AttemptOpenWithOffer( fakeOffer )
+}
+
+bool function IsItemWishlistTracker( rtk_behavior self, ItemFlavor item )
+{
+	PrivateData p
+	self.Private( p )
+
+	ItemFlavor ornull event = p.activeEvent
+	if ( event == null )
+		return false
+	expect ItemFlavor( event )
+
+	if ( p.isWishlistEnabled )
+	{
+		if ( MilestoneEvent_HasRewardSetTracker( event, ItemFlavor_GetQuality( item ), GRX_IsOfferRestricted() ) )
+		{
+			return true
+		}
+	}
+
+	return false
+}

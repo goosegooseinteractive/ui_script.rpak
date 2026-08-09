@@ -1,0 +1,35 @@
+
+
+global function Survival_Quads_PopulateAboutText
+global function Survival_Quads_AppendAboutText
+
+
+array< featureTutorialTab > function Survival_Quads_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+	GameMode_AboutDialog_AppendDefaultGamemodeFeatureTabs( tabs )
+
+	return tabs
+}
+
+void function Survival_Quads_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if( GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "survival_quads_active", false ) ||
+			GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "gamemode_survival_quads_active", false ) )
+	{
+		featureTutorialTab tab1
+		array< featureTutorialData > tab1Rules
+
+		
+		tab1.tabName = 	"#SURVIVAL_MODE_QUADS_TAB_NAME"
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_QUADS_HEADER_1", "#SURVIVAL_MODE_QUADS_BODY_1", $"rui/about_images/survival_quads/about_survival_quads1" ) )
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_QUADS_HEADER_2", "#SURVIVAL_MODE_QUADS_BODY_2", $"rui/about_images/survival_quads/about_survival_quads2" ) )
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_QUADS_HEADER_3", "#SURVIVAL_MODE_QUADS_BODY_3", $"rui/about_images/survival_quads/about_survival_quads3" ) )
+
+		tab1.rules = tab1Rules
+		tabs.append( tab1 )
+	}
+}
+
+      

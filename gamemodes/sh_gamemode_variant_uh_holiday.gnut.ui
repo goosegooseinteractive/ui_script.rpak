@@ -1,0 +1,84 @@
+
+
+
+
+const asset DEATHFIELD_EFFECT 															= $"P_screen_survival_winter_FP"
+const string COLOR_CORRECTION_BLIZZARD 													= "materials/correction/outside_ring_blizzard.raw_hdr"
+const asset OBSERVER_DEATHFIELD_EFFECT 													= $"P_screen_survival_winter_FP"
+const float VFX_RING_TRANSITION_TIME													= 30.0
+
+const asset VFX_RING_INNER_1K_X_1K_OPACITY												= $"P_sort_ring_radCP1_opaCP2_1k_x_1k_winter"
+const asset VFX_RING_INNER_1K_X_5K_OPACITY												= $"P_sort_ring_radCP1_opaCP2_1k_x_5k_winter"
+const asset VFX_RING_INNER_1K_X_100K_OPACITY											= $"P_sort_ring_radCP1_opaCP2_1k_x_100k_winter"
+const asset VFX_RING_OUTER_1K_X_1K_OPACITY												= $"outside_ring_radCP1_opaCP2_1k_x_1k_winter"
+const asset VFX_RING_OUTER_1K_X_5K_OPACITY												= $"outside_ring_radCP1_opaCP2_1k_x_5k_winter"
+const asset VFX_RING_OUTER_1K_X_100K_OPACITY											= $"outside_ring_radCP1_opaCP2_1k_x_100k_winter"
+
+const asset VFX_RING_INNER_1K_X_1K_PRECISE												= $"P_sort_survival_radius_CP_1k_x_1k_blizzard"
+const asset VFX_RING_INNER_1K_X_5K_PRECISE												= $"P_sort_survival_radius_CP_1k_x_5k_blizzard"
+const asset VFX_RING_INNER_1K_X_100K_PRECISE											= $"P_sort_survival_radius_CP_1k_x_100k_blizzard"
+const asset VFX_RING_OUTER_1K_X_1K_PRECISE												= $"outside_survival_radius_CP_1k_x_1k_winter"
+const asset VFX_RING_OUTER_1K_X_5K_PRECISE												= $"outside_survival_radius_CP_1k_x_5k_winter"
+const asset VFX_RING_OUTER_1K_X_100K_PRECISE											= $"outside_survival_radius_CP_1k_x_100k_winter"
+
+const asset VFX_RING_INNER_1_X_1														= $"P_sort_survival_radius_CP_1x1_winter"
+const asset VFX_RING_INNER_1_X_5														= $"P_sort_survival_radius_CP_1x5_winter"
+const asset VFX_RING_INNER_1_X_100														= $"P_sort_survival_radius_CP_1x100_winter"
+const asset VFX_RING_OUTER_1_X_1														= $"outside_survival_radius_CP_1x1_winter"
+const asset VFX_RING_OUTER_1_X_5														= $"outside_survival_radius_CP_1x5_winter"
+const asset VFX_RING_OUTER_1_X_100														= $"outside_survival_radius_CP_1x100_winter"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

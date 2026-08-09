@@ -1,0 +1,359 @@
+
+global function InitRTKBonusMeterPanel
+
+
+global function RTKBonusMeterController_OnInitialize
+global function RTKBonusMeterController_OnDestroy
+global function RTKBonusMeterController_CheckBonusMeterIsCompleted
+
+
+global function RTKBonusMeterController_SetPreviewQuantity
+global function RTKBonusMeterController_SetPreviewMarkerVisibility
+
+const string MODEL_PATH_NAME = "bonusMeter"
+
+global enum eEarnedState
+{
+	CAN_EARN_EARNED,
+	CANNOT_EARN,
+	CAN_EARN_NOT_EARNED
+}
+
+global struct RTKBonusMeterController_Properties
+{
+	rtk_behavior animator
+	rtk_panel rewardsListPanel
+	rtk_behavior buttonBehavior
+}
+
+global struct RTKBonusMeterRewardListItemInfo
+{
+	string rewardName
+	string rewardCounter
+	int quality
+	bool isOwned
+	int state
+}
+
+global struct RTKBonusMeterInfo
+{
+	bool hasAllRewardsEarned
+	int currentMeterProgress
+	int endTime
+	int previewQuantityProgress
+	int previewProgress
+	int totalPacks
+	string rewardProgress
+	array<RTKBonusMeterRewardListItemInfo> rewardsList
+	asset rewardToEarnIconIconAsset = $""
+	int quality
+
+	bool showPreviewMarker
+	bool isActive
+}
+
+struct PrivateData
+{
+	void functionref() onMeterProgressPotentiallyChanged
+}
+
+struct
+{
+	var menu
+	rtk_struct bonusMeterInfoModel
+	bool hasPlayedReadySound
+	rtk_behavior ornull bonusMeterBehavior
+
+	bool hasCompleteAnimationPlayedThisSession = false
+
+	int packsToOpen
+} file
+
+void function InitRTKBonusMeterPanel( var newMenuArg )
+{
+	file.menu = newMenuArg
+}
+
+void function RTKBonusMeterController_CheckBonusMeterIsCompleted()
+{
+	if ( BonusMeter_IsCompleted() )
+	{
+		if ( !file.hasCompleteAnimationPlayedThisSession  )
+		{
+			RTKBonusMeterController_PlayCompletedAnimation()
+			file.hasCompleteAnimationPlayedThisSession = true
+		}
+		else
+		{
+			RTKBonusMeterController_SetCompletedState()
+		}
+	}
+}
+
+void function RTKBonusMeterController_OnInitialize( rtk_behavior self )
+{
+	rtk_struct bonusMeterInfoModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKBonusMeterInfo" )
+	string modelPath               = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+	self.GetPanel().SetBindingRootPath( modelPath )
+	RTKBonusMeterController_SetScreenInfo( bonusMeterInfoModel )
+	RTKBonusMeterController_SetRewardsListData( bonusMeterInfoModel )
+	RTKBonusMeterController_SetRewardsListButtons( bonusMeterInfoModel, self )
+	RTKBonusMeterController_SetButton( self )
+
+	file.hasPlayedReadySound = false
+	file.bonusMeterBehavior = self
+
+	thread function() : ( self ) {
+		EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+		while ( !GRX_IsInventoryReady() )
+		{
+			WaitFrame()
+		}
+		RTKBonusMeterController_CheckBonusMeterIsCompleted()
+	}()
+
+	PrivateData p
+	self.Private( p )
+
+	p.onMeterProgressPotentiallyChanged = void function () : ( self )
+	{
+		RTKBonusMeterController_OnMeterProgressPotentiallyChanged( self )
+	}
+
+	AddCallback_BonusMeter_OnMeterProgressPotentiallyChanged( p.onMeterProgressPotentiallyChanged )
+}
+
+void function RTKBonusMeterController_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+
+	RTKBonusMeterController_ClearCache()
+	RemoveCallback_BonusMeter_OnMeterProgressPotentiallyChanged( p.onMeterProgressPotentiallyChanged )
+}
+
+void function RTKBonusMeterController_ClearCache()
+{
+	file.hasPlayedReadySound = false
+	file.bonusMeterBehavior = null
+	file.packsToOpen = 0
+}
+
+void function RTKBonusMeterController_OnMeterProgressPotentiallyChanged( rtk_behavior self )
+{
+	thread void function() : ( self ) {
+
+		EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+		while ( !GRX_IsInventoryReady() )
+		{
+			WaitFrame()
+		}
+
+		rtk_struct bonusMeterInfoModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKBonusMeterInfo" )
+		RTKBonusMeterController_CheckBonusMeterIsCompleted()
+		RTKBonusMeterController_SetScreenInfo( bonusMeterInfoModel )
+		RTKBonusMeterController_SetRewardsListData( bonusMeterInfoModel )
+		RTKBonusMeterController_SetPreviewQuantity( file.packsToOpen )
+	}()
+}
+
+void function RTKBonusMeterController_SetScreenInfo( rtk_struct bonusMeterInfoModel )
+{
+	RTKBonusMeterInfo bonusMeterData
+	SettingsAssetGUID reward = BonusMeter_GetDisplayRewardFlavGUID()
+
+	if ( !BonusMeter_IsActive() || !IsValidItemFlavorGUID( reward ) )
+	{
+		bonusMeterData.isActive = false
+		RTKStruct_SetValue( bonusMeterInfoModel, bonusMeterData )
+		return
+	}
+
+	ItemFlavor item = GetItemFlavorByGUID( reward )
+
+	bonusMeterData.hasAllRewardsEarned = BonusMeter_IsCompleted()
+
+	bonusMeterData.totalPacks              = BonusMeter_GetMeterGoal()
+	bonusMeterData.currentMeterProgress    = BonusMeter_GetMeterProgress()
+	bonusMeterData.isActive				   = BonusMeter_IsActive()
+	bonusMeterData.previewProgress     	= 0
+
+	bonusMeterData.rewardToEarnIconIconAsset =  GRXItem_GetButtonIcon( item )
+
+	bonusMeterData.quality = ItemFlavor_GetQuality( item )
+
+	bonusMeterData.endTime           = BonusMeter_GetExpireTimeForMeter()
+	bonusMeterData.showPreviewMarker = false
+
+	int collectedRewards = BonusMeter_IsCompleted() ? 1 : 0 
+
+	bonusMeterData.rewardProgress = Localize( "#BONUS_METER_PROGRESS_REWARD", collectedRewards, 1 )
+
+	RTKStruct_SetValue( bonusMeterInfoModel, bonusMeterData )
+}
+
+void function RTKBonusMeterController_SetPreviewQuantity( int packsToOpen )
+{
+	if ( BonusMeter_IsCompleted() || !BonusMeter_IsActive() )
+		return
+
+	file.packsToOpen = packsToOpen
+	rtk_struct bonusMeterInfoModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKBonusMeterInfo" )
+
+	int previewCurrentProgress = BonusMeter_GetMeterProgress() + packsToOpen
+
+	if ( previewCurrentProgress >= BonusMeter_GetMeterGoal() )
+	{
+		RTKBonusMeterController_PlayPreviewMeterFullAnimation()
+		if ( !file.hasPlayedReadySound )
+		{
+			EmitUISound( "UI_Menu_PackBonusMeter_Ready" )
+			file.hasPlayedReadySound = true
+		}
+		else
+		{
+			EmitUISound( "UI_Menu_BattlePass_LevelIncreaseTab" )
+		}
+	}
+	else
+	{
+		EmitUISound( "UI_Menu_BattlePass_LevelIncreaseTab" )
+		file.hasPlayedReadySound = false
+		RTKBonusMeterController_StopPreviewMeterFullAnimation()
+	}
+
+	RTKStruct_SetBool( bonusMeterInfoModel, "showPreviewMarker", previewCurrentProgress > 0 )
+	RTKStruct_SetInt( bonusMeterInfoModel, "previewProgress", previewCurrentProgress )
+}
+
+void function RTKBonusMeterController_SetRewardsListData( rtk_struct bonusMeterInfoModel )
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return
+	}
+	array<RTKBonusMeterRewardListItemInfo> rewards = []
+
+	RTKBonusMeterRewardListItemInfo rewardStruct
+
+	SettingsAssetGUID reward = BonusMeter_GetDisplayRewardFlavGUID()
+	if ( !IsValidItemFlavorGUID( reward ) )
+	{
+		return
+	}
+	ItemFlavor item = GetItemFlavorByGUID( reward )
+
+	rewardStruct.rewardName = Localize( ItemFlavor_GetShortName ( item ) )
+	rewardStruct.rewardCounter =  Localize( "#X/Y", BonusMeter_GetMeterProgress(), BonusMeter_GetMeterGoal() )
+	rewardStruct.quality = ItemFlavor_GetQuality( item )
+	rewardStruct.state = eEarnedState.CAN_EARN_NOT_EARNED
+	rewardStruct.isOwned = BonusMeter_IsCompleted() 
+	rewards.append( rewardStruct )
+
+	if ( BonusMeter_IsCompleted() )
+	{
+		rewardStruct.state = eEarnedState.CAN_EARN_EARNED
+		rewardStruct.isOwned = true
+	}
+
+	rtk_array rewardsList = RTKStruct_GetOrCreateScriptArrayOfStructs( bonusMeterInfoModel, "rewardsList", "RTKBonusMeterRewardListItemInfo" )
+	RTKArray_SetValue( rewardsList, rewards )
+
+}
+
+void function RTKBonusMeterController_SetRewardsListButtons( rtk_struct bonusMeterInfoModel, rtk_behavior self )
+{
+	rtk_panel ornull rewardsListPanel = self.PropGetPanel( "rewardsListPanel" )
+
+	if ( rewardsListPanel != null )
+	{
+		expect rtk_panel( rewardsListPanel )
+
+		self.AutoSubscribe( rewardsListPanel, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self ){
+			rtk_behavior rewardButton = newChild.FindBehaviorByTypeName( "Button" )
+
+			self.AutoSubscribe( rewardButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+
+				SettingsAssetGUID reward = BonusMeter_GetDisplayRewardFlavGUID()
+				if ( !IsValidItemFlavorGUID( reward ) )
+					return
+				ItemFlavor item = GetItemFlavorByGUID( reward )
+
+				SetGenericItemPresentationModeActiveWithNavBack( item, "#BONUS_METER_INSPECT_BUTTON_TITLE", "#BONUS_METER_INSPECT_BUTTON_DESCRIPTION" , void function() : ()
+				{
+
+				} )
+			} )
+		} )
+	}
+}
+
+void function RTKBonusMeterController_SetButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( button, "OnPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		UI_OpenFeatureTutorialDialog( OPEN_PACKS_TUTORIAL_INFO )
+	} )
+}
+
+void function RTKBonusMeterController_PlayPreviewMeterFullAnimation()
+{
+	if ( file.bonusMeterBehavior == null )
+		return
+	rtk_behavior self = expect rtk_behavior( file.bonusMeterBehavior )
+	rtk_behavior animator = self.PropGetBehavior( "animator" )
+
+	if ( animator != null && RTKAnimator_HasAnimation( animator, "AnimateIn" ) )
+	{
+		if ( !RTKAnimator_IsPlaying( animator ) )
+			RTKAnimator_PlayAnimation( animator, "AnimateIn" )
+	}
+}
+
+void function RTKBonusMeterController_StopPreviewMeterFullAnimation()
+{
+	if ( file.bonusMeterBehavior == null )
+		return
+	rtk_behavior self = expect rtk_behavior( file.bonusMeterBehavior )
+	rtk_behavior animator = self.PropGetBehavior( "animator" )
+
+	if ( animator != null && RTKAnimator_HasAnimation( animator, "AnimateIn" ) )
+	{
+		if ( RTKAnimator_IsPlaying( animator ) )
+		{
+			if ( RTKAnimator_HasAnimation( animator, "AnimateInEnd" ) )
+				RTKAnimator_PlayAnimation( animator, "AnimateInEnd" )
+		}
+	}
+}
+
+void function RTKBonusMeterController_PlayCompletedAnimation()
+{
+	if ( file.bonusMeterBehavior == null )
+		return
+	rtk_behavior self = expect rtk_behavior( file.bonusMeterBehavior )
+	rtk_behavior animator = self.PropGetBehavior( "animator" )
+
+	if ( RTKAnimator_HasAnimation( animator, "Complete" ) )
+		RTKAnimator_PlayAnimation( animator, "Complete" )
+}
+
+void function RTKBonusMeterController_SetCompletedState()
+{
+	if ( file.bonusMeterBehavior == null )
+		return
+	rtk_behavior self = expect rtk_behavior( file.bonusMeterBehavior )
+	rtk_behavior animator = self.PropGetBehavior( "animator" )
+
+	if ( RTKAnimator_HasAnimation( animator, "InstantComplete" ) )
+		RTKAnimator_PlayAnimation( animator, "InstantComplete" )
+}
+
+void function RTKBonusMeterController_SetPreviewMarkerVisibility( bool visible )
+{
+	rtk_struct bonusMeterInfoModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKBonusMeterInfo" )
+	RTKStruct_SetBool( bonusMeterInfoModel, "showPreviewMarker", visible )
+}

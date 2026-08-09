@@ -1,0 +1,2087 @@
+
+
+
+
+global function GetCurrentPlaylistVarTimestamp
+
+global function GetMaxTeamSizeForPlaylist
+global function GetPlaylistMaps
+
+global function ForceRefreshVisiblePlaylists
+global function GetPrivateMatchPlaylistNames
+global function GetVisiblePlaylistNames
+global function GetPlaylistsInSchedule
+global function GetMaxTeamSizeForAllPlaylistsInSchedule
+global function GetPlaylistModNames
+global function GetPlaylistIndexForName
+global function Playlist_GetLTMSlotPlaylist
+global function Playlist_GetNewModeVersion
+global function Playlist_GetPlaylistScheduledTimeRange
+global function Playlist_GetRankedSeasonEndDate
+global function Playlist_GetRankedPlaylistLockDate
+global function Playlist_ShouldLockRankedPlaylistForSplit
+global function Playlist_ShouldLockRankedPlaylistForPatch
+global function Playlist_IsCurrentlyActive
+global function ShPlaylist_Init
+
+
+
+global function CanPlaylistFitPartySize
+global function GetModeEmblemImage
+global function GetModeBannerLogo
+global function GetBannerLogoByKey
+global function GetModeBannerLogoOrModeEmblemFallback
+global function GetModeBannerImages
+global function GetModeBannerImagesByKey
+global function GetImageFromImageMap
+global function GetThumbnailImageFromImageMap
+global function GetGamemodeLogoFromImageMap
+global function GetBinkFromBinkMap
+global function GetMatchRequeuePlaylist
+global function GetMaxQueueSizeForPlaylist
+
+
+
+global function GetEmblemColor
+global function GetPlaylistRotationNextTime
+global function GetPlaylistRotationNextTimeFormatedString
+global function UpdateMatchmakeFromMatchPlaylist_Thread
+global function MatchRequeueCancel
+global function GetDefaultPlaylist
+global function PartyHasPlaylistAccountLevelRequired
+global function GameMode_GetTileImage
+global function GameMode_GetPlayImageInner
+global function GameMode_GetPlayImageOuter
+global function GameMode_GetPillarColor
+global function GameMode_GetPillarColorLightness
+global function GetPlaylistMapVarStringOrPlaylistVarString
+
+global int rotationDurationMoreThanDayCount = 0
+
+
+global function Playlist_GetDataTableString
+global function Playlist_GetDataTableAssetNoPrecache
+global function Playlist_GetDataTableInt
+global function Playlist_GetDataTableBool
+global function Playlist_GetDataTableFloat
+
+#if DEV
+global function PrintPlaylists
+#endif
+
+
+
+global const table<string, asset> GAMEMODE_IMAGE_MAP = {
+	play_apex = $"rui/menu/gamemode/play_apex",
+	apex_elite = $"rui/menu/gamemode/apex_elite",
+	training = $"rui/menu/gamemode/playlist_bg_med_training",
+	bot_playground = $"rui/menu/gamemode/playlist_bg_bot_playground",
+	casual = $"rui/menu/gamemode/playlist_bg_casual",
+	firing_range = $"rui/menu/gamemode/playlist_bg_med_firing_range",
+	generic_01 = $"rui/menu/gamemode/generic_01",
+	generic_02 = $"rui/menu/gamemode/generic_02",
+	ranked_1 = $"rui/menu/gamemode/playlist_bg_kc_mu2_ranked",
+	ranked_2 = $"rui/menu/gamemode/playlist_bg_worldsedge_ranked",
+	ranked_3 = $"rui/menu/gamemode/playlist_bg_olympus_mu2_ranked",
+	ranked_4 = $"rui/menu/gamemode/playlist_bg_storm_point_ranked",
+	ranked_5 = $"rui/menu/gamemode/playlist_bg_divided_moon_ranked",
+	ranked_6 = $"rui/menu/gamemode/playlist_bg_storm_point_ranked_mu2",
+	ranked_7 = $"rui/menu/gamemode/playlist_bg_district_ranked",
+
+	solo_iron_crown = $"rui/menu/gamemode/solo_iron_crown",
+	solo = $"rui/menu/gamemode/solo_iron_crown",
+	duos = $"rui/menu/gamemode/duos_v2",
+	duos_valentines = $"rui/menu/gamemode/duos_valentines",
+	trios = $"rui/menu/gamemode/trios",
+
+
+
+
+
+	trios_golden_horse = $"rui/menu/gamemode/trios_GH_small",
+
+	panel_worlds_edge = $"rui/menu/gamemode/playlist_bg_worldsedge_vanilla",
+	panel_worlds_edge_mu1 = $"rui/menu/gamemode/playlist_bg_worldsedge_mu3",
+	panel_worlds_edge_mu2 = $"rui/menu/gamemode/playlist_bg_worldsedge_mu3",
+	panel_worlds_edge_mu3 = $"rui/menu/gamemode/playlist_bg_worldsedge_mu3",
+	panel_worlds_edge_night = $"rui/menu/gamemode/playlist_bg_worldsedge_night",
+
+	panel_olympus = $"rui/menu/gamemode/playlist_bg_olympus",
+	panel_olympus_mu1 = $"rui/menu/gamemode/playlist_bg_olympus_mu1",
+	panel_olympus_mu2 = $"rui/menu/gamemode/playlist_bg_olympus_mu2",
+	panel_olympus_night = $"rui/menu/gamemode/playlist_bg_olympus_night",
+
+	canyon_land_mu1 = $"rui/menu/gamemode/play_apex",
+	panel_canyon_land = $"rui/menu/gamemode/playlist_bg_kc_vanilla",
+	panel_canyon_land_mu1 = $"rui/menu/gamemode/playlist_bg_kc",
+	panel_canyon_land_mu2 = $"rui/menu/gamemode/playlist_bg_kc_mu2",
+	panel_canyon_land_mu3 = $"rui/menu/gamemode/playlist_bg_kc_mu3",
+	panel_canyon_land_mu3_hu1 = $"rui/menu/gamemode/playlist_bg_kc_mu3_hu1",
+	panel_canyon_land_night = $"rui/menu/gamemode/playlist_bg_kc_night",
+	panel_canyon_land_night2 = $"rui/menu/gamemode/playlist_bg_kc_night2",
+
+	panel_storm_point = $"rui/menu/gamemode/playlist_bg_storm_point",
+	panel_storm_point_mu1 = $"rui/menu/gamemode/playlist_bg_storm_point_mu1",
+	panel_storm_point_mu2 = $"rui/menu/gamemode/playlist_bg_storm_point_mu2",
+
+	panel_divided_moon = $"rui/menu/gamemode/playlist_bg_divided_moon",
+	panel_divided_moon_mu1 = $"rui/menu/gamemode/playlist_bg_divided_moon_mu1",
+
+	panel_district = $"rui/menu/gamemode/playlist_bg_district",
+
+	
+	panel_canyon_land_uh = $"rui/menu/gamemode/playlist_bg_sq_kings_cayon_uh",
+	panel_olympus_uh = $"rui/menu/gamemode/playlist_bg_sq__olympus_uh",
+	panel_divided_moon_uh = $"rui/menu/gamemode/playlist_bg_sq_broken_moon_uh",
+	panel_district_uh = $"rui/menu/gamemode/playlist_bg_sq_district_uh",
+
+	shotguns_and_snipers = $"rui/menu/gamemode/playlist_bg_shotguns_and_snipers",
+	panel_worlds_edge_mu2_airdrop = $"rui/menu/gamemode/playlist_bg_worldsedge_airdrop",
+	panel_olympus_airdrop = $"rui/menu/gamemode/playlist_bg_olympus_airdrop",
+	panel_canyon_land_mu2_airdrop = $"rui/menu/gamemode/playlist_bg_kc_mu2_airdrop",
+	duos_airdrop = $"rui/menu/gamemode/duos_v2",
+	trios_airdrop = $"rui/menu/gamemode/trios",
+
+	panel_thunderdome = $"rui/menu/gamemode/playlist_bg_thunderdome",
+
+
+
+
+
+
+
+
+		winter_express = $"rui/menu/gamemode/playlist_bg_winterexpress",
+
+
+		tournament = $"rui/menu/gamemode/tournament",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	live_die_live = $"rui/menu/gamemode/live_die_live",
+	third_person = $"rui/menu/gamemode/third_person",
+	always_be_closing = $"rui/menu/gamemode/always_be_closing",
+	night = $"rui/menu/gamemode/night",
+	dummies = $"rui/menu/gamemode/dummies",
+	deja_loot = $"rui/menu/gamemode/deja_loot",
+
+		campfire = $"rui/menu/gamemode/flashpoint",
+		campfire_oly = $"rui/menu/gamemode/playlist_bg_olympus_mu2_flashpoint",
+
+	explore_mode = $"rui/menu/gamemode/playlist_bg_olympus_explore",
+
+
+		arenas_party_crasher = $"rui/menu/gamemode/playlist_bg_arena_party_crasher",
+		arenas_phase_runner = $"rui/menu/gamemode/playlist_bg_arena_phase_runner",
+		arenas_overflow = $"rui/menu/gamemode/playlist_bg_arena_overflow",
+		arenas_skull_town = $"rui/menu/gamemode/playlist_bg_arena_skull_town",
+		arenas_dome = $"rui/menu/gamemode/playlist_bg_arena_dome",
+		arenas_oasis = $"rui/menu/gamemode/playlist_bg_arena_oasis",
+		arenas_encore = $"rui/menu/gamemode/playlist_bg_arena_encore",
+		arenas_habitat = $"rui/menu/gamemode/playlist_bg_arena_habitat",
+		arenas_drop_off = $"rui/menu/gamemode/playlist_bg_arena_drop_off",
+		arenas_stadium = $"rui/menu/gamemode/playlist_bg_district_stadium",
+
+		
+		
+		
+		
+		
+		
+		
+		
+
+
+		control_barometer = $"rui/menu/gamemode/playlist_bg_control_barometer",
+		control_hammond_labs = $"rui/menu/gamemode/playlist_bg_control_hammond_labs",
+		control_caustic_tt = $"rui/menu/gamemode/playlist_bg_control_caustic_tt",
+		control_lava_siphon = $"rui/menu/gamemode/playlist_bg_control_lava_siphon",
+		control_hammond_labs_night = $"rui/menu/gamemode/playlist_bg_control_hammond_labs_night",
+		control_moon_production_yard = $"rui/menu/gamemode/playlist_bg_divided_moon_production_yard",
+
+
+		gungame_skull_town = $"rui/menu/gamemode/playlist_bg_gungame_skull_town",
+		gungame_fragment_east = $"rui/menu/gamemode/playlist_bg_gungame_fragment_east",
+		gungame_estates_night = $"rui/menu/gamemode/playlist_bg_gungame_estates_night",
+		gungame_the_wall = $"rui/menu/gamemode/playlist_bg_gungame_the_wall",
+		gungame_estates_day = $"rui/menu/gamemode/playlist_bg_gungame_estates_day",
+
+
+		hardcore_olympus = $"rui/menu/gamemode/playlist_bg_hardcore_olympus",
+		hardcore_divided_moon = $"rui/menu/gamemode/playlist_bg_hardcore_divided_moon",
+		hardcore_worlds_edge = $"rui/menu/gamemode/playlist_bg_hardcore_worlds_edge",
+
+		tdm_party_crasher = $"rui/menu/gamemode/playlist_bg_arena_party_crasher",
+		tdm_overflow = $"rui/menu/gamemode/playlist_bg_arena_overflow",
+		tdm_habitat = $"rui/menu/gamemode/playlist_bg_arena_habitat",
+		mixtape_phase_runner = $"rui/menu/gamemode/playlist_bg_arena_phase_runner",
+		mixtape_moon_core = $"rui/menu/gamemode/playlist_bg_divided_moon_the_core",
+
+
+	mixtape_wattson = $"rui/menu/gamemode/playlist_bg_mixtape_wattson",
+	mixtape_amps = $"rui/menu/gamemode/playlist_bg_mixtape_amps",
+
+
+		heatwave_storm_point = $"rui/menu/gamemode/playlist_bg_heatwave_storm_point",
+		heatwave_divided_moon = $"rui/menu/gamemode/playlist_bg_heatwave_divided_moon",
+
+	s17_chronicle = $"rui/menu/gamemode/playlist_bg_s17_chronicle",
+
+		strikeout_divided_moon = $"rui/menu/gamemode/playlist_bg_strikeout_divided_moon",
+		strikeout_olympus_mu2 = $"rui/menu/gamemode/playlist_bg_strikeout_olympus_mu2",
+		strikeout_storm_point_mu2 = $"rui/menu/gamemode/playlist_bg_strikeout_storm_point_mu2",
+		strikeout_canyonlands_hu = $"rui/menu/gamemode/playlist_bg_strikeout_kings_canyon",
+		strikeout_desertlands_hu = $"rui/menu/gamemode/playlist_bg_strikeout_worlds_edge",
+
+
+
+
+
+
+
+
+
+
+
+
+
+		trios_bounty_hunt = $"rui/menu/gamemode/playlist_bg_thehunt_trios",
+		duos_bounty_hunt = $"rui/menu/gamemode/playlist_bg_thehunt_duos",
+
+
+
+		survival_solos = $"rui/menu/gamemode/playlist_bg_survival_solos",
+
+
+
+		survival_quads = $"rui/menu/gamemode/playlist_bg_survival_quads",
+
+
+
+		bigtdm = $"rui/menu/gamemode/playlist_bg_arena_phase_runner",
+
+
+
+		mixtape_treasurehunt_thunderdome = $"rui/menu/gamemode/treasure_hunt/playlist_bg_treasurehunt_thunderdome",
+		mixtape_treasurehunt_skulltown = $"rui/menu/gamemode/treasure_hunt/playlist_bg_treasurehunt_skulltown",
+		mixtape_treasurehunt_storm_point_mu2 = $"rui/menu/gamemode/treasure_hunt/playlist_bg_treasurehunt_storm_point_mu2",
+		mixtape_treasurehunt_monument = $"rui/menu/gamemode/treasure_hunt/playlist_bg_treasurehunt_monument",
+
+
+
+
+
+
+
+
+
+
+		survival_revival = $"rui/menu/gamemode/playlist_bg_trios_revival",
+
+
+
+		battle_rush = $"rui/menu/gamemode/trios_ssrevival",
+
+
+
+
+
+
+
+
+
+
+	survival_null = $"rui/menu/gamemode/playlist_bg_sq_survival_null",
+
+
+		wildcard_trio 							= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_trios.rpak",
+		wildcard_trio_event_bat 				= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_bat.rpak",
+
+
+
+		wildcard_trio_event_m26 				= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_flatline.rpak",
+
+
+
+
+
+
+
+
+
+
+	wildcard_trio_event_holiday_s27 		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_s27_holiday.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_beamstick_s28		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_beamstick.rpak",
+
+
+	ranked_trio = $"ui_image/rui/menu/gamemode/playlist_bg_sq_ranked_trios.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_matchmodifiers_s29		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_juiced.rpak",
+
+
+
+
+
+
+
+		wildcard_trio_clockup_event_s291		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_clockup.rpak",
+
+
+
+		wildcard_trio_wildhunt_event_s30		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_wild_hunt.rpak",
+
+
+
+
+
+
+
+
+
+
+}
+
+global const table<string, asset> GAMEMODE_THUMBNAIL_IMAGE_MAP = {
+	play_apex = $"rui/menu/gamemode/play_apex",
+	apex_elite = $"rui/menu/gamemode/apex_elite",
+	training = $"rui/menu/gamemode/playlist_bg_sq_training",
+	bot_playground = $"rui/menu/gamemode/playlist_bg_sq_bot_playground",
+	firing_range = $"rui/menu/gamemode/playlist_bg_sq_firing_range",
+	generic_01 = $"rui/menu/gamemode/generic_01",
+	generic_02 = $"rui/menu/gamemode/generic_02",
+	ranked_1 = $"rui/menu/gamemode/playlist_bg_sq_kc_mu2_ranked",
+	ranked_2 = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_ranked",
+	ranked_3 = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu2_ranked",
+	ranked_4 = $"rui/menu/gamemode/playlist_bg_sq_storm_point_ranked",
+	ranked_5 = $"rui/menu/gamemode/playlist_bg_sq_divided_moon_ranked",
+	ranked_6 = $"rui/menu/gamemode/playlist_bg_sq_storm_point_ranked_mu2",
+	ranked_7 = $"rui/menu/gamemode/playlist_bg_sq_district_ranked",
+
+	solo_iron_crown = $"rui/menu/gamemode/solo_iron_crown",
+	solo = $"rui/menu/gamemode/solo_iron_crown",
+	duos = $"rui/menu/gamemode/playlist_bg_sq_duos",
+	duos_valentines = $"rui/menu/gamemode/playlist_bg_sq_duos_valentines",
+
+	trios = $"rui/menu/gamemode/playlist_bg_sq_trios",
+
+
+
+
+
+	trios_golden_horse = $"rui/menu/gamemode/playlist_bg_sq_trios_golden_horse",
+
+	panel_worlds_edge = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_mu3",
+	panel_worlds_edge_mu1 = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_mu3",
+	panel_worlds_edge_mu2 = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_mu3",
+	panel_worlds_edge_mu3 = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_mu3",
+	panel_worlds_edge_night = $"rui/menu/gamemode/playlist_bg_sq_worldsedge_night",
+
+	panel_olympus = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu2",
+	panel_olympus_mu1 = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu2",
+	panel_olympus_mu2 = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu2",
+	panel_olympus_night = $"rui/menu/gamemode/playlist_bg_sq_olympus_night",
+	panel_olympus_mu3 = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu3",
+
+	canyon_land_mu1 = $"rui/menu/gamemode/play_apex",
+	panel_canyon_land = $"rui/menu/gamemode/playlist_bg_sq_kc_mu3_hu1",
+	panel_canyon_land_mu1 = $"rui/menu/gamemode/playlist_bg_sq_kc_mu3_hu1",
+	panel_canyon_land_mu2 = $"rui/menu/gamemode/playlist_bg_sq_kc_mu3_hu1",
+	panel_canyon_land_mu3 = $"rui/menu/gamemode/playlist_bg_sq_kc_mu3_hu1",
+	panel_canyon_land_mu3_hu1 = $"rui/menu/gamemode/playlist_bg_sq_kc_mu3_hu1"
+	panel_canyon_land_night = $"rui/menu/gamemode/playlist_bg_kc_night",
+	panel_canyon_land_night2 = $"rui/menu/gamemode/playlist_bg_sq_kc_night2",
+
+	panel_storm_point = $"rui/menu/gamemode/playlist_bg_sq_storm_point_mu1",
+	panel_storm_point_mu1 = $"rui/menu/gamemode/playlist_bg_sq_storm_point_mu1",
+	panel_storm_point_mu2 = $"rui/menu/gamemode/playlist_bg_sq_storm_point_mu2",
+
+	panel_divided_moon = $"rui/menu/gamemode/playlist_bg_sq_divided_moon",
+	panel_divided_moon_mu1 = $"rui/menu/gamemode/playlist_bg_sq_divided_moon_mu1",
+
+	panel_district = $"rui/menu/gamemode/playlist_bg_sq_district",
+
+	
+	panel_canyon_land_uh = $"rui/menu/gamemode/playlist_bg_sq_kings_cayon_uh",
+	panel_olympus_uh = $"rui/menu/gamemode/playlist_bg_sq__olympus_uh",
+	panel_divided_moon_uh = $"rui/menu/gamemode/playlist_bg_sq_broken_moon_uh",
+	panel_district_uh = $"rui/menu/gamemode/playlist_bg_sq_district_uh",
+
+	shotguns_and_snipers = $"rui/menu/gamemode/playlist_bg_sq_shotguns_and_snipers",
+	panel_worlds_edge_mu2_airdrop = $"rui/menu/gamemode/playlist_bg_worldsedge_airdrop",
+	panel_olympus_airdrop = $"rui/menu/gamemode/playlist_bg_olympus_airdrop",
+	panel_canyon_land_mu2_airdrop = $"rui/menu/gamemode/playlist_bg_kc_mu2_airdrop",
+	duos_airdrop = $"rui/menu/gamemode/playlist_bg_sq_duos",
+	trios_airdrop = $"rui/menu/gamemode/playlist_bg_sq_trios",
+
+	panel_thunderdome = $"rui/menu/gamemode/playlist_bg_sq_thunderdome",
+
+
+
+
+
+
+
+
+		winter_express = $"rui/menu/gamemode/playlist_bg_sq_winterexpress",
+
+
+		tournament = $"rui/menu/gamemode/tournament",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	live_die_live = $"rui/menu/gamemode/live_die_live",
+	third_person = $"rui/menu/gamemode/third_person",
+	always_be_closing = $"rui/menu/gamemode/always_be_closing",
+	night = $"rui/menu/gamemode/night",
+	dummies = $"rui/menu/gamemode/dummies",
+	deja_loot = $"rui/menu/gamemode/deja_loot",
+
+		campfire = $"rui/menu/gamemode/flashpoint",
+		campfire_oly = $"rui/menu/gamemode/playlist_bg_sq_olympus_mu2_flashpoint",
+
+	explore_mode = $"rui/menu/gamemode/playlist_bg_olympus_explore",
+
+
+		arenas_party_crasher = $"rui/menu/gamemode/playlist_bg_sq_arena_party_crasher"
+		arenas_phase_runner = $"rui/menu/gamemode/playlist_bg_sq_arena_phase_runner",
+		arenas_overflow = $"rui/menu/gamemode/playlist_bg_sq_arena_overflow",
+		arenas_skull_town = $"rui/menu/gamemode/playlist_bg_sq_arena_skull_town",
+		arenas_encore = $"rui/menu/gamemode/playlist_bg_sq_arena_encore",
+		arenas_habitat = $"rui/menu/gamemode/playlist_bg_sq_arena_habitat",
+		arenas_drop_off = $"rui/menu/gamemode/playlist_bg_sq_arena_drop_off",
+		arenas_stadium = $"rui/menu/gamemode/playlist_bg_sq_district_stadium",
+
+		
+		
+		
+		
+		
+		
+		
+		
+
+
+
+		control_barometer = $"rui/menu/gamemode/playlist_bg_sq_control_barometer",
+		control_hammond_labs = $"rui/menu/gamemode/playlist_bg_sq_control_hammond_labs",
+		control_caustic_tt = $"rui/menu/gamemode/playlist_bg_sq_control_caustic_tt",
+		control_lava_siphon = $"rui/menu/gamemode/playlist_bg_sq_control_lava_siphon",
+		control_hammond_labs_night = $"rui/menu/gamemode/playlist_bg_sq_control_hammond_labs_night",
+		control_moon_production_yard = $"rui/menu/gamemode/playlist_bg_sq_divided_moon_production_yard",
+
+
+
+		gungame_skull_town = $"rui/menu/gamemode/playlist_bg_sq_gungame_skull_town",
+		gungame_fragment_east = $"rui/menu/gamemode/playlist_bg_sq_gungame_fragment_east",
+		gungame_estates_night = $"rui/menu/gamemode/playlist_bg_sq_gungame_estates_night",
+		gungame_the_wall = $"rui/menu/gamemode/playlist_bg_sq_gungame_the_wall",
+		gungame_estates_day = $"rui/menu/gamemode/playlist_bg_sq_gungame_estates_day",
+
+
+		hardcore_olympus = $"rui/menu/gamemode/playlist_bg_sq_hardcore_olympus",
+		hardcore_divided_moon = $"rui/menu/gamemode/playlist_bg_sq_hardcore_divided_moon",
+		hardcore_worlds_edge = $"rui/menu/gamemode/playlist_bg_sq_hardcore_worlds_edge",
+
+
+		tdm_party_crasher = $"rui/menu/gamemode/playlist_bg_sq_arena_party_crasher",
+		tdm_overflow = $"rui/menu/gamemode/playlist_bg_sq_arena_overflow",
+		tdm_habitat = $"rui/menu/gamemode/playlist_bg_sq_arena_habitat",
+		mixtape_phase_runner = $"rui/menu/gamemode/playlist_bg_sq_arena_phase_runner",
+		mixtape_moon_core = $"rui/menu/gamemode/playlist_bg_sq_divided_moon_the_core",
+
+
+	mixtape_wattson = $"rui/menu/gamemode/playlist_bg_sq_mixtape_wattson",
+	mixtape_amps = $"rui/menu/gamemode/playlist_bg_sq_mixtape_amps",
+
+
+		heatwave_storm_point = $"rui/menu/gamemode/playlist_bg_sq_heatwave_storm_point",
+		heatwave_divided_moon = $"rui/menu/gamemode/playlist_bg_sq_heatwave_divided_moon",
+
+
+	s17_chronicle = $"rui/menu/gamemode/playlist_bg_sq_s17_chronicle",
+
+
+		strikeout_divided_moon = $"rui/menu/gamemode/playlist_bg_sq_strikeout_divided_moon",
+		strikeout_olympus_mu2 = $"rui/menu/gamemode/playlist_bg_sq_strikeout_olympus_mu2",
+		strikeout_storm_point_mu2 = $"rui/menu/gamemode/playlist_bg_sq_strikeout_storm_point_mu2",
+		strikeout_canyonlands_hu = $"rui/menu/gamemode/playlist_bg_sq_strikeout_kings_canyon",
+		strikeout_desertlands_hu = $"rui/menu/gamemode/playlist_bg_sq_strikeout_worlds_edge",
+
+
+
+
+
+
+
+
+
+		trios_bounty_hunt = $"rui/menu/gamemode/playlist_bg_sq_thehunt_trios",
+		duos_bounty_hunt = $"rui/menu/gamemode/playlist_bg_sq_thehunt_duos",
+
+
+
+		survival_solos = $"rui/menu/gamemode/playlist_bg_sq_survival_solos",
+
+
+
+		survival_quads = $"rui/menu/gamemode/playlist_bg_sq_survival_quads",
+
+
+
+		bigtdm = $"rui/menu/gamemode/playlist_bg_sq_arena_phase_runner",
+
+
+
+		mixtape_treasurehunt_thunderdome = $"rui/menu/gamemode/treasure_hunt/playlist_bg_sq_treasurehunt_thunderdome",
+		mixtape_treasurehunt_skulltown = $"rui/menu/gamemode/treasure_hunt/playlist_bg_sq_treasurehunt_skulltown",
+		mixtape_treasurehunt_storm_point_mu2 = $"rui/menu/gamemode/treasure_hunt/playlist_bg_sq_treasurehunt_storm_point_mu2",
+		mixtape_treasurehunt_monument = $"rui/menu/gamemode/treasure_hunt/playlist_bg_sq_treasurehunt_monument",
+
+
+
+
+
+
+
+
+
+
+		survival_revival = $"rui/menu/gamemode/playlist_bg_sq_trios_revival",
+
+
+
+		battle_rush = $"rui/menu/gamemode/playlist_bg_sq_trios_ssrevival",
+
+
+
+
+
+
+
+
+
+
+
+		wildcard_trio 							= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_trios.rpak",
+		wildcard_trio_event_bat 				= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_bat.rpak",
+
+
+
+		wildcard_trio_event_m26 				= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_flatline.rpak",
+
+
+
+
+
+
+
+
+
+
+	wildcard_trio_event_holiday_s27 		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_s27_holiday.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_beamstick_s28		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_beamstick.rpak",
+
+
+	casual = $"rui/menu/gamemode/playlist_bg_casual",
+
+	ranked_trio = $"ui_image/rui/menu/gamemode/playlist_bg_sq_ranked_trios.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_matchmodifiers_s29		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_juiced.rpak",
+
+
+
+
+
+
+
+		wildcard_trio_event_clockup_s291			= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_clockup.rpak",
+
+
+
+		wildcard_trio_wildhunt_event_s30		= $"ui_image/rui/menu/gamemode/playlist_bg_sq_wildcard_event_wild_hunt.rpak",
+
+
+
+
+
+
+
+
+
+
+}
+
+global const string GAMEMODE_DEFAULT_LOGO_NAME = "BATTLE_ROYALE"
+global const asset GAMEMODE_LOGO_SHAREDMAP = $"settings/sharedmap/gamemode_logos.rpak"
+
+const table<string, asset> GAMEMODE_BINK_MAP = {
+	play_apex = $"media/gamemodes/play_apex.bik",
+	apex_elite = $"media/gamemodes/apex_elite.bik",
+	training = $"media/gamemodes/training.bik",
+	generic_01 = $"media/gamemodes/generic_01.bik",
+	generic_02 = $"media/gamemodes/generic_02.bik",
+	ranked_1 = $"media/gamemodes/ranked_1.bik",
+	ranked_2 = $"media/gamemodes/ranked_2.bik",
+	ranked_3 = $"media/gamemodes/ranked_3.bik",
+	solo_iron_crown = $"media/gamemodes/solo_iron_crown.bik",
+	solo = $"media/gamemodes/solo_iron_crown.bik",
+	duos = $"media/gamemodes/duos_v2.bik",
+	trios = $"media/gamemodes/trios.bik",
+	worlds_edge = $"media/gamemodes/worlds_edge.bik",
+	worlds_edge_mu1 = $"media/gamemodes/worlds_edge_mu1.bik",
+	canyon_land_mu1 = $"media/gamemodes/play_apex.bik",
+	shotguns_and_snipers = $"media/gamemodes/shotguns_and_snipers.bik",
+
+
+
+
+
+
+
+		winter_express = $"media/gamemodes/winter_express.bik",
+
+
+		tournament = $"media/gamemodes/play_apex.bik",
+
+	live_die_live = $"media/gamemodes/live_die_live.bik",
+	third_person = $"media/gamemodes/third_person.bik",
+	always_be_closing = $"media/gamemodes/always_be_closing.bik",
+	night = $"media/gamemodes/night.bik",
+	dummies = $"media/gamemodes/dummies.bik",
+	deja_loot = $"media/gamemodes/deja_loot.bik",
+
+	campfire = $"media/gamemodes/campfire.bik",
+
+}
+
+
+
+global const table<string, asset> GAMEMODE_TILE_IMAGE_MAP = {
+	ranked_trio = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_ranked_trios.rpak",
+	unranked_solo = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_unranked_solos.rpak",
+	unranked_duo = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_unranked_duos.rpak",
+	unranked_trio = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_unranked_trios.rpak",
+	unranked_quad = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_unranked_quads.rpak",
+	wildcard_trio = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_trios.rpak",
+	wildcard_trio_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_trios.rpak",
+	wildcard_trio_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_trios.rpak",
+	wildcard_trio_event_bat = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_bat.rpak",
+	wildcard_trio_event_bat_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_bat.rpak",
+	wildcard_trio_event_bat_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_bat.rpak",
+
+		wildcard_trio_event_m26 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_flatline.rpak",
+		wildcard_trio_event_m26_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_flatline.rpak",
+		wildcard_trio_event_m26_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_flatline.rpak",
+
+
+
+
+
+
+
+
+
+
+
+	wildcard_trio_event_holiday_s27 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_s27_holiday.rpak",
+	wildcard_trio_event_holiday_s27_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_s27_holiday.rpak",
+	wildcard_trio_event_holiday_s27_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_s27_holiday.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_beamstick_s28_2 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_beamstick.rpak",
+		wildcard_trio_event_beamstick_s28_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_beamstick.rpak",
+		wildcard_trio_event_beamstick_s28_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_beamstick.rpak",
+
+	unranked_trio_bot = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_bot_mode.rpak",
+	unranked_trio_casual = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_casual.rpak",
+
+
+
+
+
+
+		wildcard_trio_event_matchmodifiers_s29_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_juiced.rpak",
+		wildcard_trio_event_matchmodifiers_s29_2 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_juiced.rpak",
+		wildcard_trio_event_matchmodifiers_s29_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_juiced.rpak",
+
+
+
+
+
+
+
+		wildcard_trio_event_clockup_s291 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_clockup.rpak",
+		wildcard_trio_event_clockup_s291_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_clockup.rpak",
+		wildcard_trio_event_clockup_s291_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_clockup.rpak",
+
+
+		wildcard_trio_wildhunt_event_s30 = $"ui_image/rui/menu/gamemode/playlist_bg_1x2_wildcard_event_wild_hunt.rpak",
+		wildcard_trio_wildhunt_event_s30_1 = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_wildcard_event_wild_hunt.rpak",
+		wildcard_trio_wildhunt_event_s30_3 = $"ui_image/rui/menu/gamemode/playlist_bg_1x3_wildcard_event_wild_hunt.rpak",
+
+
+
+
+
+
+
+
+
+
+
+	training = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_training.rpak",
+	training_locked = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_training_locked.rpak",
+	firing_range = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_firing_range.rpak",
+	firing_range_locked = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_firing_range_locked.rpak",
+	mixtape_barometer = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_barometer.rpak",
+	mixtape_fragment = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_fragment.rpak",
+	mixtape_hammond_labs = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_hammond_labs.rpak",
+	mixtape_lava_siphon = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_lava_siphon.rpak",
+	mixtape_production_yard = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_production_yard.rpak",
+	mixtape_skulltown = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_skull_town.rpak",
+	mixtape_thunderdome = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_thunderdome.rpak",
+	mixtape_zeus_station = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_zeus_station.rpak", 
+	mixtape_estates = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_estates.rpak",
+	mixtape_monument = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_monument.rpak",
+	mixtape_caustic = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_caustic.rpak",
+	mixtape_wattson = $"ui_image/rui/menu/gamemode/playlist_bg_1x1_mixtape_wattson.rpak",
+}
+
+global const table<string, asset> GAMEMODE_PLAY_INNER_IMAGE_MAP = {
+	wildcard_trio = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_default.rpak",
+	wildcard_trio_event_bat = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_bat.rpak",
+
+		wildcard_trio_event_m26 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_flatline.rpak",
+
+
+
+
+
+
+
+	wildcard_trio_event_holiday_s27 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_s27_holiday.rpak",
+
+
+
+
+		wildcard_trio_event_beamstick_s28 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_beamstick.rpak",
+
+
+
+
+
+		wildcard_trio_event_matchmodifiers_s29 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_juiced.rpak",
+
+
+		wildcard_trio_event_clockup_s291 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_clockup.rpak",
+
+
+		wildcard_trio_wildhunt_event_s30 = $"ui_image/rui/menu/gamemode/events/about_button_wildcard_event_wild_hunt.rpak",
+
+
+
+
+
+
+
+}
+
+global const table<string, asset> GAMEMODE_PLAY_OUTER_IMAGE_MAP = {
+	wildcard_trio = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_default.rpak",
+	wildcard_trio_event_bat = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_bat.rpak",
+
+		wildcard_trio_event_m26 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_flatline.rpak",
+
+
+
+
+
+
+
+	wildcard_trio_event_holiday_s27 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_s27_holiday.rpak",
+
+
+
+
+		wildcard_trio_event_beamstick_s28 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_beamstick.rpak",
+
+
+
+
+
+		wildcard_trio_event_matchmodifiers_s29 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_juiced.rpak",
+
+
+		wildcard_trio_event_clockup_s291 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_clockup.rpak",
+
+
+		wildcard_trio_wildhunt_event_s30 = $"ui_image/rui/menu/gamemode/events/about_overlay_wildcard_event_wild_hunt.rpak",
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+global typedef PlaylistName string
+global typedef PlaylistVarName string
+
+
+global struct TimestampRange
+{
+	int startUnixTime 
+	int endUnixTime 
+}
+global struct PlaylistScheduleData
+{
+	array<TimestampRange> blocks
+	TimestampRange ornull currentBlock
+	TimestampRange ornull nextBlock
+}
+
+
+
+
+
+
+
+
+
+struct
+{
+	table<string, int> playlistIndexMap
+	int lastCheckedTime = 0
+	bool isOptInEnabled = false
+	array<string> cachedVisiblePlaylistNames
+
+} file
+
+
+
+
+
+
+
+
+
+
+int ornull function GetCurrentPlaylistVarTimestamp( string varName, int defaultVal )
+{
+	return DateTimeStringToUnixTimestamp( GetCurrentPlaylistVarString( varName, string(defaultVal) ) )
+}
+
+
+
+
+int function GetMaxTeamSizeForPlaylist( PlaylistName playlistName )
+{
+	int maxTeamSize = GetPlaylistVarInt( playlistName, "max_team_size", 0 )
+	if ( maxTeamSize > 0 )
+		return maxTeamSize
+
+	int maxPlayers = GetPlaylistVarInt( playlistName, "max_players", 0 )
+	int maxTeams   = GetPlaylistVarInt( playlistName, "max_teams", 0 )
+	if ( maxTeams == 0 )
+		return maxPlayers
+	return maxPlayers / maxTeams
+}
+
+
+
+int function GetMaxQueueSizeForPlaylist( PlaylistName playlistName )
+{
+	if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) && Ranked_PartyAboveSoloQueueRankThreshold( playlistName ) )
+		return 1
+
+	return GetMaxTeamSizeForPlaylist( playlistName )
+}
+
+
+
+
+array<string> function GetPlaylistMaps( PlaylistName playlistName )
+{
+	array<string> mapsArray
+
+	int numModes = GetPlaylistGamemodesCount( playlistName )
+	for ( int modeIndex = 0; modeIndex < numModes; modeIndex++ )
+	{
+		int numMaps = GetPlaylistGamemodeByIndexMapsCount( playlistName, modeIndex )
+		for ( int mapIndex = 0; mapIndex < numMaps; mapIndex++ )
+		{
+			string mapName = GetPlaylistGamemodeByIndexMapByIndex( playlistName, modeIndex, mapIndex )
+			if ( mapsArray.contains( mapName ) )
+				continue
+
+			mapsArray.append( mapName )
+		}
+	}
+
+	return mapsArray
+}
+
+
+
+vector function GameMode_GetPillarColor( int pillarIndex )
+{
+	switch ( pillarIndex )
+	{
+		case 0: 
+			return < 0.4, 0.1765, 0.5686 >
+		case 1: 
+			return < 0.9098, 0.015686, 0.011764 > 
+		case 2: 
+			return < 0.251, 0.8784, 0.8157 >
+		case 3: 
+			return < 0.3906, 0.4414, 0.4375 >
+		default:
+			return < 0.3906, 0.4414, 0.4375 >
+	}
+	unreachable
+}
+
+float function GameMode_GetPillarColorLightness( int pillarIndex )
+{
+	switch ( pillarIndex )
+	{
+		case 2: 
+			return -0.60
+		default:
+			return -0.40
+	}
+	unreachable
+}
+
+asset function GameMode_GetTileImage( array< string > imageKeys, int tileHeight = 0 )
+{
+	asset assetOut = $""
+	for ( int i = 0; i < imageKeys.len(); i++ )
+	{
+		string imageKey = imageKeys[i]
+		if ( imageKey != "" )
+		{
+			string imageKeyTileHeight = imageKey + "_" + string( tileHeight )
+			if ( imageKeyTileHeight in GAMEMODE_TILE_IMAGE_MAP )
+			{
+				assetOut = GAMEMODE_TILE_IMAGE_MAP[imageKeyTileHeight]
+			} else if ( imageKey in GAMEMODE_TILE_IMAGE_MAP )
+			{
+				assetOut = GAMEMODE_TILE_IMAGE_MAP[imageKey]
+			}
+
+			else if ( HasEventTakeOverActive() && IsPlaylistLockedForEvent( imageKey ) )
+			{
+				assetOut = GetImageFromImageMap( "play_apex_panel_locked", false )
+			}
+			else
+			{
+				assetOut = GetImageFromImageMap( imageKey, false )
+			}
+			if ( assetOut != $"" && assetOut != $"white")
+			{
+				break
+			}
+		}
+	}
+
+	return assetOut
+}
+
+asset function GameMode_GetPlayImageInner( array< string > imageKeys )
+{
+	asset assetOut = $""
+	for ( int i = 0; i < imageKeys.len(); i++ )
+	{
+		string imageKey = imageKeys[i]
+		if ( imageKey != "" )
+		{
+			if ( imageKey in GAMEMODE_PLAY_INNER_IMAGE_MAP )
+			{
+				assetOut = GAMEMODE_PLAY_INNER_IMAGE_MAP[imageKey]
+			}
+			if ( assetOut != $"" && assetOut != $"white")
+			{
+				break
+			}
+		}
+	}
+
+	return assetOut
+}
+
+asset function GameMode_GetPlayImageOuter( array< string > imageKeys )
+{
+	asset assetOut = $""
+	for ( int i = 0; i < imageKeys.len(); i++ )
+	{
+		string imageKey = imageKeys[i]
+		if ( imageKey != "" )
+		{
+			if ( imageKey in GAMEMODE_PLAY_OUTER_IMAGE_MAP )
+			{
+				assetOut = GAMEMODE_PLAY_OUTER_IMAGE_MAP[imageKey]
+			}
+			if ( assetOut != $"" && assetOut != $"white")
+			{
+				break
+			}
+		}
+	}
+
+	return assetOut
+}
+
+
+
+bool function CanPlaylistFitPartySize( PlaylistName playlistName, int partySize, bool sendOpenInvite )
+{
+	int maxPlayersPerTeam = GetMaxTeamSizeForPlaylist( playlistName )
+	if ( partySize > maxPlayersPerTeam )
+		return false
+
+	if ( sendOpenInvite && maxPlayersPerTeam == 1 )
+		return false
+
+	bool partiesAllowed = GetPlaylistVarBool( playlistName, "parties_allowed", true )
+	if ( !partiesAllowed )
+	{
+		if ( partySize > 1 )
+			return false
+
+		if ( sendOpenInvite )
+			return false
+	}
+
+	return true
+}
+
+asset function GetImageFromImageMap( string keyName, bool warnOnFailure = true )
+{
+	asset imageAsset = $"white"
+	if ( keyName != "" )
+	{
+		if ( keyName in GAMEMODE_IMAGE_MAP )
+			imageAsset = GAMEMODE_IMAGE_MAP[keyName]
+		else
+		{
+#if UI_AUTOMATION
+				if ( UIAutomation_IsAutomateQueueForPlaylists() )
+					return imageAsset 
+#endif
+
+			if ( warnOnFailure )
+			{
+				Warning( "GetImageFromImageMap: Invalid playlist value for 'image': %s", keyName )
+			}
+		}
+	}
+	return imageAsset
+}
+
+asset function GetThumbnailImageFromImageMap( string keyName, bool warnOnFailure = true )
+{
+	asset imageAsset = $"white"
+	if ( keyName != "" )
+	{
+		if ( keyName in GAMEMODE_THUMBNAIL_IMAGE_MAP )
+			imageAsset = GAMEMODE_THUMBNAIL_IMAGE_MAP[keyName]
+		else
+		{
+#if UI_AUTOMATION
+				if ( UIAutomation_IsAutomateQueueForPlaylists() )
+					return imageAsset 
+#endif
+
+			if ( warnOnFailure )
+				Warning( "GetThumbnailImageFromImageMap: Invalid playlist value for 'image': %s", keyName )
+		}
+	}
+	return imageAsset
+}
+
+asset function GetGamemodeLogoFromImageMap( string keyName, bool warnOnFailure = true )
+{
+	asset imageAsset = $"white"
+	if ( keyName != "" )
+	{
+		bool foundLogo = false
+		var parentBlock = GetSettingsBlockForAsset( GAMEMODE_LOGO_SHAREDMAP )
+		var arrField    = GetSettingsBlockArray( parentBlock, "gamemodeLogos" )
+
+		foreach ( var entryBlock in IterateSettingsArray( arrField ) )
+		{
+			string modeName = GetSettingsBlockString( entryBlock, "mode" )
+
+			if( modeName.tolower() == keyName.tolower() )
+			{
+				imageAsset = GetSettingsBlockAsset( entryBlock, "logo" )
+				foundLogo = true
+				break
+			}
+		}
+
+		if ( !foundLogo )
+		{
+#if UI_AUTOMATION
+				if ( UIAutomation_IsAutomateQueueForPlaylists() )
+					return imageAsset 
+#endif
+
+			if ( warnOnFailure )
+				Warning( "GetGamemodeLogoFromImageMap: Invalid playlist value for 'image': %s", keyName )
+		}
+	}
+	return imageAsset
+}
+
+
+asset function GetBinkFromBinkMap( string keyName, bool warnOnFailure = true )
+{
+	asset desiredVideoAsset = $""
+	if ( keyName != "" )
+	{
+		if ( keyName in GAMEMODE_BINK_MAP )
+			desiredVideoAsset = GAMEMODE_BINK_MAP[keyName]
+		else if ( warnOnFailure )
+			Warning( "Invalid playlist value for 'video': %s", keyName )
+	}
+	return desiredVideoAsset
+}
+
+string function GetMatchRequeuePlaylist()
+{
+	string currentRequeuePlaylist = GetCurrentPlaylistName()
+	string currentPlaylistScheduleName = GetCurrentPlaylistScheduleName()
+
+	
+	if ( currentPlaylistScheduleName != "" )
+		currentRequeuePlaylist = GetCurrentPlaylistForSchedule( currentPlaylistScheduleName )
+
+	
+	if ( !GetPlaylistVarBool( currentRequeuePlaylist, "matchmake_from_match", false ) )
+		return ""
+
+	return currentRequeuePlaylist
+}
+
+
+
+
+int function GetPlaylistIndexForName( PlaylistName playlistName )
+{
+	if ( playlistName in file.playlistIndexMap )
+		return file.playlistIndexMap[playlistName]
+
+	return -1
+}
+
+
+
+
+bool function Playlist_PlaylistHasSchedule( string playlistName )
+{
+	string ornull schedule = GetScheduleFromPlaylist( playlistName )
+	if ( schedule != null )
+	{
+		return true
+	}
+
+	return false
+}
+
+TimestampRange ornull function Playlist_GetPlaylistScheduledTimeRange( string playlistName )
+{
+	string ornull schedule = GetScheduleFromPlaylist( playlistName )
+	if ( schedule != null && GetCurrentPlaylistForSchedule( expect string( schedule )  ) == playlistName )
+	{
+		TimestampRange range
+		range.startUnixTime = GetCurrentScheduleEntryStartTime( expect string( schedule ) )
+		range.endUnixTime = GetCurrentScheduleEntryEndTime( expect string( schedule ) )
+		return range
+	}
+
+	return null
+}
+
+
+
+
+int ornull function Playlist_GetRankedSeasonEndDate( bool isFirstSplit )
+{
+	string endDateKey = isFirstSplit ? "ranked_season_end_date_split1" : "ranked_season_end_date_split2"
+	string varVal = GetCurrentPlaylistVarString( endDateKey, "" )
+	if ( varVal.len() > 0 )
+	{
+		return DateTimeStringToUnixTimestamp( varVal )
+	}
+
+	return null
+}
+
+int ornull function Playlist_GetRankedPlaylistLockDate( bool isFirstSplit )
+{
+	string endDateKey = isFirstSplit ? "ranked_playlist_lock_date_split1" : "ranked_playlist_lock_date_split2"
+	string varVal = GetCurrentPlaylistVarString( endDateKey, "" )
+	if ( varVal.len() > 0 )
+	{
+		return DateTimeStringToUnixTimestamp( varVal )
+	}
+
+	return null
+}
+
+bool function Playlist_ShouldLockRankedPlaylistForSplit()
+{
+	int ornull lockPlaylistDate = Ranked_GetCurrentRankedPeriodLockTime()
+	if ( lockPlaylistDate != null )
+	{
+		bool passLockPlylistDate = GetUnixTimestamp() > expect int( lockPlaylistDate )
+		bool pastEndDate = Ranked_IsPastRankedSeasonEndDate()
+		ItemFlavor rankedPeriod = GetItemFlavorByGUID( ConvertItemFlavorGUIDStringToGUID( Ranked_GetCurrentPeriodGUIDString() ) )
+		bool isFirstSplit = Ranked_IsRankedV2FirstSplit( rankedPeriod )
+		return passLockPlylistDate && !pastEndDate && isFirstSplit
+	}
+	return false
+}
+
+bool function Playlist_ShouldLockRankedPlaylistForPatch( string plName )
+{
+	int ornull lockPlaylistDate = Ranked_GetCurrentRankedPeriodLockTime()
+	if ( lockPlaylistDate != null ) 
+	{
+		bool passLockPlylistDate = GetUnixTimestamp() > expect int( lockPlaylistDate )
+		bool pastEndDate = Ranked_IsPastRankedSeasonEndDate()
+		ItemFlavor rankedPeriod = GetItemFlavorByGUID( ConvertItemFlavorGUIDStringToGUID( Ranked_GetCurrentPeriodGUIDString() ) )
+		bool isFirstSplit = Ranked_IsRankedV2FirstSplit( rankedPeriod )
+		return passLockPlylistDate && !pastEndDate && !isFirstSplit
+	}
+
+	int ornull seasonEndDate = Ranked_GetCurrentRankedPeriodEndTime()
+	if ( seasonEndDate == null )
+		return false
+
+	if ( Playlist_PlaylistHasSchedule( plName ) )
+	{
+		TimestampRange ornull currentBlockOrNull = Playlist_GetPlaylistScheduledTimeRange( plName )
+		if ( currentBlockOrNull == null )
+			return true
+
+		TimestampRange currentBlock = expect TimestampRange( currentBlockOrNull )
+
+		bool outsideCurrentBlock = currentBlock.startUnixTime > GetUnixTimestamp() || currentBlock.endUnixTime < GetUnixTimestamp()
+		bool pastEndDate = Ranked_IsPastRankedSeasonEndDate()
+
+		
+		if ( outsideCurrentBlock && !pastEndDate )
+			return true
+	}
+
+	return false
+}
+
+
+
+
+void function ShPlaylist_Init()
+{
+
+
+
+
+
+
+
+	ShPlaylist_CacheData()
+}
+
+void function ShPlaylist_CacheData()
+{
+	PrintFunc()
+	file.playlistIndexMap = {}
+
+	int numPlaylists = GetPlaylistCount()
+	for ( int index = 0; index < numPlaylists; index++ )
+	{
+		string name = string( GetPlaylistName( index ) )
+		file.playlistIndexMap[name] <- index
+	}
+
+	Boost_OnPlaylistsRegistered()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+array<string> function GetPlaylistModNames()
+{
+	array<string> list = []
+	int numMods = GetPlaylistModCount()
+
+	list.resize( numMods )
+	for ( int modIter = 0; modIter != numMods; modIter++ )
+		list[modIter] = string( GetPlaylistModName( modIter ) )
+
+	return list
+}
+
+void function ForceRefreshVisiblePlaylists()
+{
+	file.lastCheckedTime = 0
+}
+
+bool function Playlist_IsCurrentlyActive( string playlistName )
+{
+	string ornull schedule = GetScheduleFromPlaylist( playlistName )
+	if ( schedule == null || GetCurrentPlaylistForSchedule( expect string( schedule )  ) == playlistName )
+		return true;
+
+	return false;
+}
+
+array<string> function GetPrivateMatchPlaylistNames()
+{
+	array<string> list = []
+	for ( int index = 0; index < GetPlaylistCount(); index++ )
+	{
+		string playlistName = string( GetPlaylistName( index ) )
+		if ( !GetPlaylistVarBool( playlistName, "private_match", false )  )
+			continue
+
+		list.append( playlistName )
+	}
+
+	return list
+}
+
+array<string> function GetVisiblePlaylistNames()
+{
+	bool shouldDisplayOptInOptions = false
+	bool shouldCache = true
+
+		bool isOptInServer = ShouldDisplayOptInOptions()
+		if ( isOptInServer && IsOptInEnabled() )
+			shouldDisplayOptInOptions = true
+
+		if ( isOptInServer )
+			shouldCache = false
+
+
+	
+	int timeSinceLastChecked = ( GetUnixTimestamp() - file.lastCheckedTime )
+	int checkInterval = GetCurrentPlaylistVarInt( "visible_playlist_refresh_time_sec", shouldCache ? 10 : 1 )
+	if ( timeSinceLastChecked >= 0 && file.isOptInEnabled == shouldDisplayOptInOptions && timeSinceLastChecked < checkInterval )
+		return file.cachedVisiblePlaylistNames
+
+	file.lastCheckedTime = GetUnixTimestamp()
+	file.isOptInEnabled = shouldDisplayOptInOptions
+
+	array<string> list = []
+	int scheduleCount = GetNumPlaylistSchedules()
+	for ( int i = 0; i < scheduleCount; i++ )
+	{
+		string schedule = GetPlaylistSchedule( i )
+		string playlist = GetCurrentPlaylistForSchedule( schedule )
+		if ( playlist == "" || list.contains( playlist ) )
+		{
+			continue
+		}
+
+		list.append( playlist )
+	}
+
+	if ( shouldDisplayOptInOptions )
+	{
+		list.extend( GetAllOptinPlaylists() )
+	}
+
+	string forcedVisiblePlaylistsString = GetConVarString( "match_visiblePlaylists" )
+	array<string> forcedVisiblePlaylists = split( forcedVisiblePlaylistsString, WHITESPACE_CHARACTERS )
+	list.extend( forcedVisiblePlaylists )
+
+	list.fastremovebyvalue("") 
+
+	file.cachedVisiblePlaylistNames = list
+	return list
+}
+
+array< string > function GetPlaylistsInSchedule()
+{
+	array< string > visiblePlaylists = GetVisiblePlaylistNames()
+
+	array< string > list
+	for ( int i = 0; i < visiblePlaylists.len(); i++ )
+	{
+		string playlistName = visiblePlaylists[i]
+
+		if ( Playlist_IsCurrentlyActive( playlistName ) )
+			list.append( playlistName )
+	}
+
+	return list
+}
+
+int function GetMaxTeamSizeForAllPlaylistsInSchedule()
+{
+	array< string > activePlaylists = GetPlaylistsInSchedule()
+
+	int maxTeamSize = 0
+
+	foreach ( string playlistName in activePlaylists )
+	{
+		maxTeamSize = maxint( maxTeamSize, GetMaxTeamSizeForPlaylist( playlistName ) )
+	}
+
+	return maxTeamSize
+}
+
+
+
+
+string function Playlist_GetLTMSlotPlaylist( bool isPrivateMatchQuery = false )
+{
+	return GetCurrentPlaylistForSchedule( "ltm" )
+}
+
+int function Playlist_GetNewModeVersion()
+{
+	return GetCurrentPlaylistVarInt( "newModeVersion", 0 )
+}
+
+
+
+
+const table<string, asset> GAMEMODE_EMBLEM_MAP = {
+	airdrop = $"rui/menu/gamemode_emblem/airdrop_takeover",
+	shotguns_and_snipers = $"rui/menu/gamemode_emblem/shotguns_and_snipers",
+	jan_event = $"rui/menu/gamemode_emblem/sioree",
+	deja_loot = $"rui/menu/gamemode_emblem/deja_loot",
+	ranked = $"rui/menu/ranked/rank_emblem_unknown",
+
+
+
+
+
+
+
+
+	duos = $"rui/menu/gamemode_emblem/duos",
+
+		winter_express = $"rui/menu/gamemode_emblem/winter_express",
+
+
+
+
+
+
+
+
+
+
+
+
+
+	lost_treasures = $"rui/menu/gamemode_emblem/campfire_lost_treasures",
+
+
+
+	generic = $"rui/menu/gamemode_emblem/generic_ltm",
+	genesis = $"rui/menu/gamemode_emblem/genesis",
+
+
+		control_mode = $"rui/menu/gamemode_emblem/emblem_control",
+
+
+
+	freedm = $"rui/menu/gamemode_emblem/emblem_freedm",
+	emblem_freedm_tdm = $"rui/menu/gamemode_emblem/emblem_freedm_tdm",
+
+
+	firing_range = $"rui/menu/gamemode_emblem/emblem_firing_range",
+
+	bot_royale = $"rui/gamemodes/bot_mode/skydive_emblem_bot_mode", 
+
+	casual = $"rui/gamemodes/casual/skydive_emblem_casual"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		emblem_3strikes = $"rui/menu/gamemode_emblem/emblem_three_strikes",
+
+
+		emblem_mysterylegends = $"rui/menu/gamemode_emblem/emblem_mysterylegends",
+
+
+
+
+
+
+
+
+
+	emblem_golden_horse = $"rui/gamemodes/golden_horse/golden_horse_mode_icon",
+
+
+		emblem_bounty_hunt = $"rui/hud/gametype_icons/ltm/hunt_ltm_logo_colorized",
+
+
+
+		emblem_survival_solos = $"rui/menu/gamemode_emblem/generic_ltm", 
+
+
+
+		emblem_survival_quads = $"rui/menu/gamemode_emblem/generic_ltm", 
+
+
+	emblem_survival_unranked = $"rui/menu/gamemode_emblem/emblem_unranked_br",
+
+	emblem_bot_playground = $"rui/menu/gamemode_emblem/emblem_bot_playground", 
+
+	emblem_casual = $"rui/menu/gamemode_emblem/emblem_casual"
+
+
+		emblem_bigtdm = $"rui/menu/gamemode_emblem/emblem_tdm_big",
+
+
+
+		emblem_treasure_hunt = $"rui/menu/gamemode_emblem/emblem_treasure_hunt",
+
+
+
+
+
+
+
+		emblem_revival = $"rui/menu/gamemode_emblem/revival_emblem",
+
+
+
+
+
+
+
+
+
+
+	emblem_survival_mythic_s24 = $"rui/menu/gamemode_emblem/generic_ltm", 
+
+
+		emblem_arenas = $"rui/menu/gamemode_emblem/emblem_arenas",
+
+
+
+		emblem_wildcard = $"rui/menu/gamemode_emblem/emblem_wildcard",
+
+}
+
+
+
+const table<string, asset> GAMEMODE_BANNER_LOGO_MAP = {
+	freedm = $"rui/rui_screens/apex_logo_tdm",
+	logo_tdm = $"rui/hud/gametype_icons/ltm/tdm_logo",
+
+		logo_treasure_hunt = $"rui/hud/gametype_icons/ltm/treasure_hunt/logo_treasure_hunt",
+
+
+		logo_bigtdm = $"rui/rui_screens/apex_logo_tdm_big",
+
+
+		logo_survival_revival = $"rui/hud/gametype_icons/ltm/ltm_icon_revival",
+
+
+		logo_wildcard = $"rui/events/unhinged/brand_icon_wildcard",
+
+}
+
+
+
+
+
+const table< string, array<asset> > GAMEMODE_BANNER_BACKGROUNDS_MAP = {
+	defaults = [ $"rui/rui_screens/banner_l", $"rui/rui_screens/banner_c", $"rui/rui_screens/banner_r" ],
+
+
+
+
+		beamstick_s28 = [ $"rui/rui_screens/banner_l_beamstick_s28", $"rui/rui_screens/banner_c_beamstick_s28", $"rui/rui_screens/banner_r_beamstick_s28" ],
+
+
+		clockup_s291 = [ $"rui/rui_screens/banner_l_clockup_s291", $"rui/rui_screens/banner_c_clockup_s291", $"rui/rui_screens/banner_r_clockup_s291" ],
+
+
+
+
+}
+
+
+
+asset function GetModeEmblemImage( string playlistName, bool warnOnFailure = true )
+{
+	string emblemKey  = GetPlaylistVarString( playlistName, "emblem", "" )
+	asset emblemImage = $""
+
+	if ( emblemKey != "" )
+	{
+		if ( emblemKey in GAMEMODE_EMBLEM_MAP )
+			emblemImage = GAMEMODE_EMBLEM_MAP[emblemKey]
+		else if ( warnOnFailure )
+			Warning( "Playlist '%s' has invalid value for 'emblem': %s", playlistName, emblemKey )
+	}
+
+	return emblemImage
+}
+
+
+
+asset function GetModeBannerLogo( string playlistName, bool warnOnFailure = true )
+{
+	string logoKey	  = GetPlaylistVarString( playlistName, "banner_logo", "" )
+	asset logoImage	  = $""
+
+	if ( logoKey != "" )
+	{
+		if ( logoKey in GAMEMODE_BANNER_LOGO_MAP )
+			logoImage = GAMEMODE_BANNER_LOGO_MAP[logoKey]
+		else if ( warnOnFailure )
+			Warning( "Playlist '%s' has invalid value for 'banner_logo': %s", playlistName, logoKey )
+	}
+
+	return logoImage
+}
+
+asset function GetBannerLogoByKey( string logoKey )
+{
+	return logoKey != "" && logoKey in GAMEMODE_BANNER_LOGO_MAP ? GAMEMODE_BANNER_LOGO_MAP[logoKey] : $""
+}
+
+
+
+asset function GetModeBannerLogoOrModeEmblemFallback( string playlistName )
+{
+	asset image = GetModeBannerLogo( playlistName )
+	if ( image == $"" )
+	{
+		image = GetModeEmblemImage( playlistName )
+	}
+	return image
+}
+
+
+
+
+array<int> function GetEmblemColor( string playlistName )
+{
+	string colorString = GetPlaylistVarString( playlistName, "emblem_color", "128 128 128 255" )
+	return ColorStringToArray( colorString )
+}
+
+
+
+array<asset> function GetModeBannerImages( string playlistName )
+{
+	string bannersKey = GetPlaylistVarString( playlistName, "banner_bg_set", "defaults" )
+	array<asset> modeBanners = []
+
+	if ( bannersKey != "" )
+	{
+		if ( bannersKey in GAMEMODE_BANNER_BACKGROUNDS_MAP )
+		{
+			modeBanners = GAMEMODE_BANNER_BACKGROUNDS_MAP[bannersKey]
+		}
+		else
+		{
+			Warning( "Playlist '%s' has invalid value for 'emblem': %s", playlistName, bannersKey )
+		}
+	}
+
+	return modeBanners
+}
+
+array<asset> function GetModeBannerImagesByKey( string bannersKey )
+{
+	if ( bannersKey != "" && bannersKey in GAMEMODE_BANNER_BACKGROUNDS_MAP )
+	{
+		return GAMEMODE_BANNER_BACKGROUNDS_MAP[bannersKey]
+	}
+
+	return []
+}
+
+
+#if DEV
+
+const DEV_SecondsPerRotation = 3600
+#endif
+
+
+int function GetPlaylistRotationNextTime( string rotationName = "" )
+{
+	int nextTime = GetNamedPlaylistRotationNextTime( rotationName )
+
+#if DEV
+		if ( nextTime == 0 )
+			nextTime = (GetUnixTimestamp() / DEV_SecondsPerRotation ) * DEV_SecondsPerRotation + DEV_SecondsPerRotation 
+#endif
+
+	return nextTime
+}
+
+
+string function GetPlaylistRotationNextTimeFormatedString( int seconds = -1, string rotationName = "" )
+{
+	DisplayTime dt
+
+	if( seconds > -1 )
+		dt = SecondsToDHMS( seconds - 1 )
+	else
+		dt = SecondsToDHMS( GetPlaylistRotationNextTime( rotationName ) - GetUnixTimestamp() - 1 )
+
+	string nextTimeStr
+
+	bool isDays = dt.days > 0
+	bool isHours = dt.hours > 0
+	bool isMinutes = dt.minutes > 0
+
+	string formatString
+
+	if( isDays && !isHours ){
+		
+		formatString = Localize( "#TIME_REMAINING_DAYS", string( dt.days ))
+	}else if ( isDays && isHours ){
+		
+		formatString = Localize( "#TIME_REMAINING_DAYS_HOURS", string( dt.days ), string( dt.hours ) )
+	}else if( !isDays && isHours && isMinutes ){
+		
+		formatString = Localize( "#TIME_REMAINING_HOURS_MINUTES", string( dt.hours ), string( dt.minutes ) )
+	}else if( !isDays && !isHours && isMinutes ){
+		
+		formatString = Localize( "#TIME_REMAINING_MINUTES_SECONDS", string( dt.minutes ), string( dt.seconds ) )
+	}else if( !isDays && !isHours && !isMinutes){
+		
+		formatString = Localize( "#TIME_REMAINING_SECONDS", string( dt.seconds ) )
+	}
+
+	return formatString
+}
+
+
+
+void function UpdateMatchmakeFromMatchPlaylist_Thread()
+{
+	Signal( uiGlobal.signalDummy, "UpdateMatchmakeFromMatchPlaylist" )
+	EndSignal( uiGlobal.signalDummy, "UpdateMatchmakeFromMatchPlaylist" )
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+
+	string lastMatchmakingPlaylist = ""
+	int emptyPlaylistFrameCount = 0
+
+	while ( true )
+	{
+		string currentMatchmakingPlaylist = GetMatchRequeuePlaylist()
+		if ( currentMatchmakingPlaylist != lastMatchmakingPlaylist )
+		{
+			lastMatchmakingPlaylist = currentMatchmakingPlaylist
+
+			if ( currentMatchmakingPlaylist == "" )
+			{
+				emptyPlaylistFrameCount = 0
+			}
+			else
+			{
+				emptyPlaylistFrameCount = -1
+
+				CancelMatchmaking()
+				WaitFrame()
+				StartMatchmaking( currentMatchmakingPlaylist )
+			}
+		}
+
+		
+		if ( emptyPlaylistFrameCount != -1 )
+		{
+			emptyPlaylistFrameCount++
+
+			if ( emptyPlaylistFrameCount > 10 )
+				MatchRequeueCancel()
+		}
+
+		wait 1.0
+	}
+}
+void function MatchRequeueCancel()
+{
+	if ( AreWeMatchmaking() && !LeaveMatch_WasInitiated() )
+		CancelMatchmaking()
+
+	Signal( uiGlobal.signalDummy, "UpdateMatchmakeFromMatchPlaylist" )
+}
+
+
+string function GetDefaultPlaylist()
+{
+	if ( HasEventTakeOverActive() )
+		return GetEventTakeoverPlaylist()
+
+	if ( FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+	{
+		string recommendation = FTUEFlow_GetLobbyPlaylistRecommendation()
+		if ( recommendation != "" )
+			return recommendation
+	}
+
+	if ( RPPMatchMaking_IsInMatchMakingFlow( GetLocalClientPlayer() ) )
+	{
+		string recommendation = RPPMatchMaking_GetLobbyPlaylistRecommendation()
+		if ( recommendation != "" )
+			return recommendation
+	}
+
+	if ( NewPlayerMatchMaking_IsInMatchMakingFlow( GetLocalClientPlayer() ) )
+	{
+		string recommendation = NewPlayerMatchMaking_GetLobbyPlaylistRecommendation()
+		if ( recommendation != "" )
+			return recommendation
+	}
+
+
+	if ( GetPartySize() == 1 )
+	{
+		if ( !IsLocalPlayerExemptFromTraining() && !HasLocalPlayerCompletedTraining() )
+			return PLAYLIST_TRAINING
+
+		if ( !IsLocalPlayerExemptFromNewPlayerOrientation() && !HasLocalPlayerCompletedNewPlayerOrientation() )
+			return PLAYLIST_NEW_PLAYER_ORIENTATION
+	}
+	else if ( DoNonlocalPlayerPartyMembersNeedToCompleteNewPlayerOrientation() )
+	{
+		return PLAYLIST_NEW_PLAYER_ORIENTATION
+	}
+
+
+
+
+
+	string defaultPlaylist = GetCurrentPlaylistVarString( "playlist_default_slot_override", "regular_1" )
+	string defaultSchedulePlaylist = GetCurrentPlaylistForSchedule( defaultPlaylist)
+	if ( defaultSchedulePlaylist != "" )
+		return defaultSchedulePlaylist
+
+	array<string> list = GetVisiblePlaylistNames()
+	foreach ( playlist in list )
+	{
+
+		if ( playlist == PLAYLIST_TRAINING || playlist == PLAYLIST_NEW_PLAYER_ORIENTATION )
+
+
+
+			continue
+
+		if ( GameModeVariant_IsActiveForPlaylist( playlist, eGameModeVariants.SURVIVAL_RANKED ) )
+		{
+			if ( !IsFullyConnected() || !IsPersistenceAvailable() )
+				continue
+			if ( !Ranked_MeetRankedRequirement( GetLocalClientPlayer() ) )
+				continue
+		}
+
+		return playlist
+	}
+
+	return ""
+}
+
+
+
+string function GetPlaylistMapVarStringOrPlaylistVarString( string playlistName, int mapIdx, string varname, string defaultValue = "" )
+{
+	return GetPlaylistMapVarString( playlistName, mapIdx, varname, "" ) != "" ? GetPlaylistMapVarString( playlistName, mapIdx, varname, defaultValue ) : GetPlaylistVarString( playlistName, varname, defaultValue )
+}
+
+
+
+bool function PartyHasPlaylistAccountLevelRequired( string playlistName )
+{
+	
+
+	if ( !IsFullyConnected() )
+		return false
+
+	int accountLevelRequired = GetPlaylistVarInt( playlistName, "account_level_required", 0 ) - 1 
+	if ( accountLevelRequired < 0 )
+		return true
+
+	Party party = GetParty()
+	if ( party.members.len() == 0 )
+	{
+		if ( IsPersistenceAvailable() )
+			return GetPlayerAccountLevel( GetLocalClientPlayer() ) >= accountLevelRequired
+		else
+			return false
+	}
+
+	bool onePartyMembersMeetRankedLevelRequirement = false
+
+	foreach ( member in party.members )
+	{
+		CommunityUserInfo ornull userInfoOrNull = GetUserInfo( member.hardware, member.uid )
+
+		if ( userInfoOrNull != null )
+		{
+			CommunityUserInfo userInfo = expect CommunityUserInfo(userInfoOrNull)
+
+			if ( userInfo.charData[ePlayerStryderCharDataArraySlots.ACCOUNT_LEVEL] >= accountLevelRequired )
+			{
+				onePartyMembersMeetRankedLevelRequirement = true
+				break
+			}
+		}
+	}
+
+	return onePartyMembersMeetRankedLevelRequirement
+}
+
+
+string function Playlist_GetDataTableString( string ref, var datatable, int rowIndex, string columnName, string override )
+{
+	string val = GetDataTableString( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetCurrentPlaylistVarString( (ref + override + columnName), val )
+}
+
+
+
+
+
+
+
+asset function Playlist_GetDataTableAssetNoPrecache( string ref, var datatable, int rowIndex, string columnName, string override )
+{
+	
+	asset val = GetDataTableAsset( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+
+	string playlistVarName = (ref + override + columnName)
+	string assetRaw = GetCurrentPlaylistVarString( playlistVarName, "" )
+	if ( assetRaw.len() == 0 )
+		return val
+
+	return CastStringToAsset( assetRaw )
+}
+
+int function Playlist_GetDataTableInt( string ref, var datatable, int rowIndex, string columnName, string override )
+{
+	int val = GetDataTableInt( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetCurrentPlaylistVarInt( (ref + override + columnName), val )
+}
+
+bool function Playlist_GetDataTableBool( string ref, var datatable, int rowIndex, string columnName, string override )
+{
+	bool val = GetDataTableBool( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetCurrentPlaylistVarBool( (ref + override + columnName), val )
+}
+
+float function Playlist_GetDataTableFloat( string ref, var datatable, int rowIndex, string columnName, string override )
+{
+	float val = GetDataTableFloat( datatable, rowIndex, GetDataTableColumnByName( datatable, columnName ) )
+	return GetCurrentPlaylistVarFloat( (ref + override + columnName), val )
+}
+
+
+
+
+
+
+#if DEV
+void function PrintPlaylists()
+{
+	printt( "=== PLAYLIST NAMES: ===" )
+
+	int count = GetPlaylistCount()
+	for ( int idx = 0; idx < count; idx++ )
+	{
+		printt( "--", GetPlaylistName( idx ) )
+	}
+}
+#endif
+
+

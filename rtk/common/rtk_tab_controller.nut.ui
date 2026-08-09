@@ -1,0 +1,255 @@
+global struct RTKTabControllerEntry
+{
+	bool tabIsActive = true
+	rtk_behavior tabButton
+	rtk_panel tabContent
+	string tabName
+
+
+
+
+
+
+}
+
+global struct RTKTabController_Properties
+{
+	array< RTKTabControllerEntry > tabs
+	int initialTab = 0
+}
+
+global function RTKTabController_OnInitialize
+global function RTKTabController_OnTabButtonClick
+global function RTKTabController_NextTab
+global function RTKTabController_PrevTab
+global function RTKTabController_GetCurrentTabIndex
+global function RTKTabController_SetTabChangedCallback
+global function RTKTabController_GetTabCount
+global function RTKTabController_IsTabIndexActive
+global function RTKTabController_GetFirstActiveTabIndex
+global function RTKTabController_GetTabContentPanel
+global function RTKTabController_GetTabIndexByName
+
+struct PrivateData
+{
+	int currentTab = 0
+	void functionref( rtk_behavior, int ) onTabChanged
+}
+
+void function RTKTabController_OnInitialize( rtk_behavior self )
+{
+	int initialTab = self.PropGetInt( "initialTab" )
+	rtk_array tabs = self.PropGetArray( "tabs" )
+
+	PrivateData p
+	self.Private( p )
+
+	int tabCount = RTKArray_GetCount( tabs )
+	for ( int i = 0; i < tabCount; i++ )
+	{
+		rtk_struct entry = RTKArray_GetStruct( tabs, i )
+		rtk_behavior tabButton = RTKStruct_GetBehavior( entry, "tabButton" )
+		rtk_panel tabContent = RTKStruct_GetPanel( entry, "tabContent" )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		bool selected = i == initialTab
+		tabContent.SetActive( selected )
+		tabContent.SetVisible( selected )
+
+		if ( selected )
+		{
+			p.currentTab = initialTab
+		}
+
+		RTKTabButton_InitProps( tabButton, i, selected, void function( int tabIndex ) : ( self )
+		{
+			RTKTabController_OnTabButtonClick( self, tabIndex )
+		} )
+	}
+}
+
+void function RTKTabController_SetTabChangedCallback( rtk_behavior self, void functionref( rtk_behavior, int ) onTabChanged )
+{
+	PrivateData p
+	self.Private( p )
+	p.onTabChanged = onTabChanged
+}
+
+void function RTKTabController_OnTabButtonClick( rtk_behavior self, int tabIndex )
+{
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	int tabCount = RTKArray_GetCount( tabs )
+	PrivateData p
+	self.Private( p )
+
+	for ( int i = 0; i < tabCount; i++ )
+	{
+		rtk_struct entry       = RTKArray_GetStruct( tabs, i )
+		rtk_behavior tabButton = RTKStruct_GetBehavior( entry, "tabButton" )
+		rtk_panel tabContent   = RTKStruct_GetPanel( entry, "tabContent" )
+
+		bool selected = i == tabIndex
+		tabContent.SetActive ( selected )
+		tabContent.SetVisible( selected )
+		tabContent.SetActive( selected )
+
+		RTKTabButton_SetSelected( tabButton, selected )
+
+		if ( selected )
+		{
+			p.currentTab = tabIndex
+		}
+	}
+
+	if ( p.onTabChanged != null )
+	{
+		p.onTabChanged( self, tabIndex )
+	}
+}
+
+void function RTKTabController_NextTab( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	bool searchingActiveTab = true
+	int targetTabIndex = p.currentTab + 1
+
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	int tabCount = RTKArray_GetCount( tabs )
+
+	while ( searchingActiveTab )
+	{
+		if ( targetTabIndex < tabCount )
+		{
+			if ( RTKStruct_GetBool( RTKArray_GetStruct( tabs, targetTabIndex ), "tabIsActive" ) )
+			{
+				searchingActiveTab = false
+				RTKTabController_OnTabButtonClick( self, targetTabIndex )
+			}
+			else
+				targetTabIndex = targetTabIndex + 1
+		}
+		else
+			searchingActiveTab = false
+	}
+}
+
+void function RTKTabController_PrevTab( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	bool searchingActiveTab = true
+	int targetTabIndex = p.currentTab - 1
+
+	rtk_array tabs = self.PropGetArray( "tabs" )
+
+	while ( searchingActiveTab )
+	{
+		if ( targetTabIndex >= 0 )
+		{
+			if ( RTKStruct_GetBool( RTKArray_GetStruct( tabs, targetTabIndex ), "tabIsActive" ) )
+			{
+				searchingActiveTab = false
+				RTKTabController_OnTabButtonClick( self, targetTabIndex )
+			}
+			else
+				targetTabIndex = targetTabIndex - 1
+		}
+		else
+			searchingActiveTab = false
+	}
+}
+
+int function RTKTabController_GetCurrentTabIndex( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	return p.currentTab
+}
+
+int function RTKTabController_GetTabCount( rtk_behavior self )
+{
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	return RTKArray_GetCount( tabs )
+}
+
+bool function RTKTabController_IsTabIndexActive( rtk_behavior self, int tabIndex )
+{
+	int tabCount = RTKTabController_GetTabCount( self )
+	if ( tabIndex < 0 || tabIndex >= tabCount )
+		return false
+
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	return RTKStruct_GetBool( RTKArray_GetStruct( tabs, tabIndex ), "tabIsActive" )
+}
+
+int function RTKTabController_GetFirstActiveTabIndex( rtk_behavior self )
+{
+	int tabCount = RTKTabController_GetTabCount( self )
+	for ( int i = 0; i < tabCount; i++ )
+	{
+		if ( RTKTabController_IsTabIndexActive( self, i ) )
+			return i
+	}
+
+	return -1
+}
+
+rtk_panel ornull function RTKTabController_GetTabContentPanel( rtk_behavior self, int tabIndex )
+{
+	int tabCount = RTKTabController_GetTabCount( self )
+	if ( tabIndex < 0 || tabIndex >= tabCount )
+		return null
+
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	return RTKStruct_GetPanel( RTKArray_GetStruct( tabs, tabIndex ), "tabContent" )
+}
+
+int function RTKTabController_GetTabIndexByName( rtk_behavior self, string tabName )
+{
+	if ( tabName == "" )
+		return -1
+
+	rtk_array tabs = self.PropGetArray( "tabs" )
+	int tabCount = RTKArray_GetCount( tabs )
+	int foundTabIndex = -1
+
+	for ( int i = 0; i < tabCount; i++ )
+	{
+		string currentTabName = RTKStruct_GetString( RTKArray_GetStruct( tabs, i ), "tabName" )
+		if ( currentTabName != tabName )
+			continue
+
+		Assert( foundTabIndex == -1, "RTKTabController_GetTabIndexByName ambiguous tab name " + tabName )
+		foundTabIndex = i
+	}
+
+	return foundTabIndex
+}

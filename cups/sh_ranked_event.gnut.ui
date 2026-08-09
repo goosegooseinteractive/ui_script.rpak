@@ -1,0 +1,1034 @@
+global function RankedEvent_Init
+
+
+
+
+
+global function RankedEvent_LoadLPBreakdownFromStatInformation
+global function RankedEvent_GetCupStatLocFromStatRef
+global function RankedEvent_IsCupIDRankedEvent
+global function CodeCallback_IsCupRankedEvent
+global function RankedEvent_GetLeaderboardHardPickTime
+
+global function StatsRegister_RankedEventStats
+global function RankedEvent_SetContainerIndex
+global function RankedEvent_IsCupRankedEvent
+
+global function RankedEvent_GetActiveCup
+global function RankedEvent_GetRevealedCup
+global function RankedEvent_GetNextRevealedCup
+
+global function RankedEvent_GetRankedPeriodChampionGoalValue
+
+
+global function RankedEvent_GetWeekNumber
+global function RankedEvent_GetEventIndex
+
+
+
+global function RankedEvent_HandleLeaderboardData
+global function RankedEvent_GetCombatPoints
+global function RankedEvent_GetBonusesPoints
+global function RankedEvent_GetMatchPlacementPoints
+global function RankedEvent_ShouldShowRankedEventEndPopup
+global function RankedEvent_OpenRankedEventEndPopup
+global function RankedEvent_ShouldShowChampionRewardPopup
+global function RankedEvent_OpenChampionRewardPopup
+
+
+
+global function RankedEvent_IsLastMatchRankedEvent
+global function RankedEvent_GetRumbleRankedState
+global function RankedEvent_DoesLocalPlayerHaveRankedAccess
+
+
+global const string RANKED_EVENT_PDEF_LAST_GRANTED_TRAIL_PERIOD = "lastGrantedSkydiveTrailPeriod"
+global const string RANKED_EVENT_PDEF_LAST_SEEN_TRAIL_PERIOD = "lastSeenSkydiveTrailPeriod"
+
+global const string RANKED_EVENT_FIELD_NAME = "is_ranked_event"
+global const string RANKED_EVENT_ENTRY_COST_DISABLED = "ranked_event_entry_cost_disabled"
+global const string RANKED_EVENT_LOSS_FORGIVENESS_DISABLED = "ranked_event_loss_forgiveness_disabled"
+
+global const int MAX_RANKED_EVENT_SCORE = 1000000 
+const int RANKED_PERIOD_25_SPLIT_1_GUID = 1471048100 
+
+global enum eRankedRumbleState
+{
+	DEACTIVATED = -1,
+	INACTIVE,
+	COMING_SOON,
+	LOCKED,
+	ACTIVE,
+	FINISH,
+	CROSSPLAY_DISABLED
+}
+
+struct FileStruct_LifetimeLevel
+{
+	array< string > rankedEventPeriodGUIDs
+}
+FileStruct_LifetimeLevel& fileLevel
+
+void function RankedEvent_Init()
+{
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function RankedEvent_LoadLPBreakdownFromStatInformation( RankLadderPointsBreakdown breakdown, array<CupsMatchStatInformation> statInformation )
+{
+	foreach( stat in statInformation )
+	{
+		switch( stat.statRef )
+		{
+			case "ki":
+				breakdown.kills = stat.statChange
+				break
+			case "as":
+				breakdown.assists = stat.statChange
+				break
+			case "pa":
+				breakdown.participationUnique = stat.statChange
+				break
+			case "pl":
+				breakdown.placement = stat.statChange
+				break
+			case "tq":
+				breakdown.totalSquads = stat.statChange
+				break
+			case "pv":
+				breakdown.placementScore = stat.statChange
+				break
+			case "kv":
+				breakdown.killBonus = stat.statChange
+				break
+			case "ev":
+				breakdown.entryCost = stat.statChange
+				break
+			case "ts":
+				breakdown.top5Streak = stat.statChange
+				break
+			case "tv":
+				breakdown.top5StreakBonusValue = stat.statChange
+				break
+			case "lv":
+				breakdown.lossProtectionAdjustment = stat.statChange
+				break
+			case "km":
+				breakdown.killValueModifierByPlacement = stat.statChange
+				break
+			case "hs":
+				breakdown.highSkillKill = stat.statChange
+				break
+			case "hv":
+				breakdown.highSkillKillBonusValue = stat.statChange
+				break
+			case "tu":
+				breakdown.totalUniqueSquadKills = stat.statChange
+				break
+			case "fv":
+				breakdown.firstKillBonus = stat.statChange
+				break
+			case "ku":
+				breakdown.killsUnique = stat.statChange
+				break
+			case "au":
+				breakdown.assistUnique = stat.statChange
+				break
+			case "pb":
+				breakdown.promotionBonus = stat.statChange
+				break
+			case "dp":
+				breakdown.demotionPenality = stat.statChange
+				break
+			case "sl":
+				breakdown.startingLP = stat.statChange
+				break
+			default:
+				Assert( false, "RankedEvent_LoadLPBreakdownFromStatInformation can't parse " + stat.statRef )
+				break
+		}
+	}
+}
+
+string function RankedEvent_GetCupStatLocFromStatRef( string statRef )
+{
+	switch ( statRef )
+	{
+		case "pv":
+			return "#RANKED_PLACEMENT_SUBHEADER"
+		case "kv":
+			return "#RANKED_COMBAT_SUBHEADER"
+		case "ev":
+			return "#RANKED_COST_OF_ENTRY"
+		case "tv":
+			return "#RANKED_STREAK_BONUS"
+		case "hv":
+			return "#RANKED_SKILL_KILL_BONUS"
+		case "fv":
+			return "#SCOREBOARD_FIRST_KILL"
+		default:
+			return ""
+	}
+	unreachable
+}
+
+CupBakeryAssetData ornull function RankedEvent_GetActiveCup( entity player )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return null
+
+		if ( !IsFullyConnected() )
+			return null
+		if ( player != GetLocalClientPlayer() )
+			return null
+
+	foreach ( guid, cupData in Cups_GetAllCupBakeryAssetData() )
+	{
+		if ( !RankedEvent_IsCupRankedEvent( cupData ) )
+			continue
+		if ( !Cups_IsCupMatchPlayerPlatform( cupData, player ) )
+			continue
+		if ( !Cups_IsActive( cupData, GetUnixTimestamp() ) )
+			continue
+
+		return cupData
+	}
+	return null
+}
+
+CupBakeryAssetData ornull function RankedEvent_GetRevealedCup( entity player )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return null
+
+		if ( !IsFullyConnected() )
+			return null
+		if ( player != GetLocalClientPlayer() )
+			return null
+
+	foreach ( guid, cupData in Cups_GetAllCupBakeryAssetData() )
+	{
+		if ( !RankedEvent_IsCupRankedEvent( cupData ) )
+			continue
+		if ( !Cups_IsCupMatchPlayerPlatform( cupData, player ) )
+			continue
+		if ( !Cups_IsVisible( cupData, GetUnixTimestamp() ) )
+			continue
+
+		return cupData
+	}
+	return null
+}
+
+CupBakeryAssetData ornull function RankedEvent_GetNextRevealedCup( entity player )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return null
+
+		if ( !IsFullyConnected() )
+			return null
+		if ( player != GetLocalClientPlayer() )
+			return null
+
+
+	table< SettingsAssetGUID, CupBakeryAssetData > cups = Cups_GetAllCupBakeryAssetData()
+
+	CupBakeryAssetData ornull nextEvent = null
+	int nextEventTime = 0
+	int currentTime = GetUnixTimestamp()
+	foreach ( guid, cupData in cups )
+	{
+		if ( !RankedEvent_IsCupRankedEvent( cupData ) )
+			continue
+		if ( !Cups_IsCupMatchPlayerPlatform( cupData, player ) )
+			continue
+
+		int eventRevealTime = Cups_GetRevealUnixTime( cupData )
+		if ( eventRevealTime > currentTime )
+		{
+			if ( nextEvent == null || ( eventRevealTime < nextEventTime ) )
+			{
+				nextEvent = cupData
+				nextEventTime = eventRevealTime
+			}
+		}
+	}
+
+	return nextEvent
+}
+
+CupBakeryAssetData ornull function RankedEvent_GetRevealedCupIgnorePlatform()
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return null
+
+	foreach ( guid, cupData in Cups_GetAllCupBakeryAssetData() )
+	{
+		if ( !RankedEvent_IsCupRankedEvent( cupData ) )
+			continue
+		if ( !Cups_IsVisible( cupData, GetUnixTimestamp() ) )
+			continue
+
+		return cupData
+	}
+	return null
+}
+
+bool function RankedEvent_IsCupRankedEvent( CupBakeryAssetData cupData )
+{
+	return cupData.isRankedEvent
+}
+
+bool function RankedEvent_IsCupIDRankedEvent( SettingsAssetGUID cupID )
+{
+	if ( !Cups_IsValidCupID( cupID ) )
+		return false
+	CupBakeryAssetData cupData = Cups_GetCupBakeryAssetDataFromGUID( cupID )
+	return RankedEvent_IsCupRankedEvent( cupData )
+}
+
+bool function CodeCallback_IsCupRankedEvent( int cupID )
+{
+	return RankedEvent_IsCupIDRankedEvent( cupID )
+}
+
+int function RankedEvent_GetLeaderboardHardPickTime( CupBakeryAssetData cupData )
+{
+	return Cups_GetStartUnixTime( cupData ) + GetConVarInt( RANKED_EVENT_LEADERBOARD_HARD_PICK_CONVAR )
+}
+
+
+table< int, array<CupLeaderboardEntry> > function RankedEvent_HandleLeaderboardData( SettingsAssetGUID cupID, array<CupLeaderboardEntry> rawEntries )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return {}
+	if ( !Cups_IsValidCupID( cupID ) )
+		return {}
+	
+	array<CupLeaderboardEntry> entries
+	foreach( entry in rawEntries )
+	{
+		entries.append( clone entry )
+	}
+	
+	int validPlayerCount = 0
+	foreach( entry in entries )
+	{
+		if ( entry.squadScore > MAX_RANKED_EVENT_SCORE )
+		{
+			validPlayerCount = validPlayerCount + 1
+			entry.squadScore = entry.squadScore - 2 * MAX_RANKED_EVENT_SCORE
+		}
+		else
+		{
+			break
+		}
+	}
+	
+	CupBakeryAssetData cupData = Cups_GetCupBakeryAssetDataFromGUID( cupID )
+	array<int> tierPercentageList
+	foreach( tierData in cupData.tiers )
+	{
+		if ( tierData.tierType == eCupTierType.ABSOLUTE )
+			continue
+		tierPercentageList.append( tierData.bound )
+	}
+	tierPercentageList.sort( SortLowestInt )
+	
+	table< int, array<CupLeaderboardEntry> > leaderboardTierEntries
+	int startIndex = 0
+	for( int i = 0; i < tierPercentageList.len(); i++ )
+	{
+		if ( startIndex >= validPlayerCount )
+		{
+			leaderboardTierEntries[i] <- []
+			continue
+		}
+		int endIndex = int( floor( validPlayerCount * tierPercentageList[i] / 100.0 ) )
+		if ( endIndex == 0 )
+		{
+			endIndex = 1
+		}
+		endIndex = minint( endIndex, validPlayerCount )
+		leaderboardTierEntries[i] <- entries.slice( startIndex, endIndex )
+		startIndex = endIndex
+	}
+	leaderboardTierEntries[leaderboardTierEntries.len()] <- entries.slice( startIndex )
+#if DEV
+		
+		DEV_RankedEvent_PrintLeaderboardTierEntries( leaderboardTierEntries )
+#endif
+	return leaderboardTierEntries
+}
+
+int function RankedEvent_GetCombatPoints( RankLadderPointsBreakdown pointsBreakdown )
+{
+	return pointsBreakdown.killBonus
+}
+
+int function RankedEvent_GetBonusesPoints( RankLadderPointsBreakdown pointsBreakdown )
+{
+	int bonusPoints = pointsBreakdown.highSkillKillBonusValue + pointsBreakdown.top5StreakBonusValue + pointsBreakdown.provisionalMatchBonus +
+					  pointsBreakdown.promotionBonus + pointsBreakdown.penaltyPointsForAbandoning + pointsBreakdown.lossProtectionAdjustment +
+					  pointsBreakdown.demotionPenality + pointsBreakdown.demotionProtectionAdjustment
+
+	return bonusPoints
+}
+
+int function RankedEvent_GetMatchPlacementPoints( RankLadderPointsBreakdown pointsBreakdown )
+{
+	return pointsBreakdown.placementScore - pointsBreakdown.entryCost
+}
+
+#if DEV
+void function DEV_RankedEvent_PrintLeaderboardTierEntries( table< int, array<CupLeaderboardEntry> > leaderboardTierEntries )
+{
+	foreach( key, tierEntries in leaderboardTierEntries )
+	{
+		printt( "--key: " + key )
+		printt( "--value: " )
+		int index = 0
+		foreach( entry in tierEntries )
+		{
+			printt( "----", entry.squadID, entry.squadScore, entry.lastPos )
+			if ( entry.squadInfo[0].playerUID == GetPlayerUID() )
+			{
+				printt( "------>>Player position is here", key, index )
+			}
+			index++
+		}
+	}
+}
+#endif
+
+
+
+
+
+bool function IsLaterRankedPeriod( ItemFlavor currentPeriod, ItemFlavor comparedPeriod )
+{
+	Assert( ItemFlavor_GetType( currentPeriod ) == eItemType.ranked_2pt0_period && ItemFlavor_GetType( comparedPeriod ) == eItemType.ranked_2pt0_period, "We need to compare both ranked 2.0 period" )
+	ItemFlavor currentSeason = Ranked_GetSeasonForRanked2Pt0Period( currentPeriod )
+	ItemFlavor comparedSeason = Ranked_GetSeasonForRanked2Pt0Period( comparedPeriod )
+	return CalEvent_GetStartUnixTime( currentSeason ) >= CalEvent_GetStartUnixTime( comparedSeason )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function StatsRegister_RankedEventStats()
+{
+	fileLevel.rankedEventPeriodGUIDs.clear()
+	ItemFlavor startRankedPeriod = GetItemFlavorByGUID( RANKED_PERIOD_25_SPLIT_1_GUID )
+	foreach ( ItemFlavor rankedPeriodFlav in Ranked_GetAllRanked2Pt0Periods() )
+	{
+		if ( IsLaterRankedPeriod( rankedPeriodFlav, startRankedPeriod ) )
+			fileLevel.rankedEventPeriodGUIDs.append( ItemFlavor_GetGUIDString( rankedPeriodFlav ) )
+	}
+	StatEnumStruct rankedEventsPeriod_SES = RegisterStatEnumStruct( null, "rankedEventPeriods", "eRankedEventPeriod", fileLevel.rankedEventPeriodGUIDs )
+	CAREER_STATS.rankedevent_champion_count = RegisterAccumulatedStat_Int( rankedEventsPeriod_SES, "champion_count", CHALLENGE_GAME_MODE_BATTLE_ROYALE, WRITE_TO_PERSISTENCE_IMMEDIATELY )
+
+	StatTemplate temp_statTemplateReference = CAREER_STATS.rankedevent_champion_count
+	CAREER_STATS.rankedevent_current_champion_count = RegisterExpensiveCalculatedStat_Int( null, "current_champion_count", CHALLENGES_CALC_DEPENDS, SetupRankedEventCurrentChampionCountForStat, [temp_statTemplateReference], CHALLENGE_GAME_MODE_NON_MODE )
+}
+
+StatCalcFuncInfo function SetupRankedEventCurrentChampionCountForStat( StatEntry calcEntry, array<StatTemplate> sourceTemplates )
+{
+	StatCalcFuncInfo info
+
+	info.calcFunc_Int = (int function ( entity player, array<StatEntry> sourceEntries, int when ) {
+		ItemFlavor ornull rankedPeriod= Ranked_GetCurrentActiveRankedPeriod()
+		if ( rankedPeriod == null )
+		{
+			return 0
+		}
+		return RankedEvent_GetChampionCountForRankedPeriod( player, expect ItemFlavor( rankedPeriod ) )
+	})
+
+	info.sourceEntries = []
+	array<StatEntry> sourceEntries = expect array<StatEntry>( info.sourceEntries )
+	foreach ( string rankedPeriod in fileLevel.rankedEventPeriodGUIDs )
+		sourceEntries.append( ResolveStatEntry( sourceTemplates[0], rankedPeriod ) )
+
+	return info
+}
+
+int function RankedEvent_GetChampionCountForRankedPeriod( entity player, ItemFlavor rankedPeriod )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return 0
+	string rankedPeriodGUID = ItemFlavor_GetGUIDString( rankedPeriod )
+	if ( !fileLevel.rankedEventPeriodGUIDs.contains( rankedPeriodGUID ) )
+	{
+		return 0
+	}
+	int currentStatValue = GetStat_Int( player, ResolveStatEntry( CAREER_STATS.rankedevent_champion_count, rankedPeriodGUID ) )
+	int count = 0
+	while( currentStatValue > 0 )
+	{
+		count += currentStatValue & 1
+		currentStatValue = currentStatValue >> 1
+	}
+	return count
+}
+
+
+ItemFlavor ornull function RankedEvent_GetChampionChallenge()
+{
+
+	foreach ( ItemFlavor challenge in GetAllChallengesOfTimespan( eChallengeTimeSpanKind.RANKED_EVENT_CHAMPION ) )
+	{
+		return challenge
+	}
+
+	return null
+}
+
+int function RankedEvent_GetRankedPeriodChampionGoalValue( ItemFlavor rankedPeriodFlav )
+{
+	if ( ItemFlavor_GetType( rankedPeriodFlav ) != eItemType.ranked_2pt0_period )
+	{
+		Assert( false,  string( ItemFlavor_GetAsset( rankedPeriodFlav ) ) + " is not a 2.0 period, which shouldn't have a champion challenge" )
+		return 0
+	}
+
+	var block = ItemFlavor_GetSettingsBlock( rankedPeriodFlav )
+	return GetSettingsBlockInt( block, "championGoalValue" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function RankedEvent_ShouldShowChampionRewardPopup()
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return false
+
+	if ( !IsFullyConnected() )
+		return false
+
+	if ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+		return false
+
+	if ( !IsPersistenceAvailable() )
+		return false
+
+	int lastGrantedPeriod = GetPersistentVarAsInt( RANKED_EVENT_PDEF_LAST_GRANTED_TRAIL_PERIOD )
+	int lastSeenPeriod = GetPersistentVarAsInt( RANKED_EVENT_PDEF_LAST_SEEN_TRAIL_PERIOD )
+
+	return lastGrantedPeriod != lastSeenPeriod
+}
+
+ItemFlavor ornull function RankedEvent_GetChampionSkydiveReward()
+{
+	ItemFlavor ornull challengeFlav = RankedEvent_GetChampionChallenge()
+	if ( challengeFlav == null )
+	{
+		return null
+	}
+	expect ItemFlavor ( challengeFlav )
+	ItemFlavorBag tierRewards = Challenge_GetRewards( challengeFlav, 0 )
+	if ( tierRewards.flavors.len() != 1 )
+	{
+		Assert( false, "We must have a sky dive reward only for the Ranked Event champion challenge" )
+		return null
+	}
+	return tierRewards.flavors[0]
+}
+
+void function RankedEvent_OpenChampionRewardPopup()
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return
+
+	if ( !IsFullyConnected() )
+		return
+
+	if ( !IsPersistenceAvailable() )
+		return
+
+	ItemFlavor ornull diveFlavor = RankedEvent_GetChampionSkydiveReward()
+	if ( diveFlavor == null )
+	{
+		printt( "Can't find a champion skydive trail reward!" )
+		return
+	}
+	expect ItemFlavor( diveFlavor )
+
+	
+	int lastGrantedPeriod = GetPersistentVarAsInt( RANKED_EVENT_PDEF_LAST_GRANTED_TRAIL_PERIOD )
+	Remote_ServerCallFunction( "ClientCallback_SetLastSeenRankedChampionRewardPopupGUID", lastGrantedPeriod )
+
+	
+	array<BattlePassReward> rewards
+	BattlePassReward rewardInfo
+	rewardInfo.level = -1
+	rewardInfo.flav = diveFlavor
+	rewards.append( rewardInfo )
+
+	string titleText = "#GENERIC_REWARD_RECEIVED"
+	string headerText  = "#RANKED_EVENT_CHAMPION_CHALLENGE_COMPLETE"
+
+	string descText = ""
+	if ( IsValidItemFlavorGUID( lastGrantedPeriod ) )
+	{
+		ItemFlavor lastPeriodFlavor = GetItemFlavorByGUID( lastGrantedPeriod )
+		descText = format( "%s %s", Localize( ItemFlavor_GetLongName( lastPeriodFlavor ) ), Localize( ItemFlavor_GetLongName( diveFlavor ) ) )
+	}
+
+	thread WaitShowRewardCeremonyDialog(
+		headerText,
+		titleText,
+		descText,
+		rewards,
+		false,	
+		false,	
+		false,	
+		true,	
+		true	
+	)
+}
+
+
+
+int function RankedEvent_GetWeekNumber( SettingsAssetGUID cupID )
+{
+	if ( !RankedEvent_IsCupIDRankedEvent( cupID ) )
+	{
+		Warning( "RankedEvent_GetWeekNumber need a valid cupID, current: " + cupID )
+		return -1
+	}
+	CupBakeryAssetData cupData = Cups_GetCupBakeryAssetDataFromGUID( cupID )
+	asset rankedPeriodAsset    = cupData.rankedPeriod
+	if ( rankedPeriodAsset == $"" )
+	{
+		Warning( "RankedEvent_GetWeekNumber We need a ranked period for Ranked Event in bakery " + cupID )
+		return -1
+	}
+	if ( GetUniqueIdForSettingsAsset( rankedPeriodAsset ) == RANKED_PERIOD_25_SPLIT_1_GUID ) 
+	{
+		return RankedEvent_GetEventIndex( cupID )
+	}
+	return RankedEvent_GetEventIndex( cupID ) + 1
+}
+
+int function RankedEvent_GetEventIndex( SettingsAssetGUID cupID )
+{
+	CupBakeryAssetData cupData = Cups_GetCupBakeryAssetDataFromGUID( cupID )
+	return cupData.eventIndex
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function SortAscendingEventTime( CupContainerBakeryAssetData a, CupContainerBakeryAssetData b )
+{
+	if ( a.startUnixTime > b.startUnixTime )
+		return 1
+
+	if ( a.startUnixTime < b.startUnixTime )
+		return -1
+
+	return 0
+}
+
+void function RankedEvent_SetContainerIndex( table< SettingsAssetGUID, CupContainerBakeryAssetData > cupContainers )
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return
+
+	table< asset, array<CupContainerBakeryAssetData> > eventContainerMap
+	foreach ( SettingsAssetGUID cupContainerID, CupContainerBakeryAssetData cupContainer in cupContainers )
+	{
+		if ( !cupContainer.isRankedEvent)
+			continue
+		asset rankedPeriodAsset = cupContainer.rankedPeriod
+		if ( !( rankedPeriodAsset in eventContainerMap ) )
+		{
+			eventContainerMap[rankedPeriodAsset] <- []
+		}
+		eventContainerMap[rankedPeriodAsset].append( cupContainer )
+	}
+	foreach( rankedPeriodAsset, containerArray in eventContainerMap )
+	{
+		containerArray.sort( SortAscendingEventTime )
+		for( int i = 0; i < containerArray.len(); i++ )
+		{
+			foreach( cup in containerArray[i].cups )
+			{
+				cup.eventIndex = i
+			}
+			
+		}
+	}
+}
+
+
+bool function RankedEvent_IsLastMatchRankedEvent()
+{
+	LastCupMatchPlayedData ornull cupMatchSummary = Cups_GetLatestMatchSummaryData( GetLocalClientPlayer() )
+	if ( cupMatchSummary == null )
+	{
+		return false
+	}
+	expect LastCupMatchPlayedData( cupMatchSummary )
+	return RankedEvent_IsCupIDRankedEvent( cupMatchSummary.cupID )
+}
+
+
+
+int function RankedEvent_GetRumbleRankedState()
+{
+	if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+		return eRankedRumbleState.DEACTIVATED
+
+	if ( !IsFullyConnected() )
+		return eRankedRumbleState.DEACTIVATED
+
+	int rankedRumbleState = eRankedRumbleState.INACTIVE
+
+	CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+	if ( rankedEvent == null )
+		return rankedRumbleState
+
+	expect CupBakeryAssetData( rankedEvent )
+
+	int timeNow = GetUnixTimestamp()
+	if ( !RankedEvent_DoesLocalPlayerHaveRankedAccess() )
+	{
+		rankedRumbleState = eRankedRumbleState.LOCKED
+	}
+	else if ( Cups_HasFinished( rankedEvent, timeNow ) )
+	{
+		rankedRumbleState = eRankedRumbleState.FINISH
+	}
+	else if ( Cups_HasStarted( rankedEvent, timeNow ) )
+	{
+		if ( !Cups_IsCrossplay( GetLocalClientPlayer() ) )
+			rankedRumbleState = eRankedRumbleState.CROSSPLAY_DISABLED
+		else
+			rankedRumbleState = eRankedRumbleState.ACTIVE
+	}
+	else if ( Cups_IsRevealed( rankedEvent, timeNow ) )
+	{
+		rankedRumbleState = eRankedRumbleState.COMING_SOON
+	}
+
+	return rankedRumbleState
+}
+
+
+
+bool function RankedEvent_DoesLocalPlayerHaveRankedAccess()
+{
+	CommunityUserInfo ornull userInfo = GetUserInfo( GetPlayerHardware(), GetPlayerUID() )
+
+	if ( userInfo == null )
+		return false
+
+	expect CommunityUserInfo( userInfo )
+
+	if ( GetConVarBool( RANKED_ENABLE_ROAD_TO_RANKED ) )
+	{
+		if ( userInfo.charData[ePlayerStryderCharDataArraySlots.RANKED_ACCESS_STATE] != eRankedAccessState.HAVE_ACCESS )
+			return false
+	}
+	else
+
+	{
+		if ( userInfo.charData[ePlayerStryderCharDataArraySlots.ACCOUNT_LEVEL] < Ranked_GetRankedLevelRequirement() )
+			return false
+	}
+
+	return true
+}
+
+
+
+	bool function RankedEvent_ShouldShowRankedEventEndPopup()
+	{
+		if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+			return false
+
+		if ( !IsFullyConnected() )
+			return false
+
+		if ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+			return false
+
+		CupBakeryAssetData ornull currentEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+		if ( currentEvent == null )
+			return false
+
+		expect CupBakeryAssetData( currentEvent )
+
+		if ( !Cups_IsInitialized() )
+			return false
+
+		
+		if ( !Cups_HasFinished( currentEvent, GetUnixTimestamp() ) )
+			return false
+
+		if ( !Cups_ShouldGetRewards( currentEvent ) )
+			return false
+
+		return GetPersistentVarAsInt( "lastSeenRankedEventEndPopupGUID" ) != currentEvent.containerID
+	}
+
+	void function RankedEvent_OpenRankedEventEndPopup()
+	{
+		if ( !GetConVarBool( RANKED_EVENT_CONVAR ) )
+			return
+
+		if ( !IsFullyConnected() )
+			return
+
+		CupBakeryAssetData ornull currentEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+		if ( currentEvent == null )
+			return
+		expect CupBakeryAssetData( currentEvent )
+
+		Remote_ServerCallFunction( "ClientCallback_SetLastSeenRankedEventEndPopupGUID", currentEvent.containerID )
+		DialogData dialogData
+		dialogData.header = "#RANKED_LADDER_NOTIFICATION_HEADER"
+		dialogData.message = "#RANKED_LADDER_NOTIFICATION_BODY"
+		dialogData.darkenBackground = true
+		dialogData.noChoiceWithNavigateBack = true
+		AddDialogButton( dialogData, "#CONTINUE" )
+		OpenDialog( dialogData )
+	}
+

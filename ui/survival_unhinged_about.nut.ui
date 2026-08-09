@@ -1,0 +1,351 @@
+
+
+global function SurvivalUnhinged_PopulateAboutText
+global function SurvivalUnhinged_AppendAboutText
+
+
+array< featureTutorialTab > function SurvivalUnhinged_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+		SurvivalUnhinged_BatEvent_AppendAboutText( tabs )
+
+
+
+
+
+		SurvivalUnhinged_FlatlineEvent_AppendAboutText( tabs )
+
+
+
+
+	SurvivalUnhinged_HolidayEvent_AppendAboutText( tabs )
+
+
+
+
+		SurvivalUnhinged_BeamstickEvent_AppendAboutText( tabs )
+
+
+
+
+
+		SurvivalUnhinged_ClockupEvent_AppendAboutText( tabs )
+
+
+		SurvivalUnhinged_MatchModfiersEvent_AppendAboutText( tabs )
+
+
+		SurvivalUnhinged_WildHuntEvent_AppendAboutText( tabs )
+
+
+
+
+
+
+
+	SurvivalUnhinged_AppendAboutText( tabs )
+	return tabs
+}
+
+void function SurvivalUnhinged_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#PL_UNHINGED"
+
+	if ( GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "endorsements_enable", false ) )
+	{
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILDCARDS_HEADER_2", "#UNHINGED_ABOUT_WILDCARDS_DESC_2", $"rui/about_images/unhinged/about_unhinged_wild_cards" ) )
+
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_HEADER_2", "#UNHINGED_ABOUT_DESC_2", $"rui/about_images/unhinged/about_unhinged_1" ) )
+	}
+
+	int respawnsEndOnRound = GetPlaylistVarInt( FeatureTutorialDialog_GetPlaylistName(), "freespawns_endround_onclose", 4 ) + 1
+	string aboutTextRespawning = Localize( "#UNHINGED_ABOUT_DESC_1", respawnsEndOnRound )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_HEADER_1", aboutTextRespawning, $"rui/about_images/unhinged/about_unhinged_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	GameMode_AboutDialog_AppendDefaultGamemodeFeatureTabs( tabs )
+}
+
+
+void function SurvivalUnhinged_BatEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "bat_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#UNHINGED_ABOUT_BAT_EVENT_TITLE"
+
+		tab1Rules = SurvivalUnhinged_Endorsements_AppendAboutText( tab1Rules )
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_BAT_HEADER_3", "#UNHINGED_ABOUT_BAT_DESC_3", $"rui/about_images/unhinged/about_unhinged_event_bat" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+array< featureTutorialData > function SurvivalUnhinged_Endorsements_AppendAboutText( array< featureTutorialData > eventTab )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "endorsements_enable", false ) )
+		return eventTab
+
+	eventTab.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILDCARDS_HEADER_1", "#UNHINGED_ABOUT_WILDCARDS_DESC_1", $"rui/about_images/unhinged/about_unhinged_replicators" ) )
+	eventTab.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILDCARDS_HEADER_2", "#UNHINGED_ABOUT_WILDCARDS_DESC_2", $"rui/about_images/unhinged/about_unhinged_wild_cards" ) )
+
+	return eventTab
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function SurvivalUnhinged_FlatlineEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "flatline_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#UNHINGED_ABOUT_M26_EVENT_TITLE"
+
+		tab1Rules = SurvivalUnhinged_Endorsements_AppendAboutText( tab1Rules )
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_M26_HEADER_3", "#UNHINGED_ABOUT_M26_DESC_3", $"rui/about_images/unhinged/about_unhinged_flatline" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function SurvivalUnhinged_HolidayEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "holiday_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#UNHINGED_ABOUT_HOLIDAY_S27_EVENT_TITLE"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_HOLIDAY_S27_HEADER_1", "#UNHINGED_ABOUT_HOLIDAY_S27_DESC_1", $"rui/about_images/unhinged/about_unhinged_holiday_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_HOLIDAY_S27_HEADER_2", "#UNHINGED_ABOUT_HOLIDAY_S27_DESC_2", $"rui/about_images/unhinged/about_unhinged_holiday_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_HOLIDAY_S27_HEADER_3", "#UNHINGED_ABOUT_HOLIDAY_S27_DESC_3", $"rui/about_images/unhinged/about_unhinged_holiday_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function SurvivalUnhinged_BeamstickEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "beamstick_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	bool onController = IsControllerModeActive()
+	string body02DisplayString = onController ? "#BEAMSTICK_ABOUT_BODY_02_CONTROLLER" : "#BEAMSTICK_ABOUT_BODY_02"
+	string body03DisplayString = onController ? "#BEAMSTICK_ABOUT_BODY_03_CONTROLLER" : "#BEAMSTICK_ABOUT_BODY_03"
+
+	
+	tab1.tabName = "#BEAMSTICK_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#BEAMSTICK_ABOUT_HEADER_01", "#BEAMSTICK_ABOUT_BODY_01", $"rui/about_images/unhinged/about_unhinged_beamstick_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#BEAMSTICK_ABOUT_HEADER_02", body02DisplayString, $"rui/about_images/unhinged/about_unhinged_beamstick_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#BEAMSTICK_ABOUT_HEADER_03", body03DisplayString, $"rui/about_images/unhinged/about_unhinged_beamstick_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function SurvivalUnhinged_ClockupEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "clockup_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	tab1.tabName = "#CLOCKUP_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CLOCKUP_ABOUT_HEADER_01", IsControllerModeActive() ? "#CLOCKUP_ABOUT_BODY_01_CONTROLLER" : "#CLOCKUP_ABOUT_BODY_01", $"rui/about_images/unhinged/about_unhinged_clockup_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CLOCKUP_ABOUT_HEADER_02", "#CLOCKUP_ABOUT_BODY_02", $"rui/about_images/unhinged/about_unhinged_clockup_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CLOCKUP_ABOUT_HEADER_03", "#CLOCKUP_ABOUT_BODY_03", $"rui/about_images/unhinged/about_unhinged_clockup_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+void function SurvivalUnhinged_MatchModfiersEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "match_modifiers_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	tab1.tabName = "#MATCH_MODIFIERS_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#MATCH_MODIFIERS_ABOUT_HEADER_01", "#MATCH_MODIFIERS_ABOUT_BODY_01", $"rui/about_images/unhinged/about_unhinged_juiced_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#MATCH_MODIFIERS_ABOUT_HEADER_02", "#MATCH_MODIFIERS_ABOUT_BODY_02", $"rui/about_images/unhinged/about_unhinged_juiced_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#MATCH_MODIFIERS_ABOUT_HEADER_03", "#MATCH_MODIFIERS_ABOUT_BODY_03", $"rui/about_images/unhinged/about_unhinged_juiced_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+void function SurvivalUnhinged_WildHuntEvent_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if ( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "wild_hunt_event_about_text_enabled", false ) )
+		return
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	tab1.tabName = "#UNHINGED_ABOUT_WILD_HUNT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILD_HUNT_HEADER_1", "#UNHINGED_ABOUT_WILD_HUNT_BODY_1", $"rui/about_images/unhinged/about_unhinged_wild_hunt_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILD_HUNT_HEADER_2", "#UNHINGED_ABOUT_WILD_HUNT_BODY_2", $"rui/about_images/unhinged/about_unhinged_wild_hunt_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#UNHINGED_ABOUT_WILD_HUNT_HEADER_3", "#UNHINGED_ABOUT_WILD_HUNT_BODY_3", $"rui/about_images/unhinged/about_unhinged_wild_hunt_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      

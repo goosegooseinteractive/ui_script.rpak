@@ -1,0 +1,30 @@
+global function InitDeathScreenAboutPanel
+
+struct
+{
+	var panel
+} file
+
+void function InitDeathScreenAboutPanel( var panel )
+{
+	file.panel = panel
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnOpenPanel )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnClosePanel )
+
+	SetPanelClearBlur( panel, true )
+
+	InitDeathScreenPanelFooter( panel, eDeathScreenPanel.ABOUT)
+}
+
+void function OnOpenPanel( var panel )
+{
+	UpdateFooterOptions()
+
+	DeathScreenUpdateCursor()
+}
+
+void function OnClosePanel( var panel )
+{
+	UpdateFooterOptions()
+}

@@ -1,0 +1,19 @@
+global function UICodeCallback_RunHeadless
+
+void function JoinAndLeaveLobby_Thread()
+{
+	while ( true )
+	{
+		printf( "[HEADLESS] SearchForPartyServer" )
+		SearchForPartyServer()
+		wait 60
+		printf( "[HEADLESS] disconnect" )
+		ClientCommand( "disconnect" )
+		wait 5
+	}
+}
+
+void function UICodeCallback_RunHeadless()
+{
+	thread JoinAndLeaveLobby_Thread()
+}

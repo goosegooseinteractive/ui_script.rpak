@@ -1,0 +1,638 @@
+global function InitSoundPanel
+global function RestoreSoundDefaults
+global function SoundPanel_GetConVarData
+
+global function InitProcessingDialog
+
+
+global function UICodeCallback_RefreshSoundOptions
+
+
+global function InitAudioTweakMenu
+global function InitAudioTweakPanel
+
+
+array<string> navItems = 
+[
+	"SldMasterVolume",
+	"SwchOutputDevice",
+	"NoDeviceWarningText",
+	"SwchSpatialAudio",
+	"SwchMix",
+	"SwchSpeakerConfig",
+	"BtnOpenAudioTweak",
+	"VoiceChatHeader",
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct
+{
+	bool active
+
+	table<var, string> buttonTitles
+	table<var, string> buttonDescriptions
+	var                detailsPanel
+	var				   contentPanel
+	var                itemDescriptionBox
+
+	var 			   audioLanguageButton
+	var 			   voiceSensitivityButton
+	var 			   voiceSensitivitySliderRui
+
+	array<ConVarData>    conVarDataList
+
+	array<var> voiceSettingsButtons
+
+	string miles_language
+
+	var processingDialog
+
+	var tweakMenu
+	var tweakContentPanel
+} file
+
+
+void function SoundPanelSetButtonVisible( var contentPanel, string buttonName, bool visible )
+{
+	int prevVisibleNavItem = -1
+
+	for ( int i = 0; i < navItems.len() - 1; i++ )
+	{
+		var elem = Hud_GetChild( contentPanel, navItems[i] )
+
+		if ( navItems[i] == buttonName )
+		{
+			if ( visible )
+			{
+				Hud_Show( elem )
+
+				if ( i < navItems.len() - 1 )
+					Hud_SetPinSibling( Hud_GetChild( contentPanel, navItems[i + 1] ), buttonName )
+
+				if ( prevVisibleNavItem >= 0 )
+					Hud_SetPinSibling( elem, navItems[prevVisibleNavItem] )
+			}
+			else
+			{
+				Hud_Hide( elem )
+
+				if ( i < navItems.len() - 1 && prevVisibleNavItem >= 0 )
+					Hud_SetPinSibling( Hud_GetChild( contentPanel, navItems[i + 1] ), navItems[prevVisibleNavItem] )
+			}
+
+			Hud_SetEnabled( elem, visible )
+			return
+		}
+
+		if ( Hud_IsVisible( elem ) )
+			prevVisibleNavItem = i
+	}
+}
+
+void function OnShowAudioTweakPanel( var panel )
+{
+
+	const string aboveElem = "SwchSoundWithoutFocus"
+
+
+
+
+	var vipButton = Hud_GetChild( file.tweakContentPanel, "SwchVipTelemetry" )
+	if (GetConVarString( "XLOG_TLS_hostname" ).len() != 0 )
+	{
+		Hud_Show( vipButton )
+		Hud_SetEnabled( vipButton, true )
+		Hud_SetNavDown( Hud_GetChild( file.tweakContentPanel, aboveElem ), vipButton )
+	}
+	else
+	{
+		Hud_Hide( vipButton )
+		Hud_SetEnabled( vipButton, false )
+		Hud_SetNavDown( Hud_GetChild( file.tweakContentPanel, aboveElem ), null )
+	}
+
+
+		var weaponDialogueButton  = Hud_GetChild( file.tweakContentPanel, "SwchDialogueWeapons" )
+		var announcerButton       = Hud_GetChild( file.tweakContentPanel, "SwchDialogueAnnouncer" )
+		var standingEmotesButton  = Hud_GetChild( file.tweakContentPanel, "SwchSoundStandingEmotes" )
+		bool showWeaponDialogue   = WeaponSkin_PlayerOwnsAnyWithVoice()
+		if ( showWeaponDialogue )
+		{
+			Hud_Show( weaponDialogueButton )
+			Hud_SetEnabled( weaponDialogueButton, true )
+			Hud_SetPinSibling( weaponDialogueButton, "SwchDialogueAnnouncer" )
+			Hud_SetPinSibling( standingEmotesButton, "SwchDialogueWeapons" )
+			Hud_SetNavDown( announcerButton, weaponDialogueButton )
+			Hud_SetNavUp( standingEmotesButton, weaponDialogueButton )
+		}
+		else
+		{
+			Hud_Hide( weaponDialogueButton )
+			Hud_SetEnabled( weaponDialogueButton, false )
+			Hud_SetPinSibling( standingEmotesButton, "SwchDialogueAnnouncer" )
+			Hud_SetNavDown( announcerButton, standingEmotesButton )
+			Hud_SetNavUp( standingEmotesButton, announcerButton )
+		}
+
+
+	ScrollPanel_SetActive( panel, true )
+	SettingsPanel_SetContentPanelHeight( file.tweakContentPanel )
+	ScrollPanel_Refresh( panel )
+}
+
+void function OnHideAudioTweakPanel( var panel )
+{
+	ScrollPanel_SetActive( panel, false )
+	SavePlayerSettings()
+}
+
+void function OnOpenAudioTweakMenu()
+{
+	ShowPanel( Hud_GetChild( file.tweakMenu, "AudioTweakPanel" ) )
+}
+
+void function InitAudioTweakMenu( var menu )
+{
+	file.tweakMenu = menu
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, OnOpenAudioTweakMenu )
+}
+
+void function SetupDialogueTweakButton( var btn, string name, string desc, string cvarType )
+{
+	SetupSettingsButton( btn, name, desc, $"rui/menu/settings/settings_audio" )
+
+	Hud_DialogList_AddListItem( btn, "#SETTING_NONE", "" )
+	Hud_DialogList_AddListItem( btn, "#SETTING_ONLY_IMPORTANT", "" )
+	Hud_DialogList_AddListItem( btn, "#SETTING_ALL", "" )
+
+	bool hasFlavor = GetConVarBool( "dialogue_cat_" + cvarType + "_flavor" )
+	bool hasImportant = GetConVarBool( "dialogue_cat_" + cvarType + "_important" )
+
+	if ( hasFlavor )
+		Hud_SetDialogListSelectionIndex( btn, 2 )
+	else if ( hasImportant )
+		Hud_SetDialogListSelectionIndex( btn, 1 )
+
+	AddButtonEventHandler( btn, UIE_CHANGE, void function( var btn ) : ( cvarType )
+		{
+			int selIdx = Hud_GetDialogListSelectionIndex( btn )
+
+			switch ( selIdx )
+			{
+				case 2:
+					SetConVarBool( "dialogue_cat_" + cvarType + "_flavor", true )
+					SetConVarBool( "dialogue_cat_" + cvarType + "_important", true )
+					break
+
+				case 1:
+					SetConVarBool( "dialogue_cat_" + cvarType + "_flavor", false )
+					SetConVarBool( "dialogue_cat_" + cvarType + "_important", true )
+					break
+
+				case 0:
+					SetConVarBool( "dialogue_cat_" + cvarType + "_flavor", false )
+					SetConVarBool( "dialogue_cat_" + cvarType + "_important", false )
+					break
+			}
+		} 
+	)
+}
+
+void function InitAudioTweakPanel( var panel )
+{
+	file.tweakContentPanel = Hud_GetChild( panel, "ContentPanel" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnShowAudioTweakPanel )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnHideAudioTweakPanel )
+
+	SetupSettingsSlider( Hud_GetChild( file.tweakContentPanel, "SldDialogueVolume" ), "#MENU_DIALOGUE_VOLUME_CLASSIC", "#OPTIONS_MENU_DIALOGUE_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+	SetupSettingsSlider( Hud_GetChild( file.tweakContentPanel, "SldSFXVolume" ), "#MENU_SFX_VOLUME_CLASSIC", "#OPTIONS_MENU_SFX_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+	SetupSettingsSlider( Hud_GetChild( file.tweakContentPanel, "SldSFXObserverVolume" ), "#MENU_SFX_OBSERVER_VOLUME", "#OPTIONS_MENU_SFX_OBSERVER_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+	SetupSettingsSlider( Hud_GetChild( file.tweakContentPanel, "SldMusicVolume" ), "#MENU_MUSIC_VOLUME_CLASSIC", "#OPTIONS_MENU_MUSIC_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+	SetupSettingsSlider( Hud_GetChild( file.tweakContentPanel, "SldLobbyMusicVolume" ), "#MENU_LOBBY_MUSIC_VOLUME", "#OPTIONS_MENU_LOBBY_MUSIC_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+	SetupSettingsButton( Hud_GetChild( file.tweakContentPanel, "SwchSoundStandingEmotes" ), "#SOUND_EMOTE_PREVIEW", "#OPTIONS_MENU_SOUND_EMOTE_PREVIEW", $"rui/menu/settings/settings_audio" )
+	SetupSettingsButton( Hud_GetChild( file.tweakContentPanel, "SwchVipTelemetry" ), "#OPTIONS_MENU_AUDIO_VIP_TELEMETRY", "#OPTIONS_MENU_AUDIO_VIP_TELEMETRY_DESC", $"rui/menu/settings/settings_audio" )
+
+	SetupDialogueTweakButton( Hud_GetChild( file.tweakContentPanel, "SwchDialogueLegends" ), "#OPTIONS_DIALOGUE_LEGENDS", "#OPTIONS_DIALOGUE_LEGENDS_DESC", "legend" )
+	SetupDialogueTweakButton( Hud_GetChild( file.tweakContentPanel, "SwchDialoguePings" ), "#OPTIONS_DIALOGUE_PINGS", "#OPTIONS_DIALOGUE_PINGS_DESC", "ping" )
+	SetupDialogueTweakButton( Hud_GetChild( file.tweakContentPanel, "SwchDialogueAnnouncer" ), "#OPTIONS_DIALOGUE_ANNOUNCER", "#OPTIONS_DIALOGUE_ANNOUNCER_DESC", "host" )
+
+		SetupSettingsButton( Hud_GetChild( file.tweakContentPanel, "SwchDialogueWeapons" ), "#OPTIONS_DIALOGUE_WEAPONS", "#OPTIONS_DIALOGUE_WEAPONS_DESC", $"rui/menu/settings/settings_audio" )
+
+
+
+	SetupSettingsButton( Hud_GetChild( file.tweakContentPanel, "SwchSoundWithoutFocus" ), "#SOUND_WITHOUT_FOCUS", "#OPTIONS_MENU_SOUND_WITHOUT_FOCUS", $"rui/menu/settings/settings_audio" )
+
+
+	SettingsPanel_SetContentPanelHeight( file.tweakContentPanel )
+	ScrollPanel_InitPanel( panel )
+	ScrollPanel_InitScrollBar( panel, Hud_GetChild( panel, "ScrollBar" ) )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, -1, false, "#FOOTER_CHOICE_HINT", "" )
+}
+
+void function InitSoundPanel( var panel )
+{
+	RegisterSignal( "UpdateVoiceMeter" )
+	RegisterSignal( "EndRebootMiles" )
+
+	file.voiceSettingsButtons.clear()
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnSoundPanel_Show )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnSoundPanel_Hide )
+	AddUICallback_OnResolutionChanged( SoundOptions_OnResolutionChanged )
+
+	var contentPanel = Hud_GetChild( panel, "ContentPanel" )
+	file.contentPanel = contentPanel
+
+	SetupSettingsSlider( Hud_GetChild( contentPanel, "SldMasterVolume" ), "#MASTER_VOLUME", "#OPTIONS_MENU_MASTER_VOLUME_DESC", $"rui/menu/settings/settings_audio" )
+
+	file.audioLanguageButton = Hud_GetChild( contentPanel, "SwchAudioLanguage" )
+	SetupSettingsButton( file.audioLanguageButton, "#AUDIO_LANGUAGE", "#OPTIONS_MENU_AUDIO_LANGUAGE_DESC", $"rui/menu/settings/settings_audio" )
+	AddButtonEventHandler( file.audioLanguageButton, UIE_CHANGE, OnAudioLanguageControlChanged )
+
+	file.miles_language = GetConVarString( "miles_language" )
+
+
+        SetupSettingsButton( Hud_GetChild( contentPanel, "SwchSpatialAudio" ), "#AUDIO_SPATIALV6", "#AUDIO_SPATIALV6_DESC", $"rui/menu/settings/settings_audio" )
+
+
+	SetupSettingsButton( Hud_GetChild( contentPanel, "SwchMix" ), "#MENU_AUDIOMIX", Localize( "#MENU_AUDIOMIX_DESC", Localize( "#AUDIOMIX_REGULAR" ), Localize( "#AUDIOMIX_COMPETITIVE" ) ), $"rui/menu/settings/settings_audio" )
+
+	file.voiceSensitivityButton = Hud_GetChild( contentPanel, "SldOpenMicSensitivity" )
+	file.voiceSensitivitySliderRui = Hud_GetRui( Hud_GetChild( file.voiceSensitivityButton, "PrgValue" ) )
+
+	HudElem_SetRuiArg( Hud_GetChild( file.voiceSensitivityButton, "PnlDefaultMark" ), "heightScale", 0.7 )
+
+	var button = Hud_GetChild( contentPanel, "SldOpenMicSensitivity" )
+	SetupSettingsSlider( button, "#OPEN_MIC_SENS", "#OPEN_MIC_SENS_DESC", $"rui/menu/settings/settings_audio" )
+	file.voiceSettingsButtons.append( button )
+
+
+
+	Hud_SetVisible( Hud_GetChild( contentPanel, "VoiceChatRestrictedText" ), false ) 
+
+	button = Hud_GetChild( contentPanel, "SwchInputDevice" )
+	SetupSettingsButton( button, "#VOICECHAT_INPUT_DEVICE", "#VOICECHAT_INPUT_DEVICE_DESC", $"rui/menu/settings/settings_audio" )
+	file.voiceSettingsButtons.append( button )
+
+	button = Hud_GetChild( contentPanel, "SwchOutputDevice" )
+	SetupSettingsButton( button, "#AUDIO_OUTPUT_DEVICE", "#AUDIO_OUTPUT_DEVICE_DESC", $"rui/menu/settings/settings_audio" )
+
+	button = Hud_GetChild( contentPanel, "SwchPushToTalk" )
+	SetupSettingsButton( button, "#OPTIONS_MENU_VOICE_CHAT_MIC", "#OPTIONS_MENU_VOICE_CHAT_MIC_DESC", $"rui/menu/settings/settings_audio" )
+	file.voiceSettingsButtons.append( button )
+
+	SetupSettingsButton( Hud_GetChild( contentPanel, "SwchSpeakerConfig" ), "#AUDIO_CHANNEL_CONFIGURATION", "#AUDIO_CHANNEL_CONFIGURATION_DESC", $"rui/menu/settings/settings_audio" )
+
+	AddButtonEventHandler( Hud_GetChild( contentPanel, "SwchOutputDevice" ), UIE_CHANGE, OnOutputDeviceChanged )
+
+
+
+	button = Hud_GetChild( contentPanel, "SldVoiceChatVolume" )
+	SetupSettingsSlider( button, "#VOICE_CHAT_VOLUME", "#OPTIONS_MENU_VOICE_CHAT_DESC", $"rui/menu/settings/settings_audio" )
+	file.voiceSettingsButtons.append( button )
+
+	var tweakBtn = Hud_GetChild( contentPanel, "BtnOpenAudioTweak" )
+	SetupSettingsButton( tweakBtn, "#OPTIONS_MENU_AUDIOTWEAK_OPEN", "#OPTIONS_MENU_AUDIOTWEAK_OPEN_DESC", $"rui/menu/settings/settings_audio" )
+	AddButtonEventHandler( tweakBtn, UIE_CLICK, AdvanceMenuEventHandler( GetMenu( "AudioTweakMenu" ) ) )
+
+	SettingsPanel_SetContentPanelHeight( contentPanel )
+	ScrollPanel_InitPanel( panel )
+	ScrollPanel_InitScrollBar( panel, Hud_GetChild( panel, "ScrollBar" ) )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, BUTTON_BACK, true, "#BACKBUTTON_RESTORE_DEFAULTS", "#RESTORE_DEFAULTS", OpenConfirmRestoreSoundDefaultsDialog )
+	AddPanelFooterOption( panel, LEFT, -1, false, "#FOOTER_CHOICE_HINT", "" )
+
+	file.conVarDataList.append( CreateSettingsConVarData( "VoiceChatMode", eConVarType.INT ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "closecaption", eConVarType.INT ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "speechtotext_enabled", eConVarType.INT ) )
+
+
+		if ( HasConVar( "miles_spatial" ) )
+		{
+			file.conVarDataList.append( CreateSettingsConVarData( "miles_spatial", eConVarType.INT ) )
+		}
+
+
+	if ( HasConVar( "miles_mix" ) )
+	{
+		file.conVarDataList.append( CreateSettingsConVarData( "miles_mix", eConVarType.INT ) )
+	}
+
+
+		file.conVarDataList.append( CreateSettingsConVarData( "voice_input_device", eConVarType.STRING ) )
+		file.conVarDataList.append( CreateSettingsConVarData( "hudchat_play_text_to_speech", eConVarType.INT ) )
+		file.conVarDataList.append( CreateSettingsConVarData( "miles_output_device", eConVarType.STRING ) )
+		file.conVarDataList.append( CreateSettingsConVarData( "miles_channels", eConVarType.INT ) )
+
+
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_host_flavor", eConVarType.BOOL ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_host_important", eConVarType.BOOL ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_legend_flavor", eConVarType.BOOL ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_legend_important", eConVarType.BOOL ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_ping_flavor", eConVarType.BOOL ) )
+	file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_ping_important", eConVarType.BOOL ) )
+
+		file.conVarDataList.append( CreateSettingsConVarData( "dialogue_cat_weapon_flavor", eConVarType.BOOL ) )
+
+}
+
+void function SoundOptions_OnResolutionChanged()
+{
+	var panel = Hud_GetParent( file.contentPanel )
+	SettingsPanel_SetContentPanelHeight( file.contentPanel )
+	ScrollPanel_Refresh( panel )
+}
+
+
+void function SoundPanel_UpdateChannelConfigOption()
+{
+	int numChannelOptions = SoundOptions_SetupChannelConfigOptions( file.contentPanel, "SwchSpeakerConfig" )
+	bool presentChannelsOption = GetConVarBool( "miles_channels_menuoption") && numChannelOptions > 2 && !SoundOptions_IsBadDevice()
+	SoundPanelSetButtonVisible( file.contentPanel, "SwchSpeakerConfig", presentChannelsOption )
+}
+
+void function SoundPanel_UpdateDriverOptions()
+{
+	SoundOptions_SetupVoiceInputDeviceOptions( file.contentPanel, "SwchInputDevice" )
+	SoundOptions_SetupOutputDeviceOptions( file.contentPanel, "SwchOutputDevice" )
+
+	bool invalidDevice = SoundOptions_IsBadDevice()
+	bool presentOutputOption = SoundOptions_DeviceSwitchingAvailable() && !invalidDevice
+
+	var warning = Hud_GetChild( file.contentPanel, "NoDeviceWarningText" )
+	Hud_SetVisible( warning, invalidDevice)
+
+	
+	SoundPanelSetButtonVisible( file.contentPanel, "SwchOutputDevice", presentOutputOption )
+
+
+
+
+
+	bool presentSpatialOption = false
+
+
+    SoundPanelSetButtonVisible( file.contentPanel, "SwchSpatialAudio", presentSpatialOption )
+
+
+	bool presentMixOption = HasConVar( "miles_mix" ) && GetConVarBool( "miles_mix_menuoption" )
+	SoundPanelSetButtonVisible( file.contentPanel, "SwchMix", presentMixOption )
+
+	SoundPanel_UpdateChannelConfigOption()
+}
+
+
+void function OnSoundPanel_Show( var panel )
+{
+	file.active = true
+
+	ScrollPanel_SetActive( panel, true )
+	Hud_SetEnabled( file.audioLanguageButton, IsAudioLanguageChangeAllowed() )
+
+	thread UpdateVoiceMeter()
+
+
+	SoundPanel_UpdateDriverOptions()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	if ( bool(GetCommsRestrictionState() & COMMSRESTRICT_SENDRECV_TEXTANDVOICE) )
+	{
+		Hud_SetVisible( Hud_GetChild( file.contentPanel, "VoiceChatRestrictedText" ), true )
+
+		foreach ( var btn in file.voiceSettingsButtons )
+		{
+			Hud_SetEnabled( btn, false )
+			Hud_SetVisible( btn, false )
+		}
+	}
+	else
+	{
+		Hud_SetVisible( Hud_GetChild( file.contentPanel, "VoiceChatRestrictedText" ), false )
+
+		foreach ( var btn in file.voiceSettingsButtons )
+		{
+			Hud_SetEnabled( btn, true )
+			Hud_SetVisible( btn, true )
+		}
+	}
+
+	SettingsPanel_SetContentPanelHeight( file.contentPanel )
+	ScrollPanel_Refresh( panel )
+}
+
+
+void function OnSoundPanel_Hide( var panel )
+{
+	file.active = false
+
+	ScrollPanel_SetActive( panel, false )
+
+	SaveSettingsConVars( file.conVarDataList )
+	Signal( uiGlobal.signalDummy, "UpdateVoiceMeter" )
+
+	SavePlayerSettings()
+}
+
+
+void function OnAudioLanguageControlChanged( var button )
+{
+	if ( IsAudioLanguageChanged() )
+		thread RebootMiles()
+}
+
+
+bool function IsAudioLanguageChanged()
+{
+	string currentVal = GetConVarString( "miles_language" )
+	if ( currentVal == file.miles_language )
+		return false
+
+	file.miles_language = currentVal
+
+	return true
+}
+
+
+void function RebootMiles()
+{
+	Signal( uiGlobal.signalDummy, "EndRebootMiles" )
+	EndSignal( uiGlobal.signalDummy, "EndRebootMiles" )
+
+	AdvanceMenu( file.processingDialog )
+	
+	WaitFrame() 
+
+	ClientCommand( "miles_reboot" )
+	ResetKeyRepeater()
+
+	string checkSound = "Music_Lobby"
+	var handle = null
+
+	
+	while ( handle == null || !IsSoundStillPlaying( handle ) )
+	{
+		WaitFrame()
+		handle = EmitUISound( checkSound )
+	}
+	StopUISoundByName( checkSound )
+
+	Assert( GetActiveMenu() == file.processingDialog )
+	CloseActiveMenu()
+
+	UIMusicUpdate()
+}
+
+
+array<ConVarData> function SoundPanel_GetConVarData()
+{
+	return file.conVarDataList
+}
+
+
+void function FooterButton_Focused( var button )
+{
+}
+
+
+void function UpdateVoiceMeter()
+{
+	Signal( uiGlobal.signalDummy, "UpdateVoiceMeter" )
+	EndSignal( uiGlobal.signalDummy, "UpdateVoiceMeter" )
+
+	while ( true )
+	{
+		RuiSetFloat( file.voiceSensitivitySliderRui, "voiceProgress", GetConVarFloat( "voice_peak_amplitude" ) / 32767.0 )
+		RuiSetFloat( file.voiceSensitivitySliderRui, "voiceThreshhold", GetConVarFloat( "voice_quiet_threshold" ) / 32767.0 )
+		WaitFrame()
+	}
+}
+
+
+
+void function OnOutputDeviceChanged( var option )
+{
+	SoundPanel_UpdateChannelConfigOption()
+}
+
+
+void function OpenConfirmRestoreSoundDefaultsDialog( var button )
+{
+	ConfirmDialogData data
+	data.headerText = "#RESTORE_AUDIO_DEFAULTS"
+	data.messageText = "#RESTORE_AUDIO_DEFAULTS_DESC"
+	data.resultCallback = OnConfirmDialogResult
+
+	OpenConfirmDialogFromData( data )
+}
+
+
+void function OnConfirmDialogResult( int result )
+{
+	switch ( result )
+	{
+		case eDialogResult.YES:
+			thread RestoreSoundDefaults()
+	}
+}
+
+void function RestoreSoundDefaults()
+{
+	SetConVarToDefault( "speechtotext_enabled" )
+	SetConVarToDefault( "sound_volume" )
+	SetConVarToDefault( "sound_volume_sfx" )
+	SetConVarToDefault( "sound_volume_dialogue" )
+	SetConVarToDefault( "sound_volume_sfx_observer" )
+	SetConVarToDefault( "sound_volume_music_game" )
+	SetConVarToDefault( "sound_volume_music_lobby" )
+	SetConVarToDefault( "sound_volume_voice" )
+	SetConVarToDefault( "closecaption" )
+	if ( IsAudioLanguageChangeAllowed() )
+		SetConVarToDefault( "miles_language" )
+
+		SetConVarToDefault( "miles_output_device" )
+		SetConVarToDefault( "miles_channels" )
+		SetConVarToDefault( "voice_input_device" )
+		SetConVarToDefault( "VoiceChatMode" )
+		SetConVarToDefault( "hudchat_play_text_to_speech" )
+		SetConVarToDefault( "sound_without_focus" )
+
+
+
+	SetConVarToDefault( "voice_quiet_threshold" )
+
+		SetConVarToDefault( "dialogue_cat_weapon_flavor" )
+
+
+	SaveSettingsConVars( file.conVarDataList )
+	SavePlayerSettings()
+
+	if ( IsAudioLanguageChangeAllowed() && IsAudioLanguageChanged() )
+		waitthread RebootMiles()
+
+	EmitUISound( "menu_advocategift_open" )
+}
+
+bool function IsAudioLanguageChangeAllowed()
+{
+	return Hud_IsVisible( file.audioLanguageButton ) && IsLobby()
+}
+
+
+void function InitProcessingDialog( var menu )
+{
+	file.processingDialog = menu
+	SetDialog( menu, true )
+	SetGamepadCursorEnabled( menu, false )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, ProcessingDialog_OnNavigateBack )
+}
+
+void function ProcessingDialog_OnNavigateBack()
+{
+}
+
+
+void function UICodeCallback_RefreshSoundOptions()
+{
+	if ( file.active )
+	{
+		SoundPanel_UpdateDriverOptions()
+	}
+}
+

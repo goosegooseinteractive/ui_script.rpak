@@ -1,0 +1,876 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function InitMassLootBoxMenu
+global function OpenMassPackOpeningMenu
+global function ClientToUI_OpenMassPackRewardsMenu
+
+
+const float BLACK_FADE_TIME = 0.25
+const float BLACK_FADE_TIME_HOLD = 0.25
+const float CAMERA_FOV = 35.5
+
+
+const asset TICK_FX_RARITY_BEAM = $"P_lobby_m_eye_opening"
+const asset TICK_FX_TRAIL = $"P_loot_tick_m_jump_jet_trail"
+
+const asset TICK_FX_FIREWORK_T1 = $"P_lobby_m_fireworks_sparkler"
+const asset TICK_FX_FIREWORK_T2 = $"P_lobby_m_fireworks_sparkler"
+const asset TICK_FX_FIREWORK_T3 = $"P_lobby_m_fireworks_grp"
+const asset TICK_FX_FIREWORK_T4 = $"P_lobby_m_fireworks"
+const asset TICK_FX_FIREWORK_T5 = $"P_lobby_m_fireworks"
+
+const string ATTACHNAME_LEFT = "FX_L_EYE_X"
+const string ATTACHNAME_CENTER = "FX_R_EYE_X"        
+const string ATTACHNAME_RIGHT = "FX_C_EYE_X"        
+
+const table<int, string> MassLootCeremonyRarityToFireworkFX = {
+	[eRarityTier.COMMON] 	= TICK_FX_FIREWORK_T1,
+	[eRarityTier.RARE] 		= TICK_FX_FIREWORK_T2,
+	[eRarityTier.EPIC] 		= TICK_FX_FIREWORK_T3,
+	[eRarityTier.LEGENDARY] = TICK_FX_FIREWORK_T4,
+	[eRarityTier.ICONIC] 	= TICK_FX_FIREWORK_T5,
+	[eRarityTier.MYTHIC] 	= TICK_FX_FIREWORK_T5
+}
+
+
+const string SOUND_LIGHT_FLASH = "LootCeremony_Tick_LightFlash"
+const string SOUND_HOLOGRAM_LOOP = "LootCeremony_Inspect_HologramLoop"
+
+const string SOUND_BEAM_SWEETEN_TIER1 = "LootCeremony_MassPack_Tick_Deploy_BeamSweet_Rare"
+const string SOUND_BEAM_SWEETEN_TIER2 = "LootCeremony_MassPack_Tick_Deploy_BeamSweet_Epic"
+const string SOUND_BEAM_SWEETEN_TIER3 = "LootCeremony_MassPack_Tick_Deploy_BeamSweet_Legendary"
+const string SOUND_BEAM_SWEETEN_TIER4 = "LootCeremony_MassPack_Tick_Deploy_BeamSweet_Heirloom"
+
+const string SOUND_FIREWORK_SWEETEN_TIER1 = "LootCeremony_MassPack_Tick_FireworksSweet_Rare"
+const string SOUND_FIREWORK_SWEETEN_TIER2 = "LootCeremony_MassPack_Tick_FireworksSweet_Epic"
+const string SOUND_FIREWORK_SWEETEN_TIER3 = "LootCeremony_MassPack_Tick_FireworksSweet_Legendary"
+const string SOUND_FIREWORK_SWEETEN_TIER4 = "LootCeremony_MassPack_Tick_FireworksSweet_Heirloom"
+
+const table<int, string> MassLootCeremonyRarityToBeamSFX = {
+	[eRarityTier.RARE] 		= SOUND_BEAM_SWEETEN_TIER1,
+	[eRarityTier.EPIC] 		= SOUND_BEAM_SWEETEN_TIER2,
+	[eRarityTier.LEGENDARY] = SOUND_BEAM_SWEETEN_TIER3,
+	[eRarityTier.ICONIC] 	= SOUND_BEAM_SWEETEN_TIER4,
+	[eRarityTier.MYTHIC] 	= SOUND_BEAM_SWEETEN_TIER4
+}
+
+
+const table<int, string> MassLootCeremonyRarityToFireworkSFX = {
+	[eRarityTier.RARE] 		= SOUND_FIREWORK_SWEETEN_TIER1,
+	[eRarityTier.EPIC] 		= SOUND_FIREWORK_SWEETEN_TIER2,
+	[eRarityTier.LEGENDARY] = SOUND_FIREWORK_SWEETEN_TIER3,
+	[eRarityTier.ICONIC] 	= SOUND_FIREWORK_SWEETEN_TIER4,
+	[eRarityTier.MYTHIC] 	= SOUND_FIREWORK_SWEETEN_TIER4
+}
+
+
+const array<string> ANIMSEQ_DEPLOYMENT_MULTI = [ 
+	"loot_ceremony_tick_deployment_multi_base", 
+	"loot_ceremony_tick_deployment_multi_base_2",
+	"loot_ceremony_tick_deployment_multi_base_3",
+	"loot_ceremony_tick_deployment_multi_base_4",
+	"loot_ceremony_tick_deployment_multi_base_5",
+	"loot_ceremony_tick_deployment_multi_base_6",
+	"loot_ceremony_tick_deployment_multi_base_7",
+	"loot_ceremony_tick_deployment_multi_base_8",
+]
+
+struct FileLevelStruct
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		ItemFlavor&       			packFlavorToOpen
+		int							packQuantity
+		void functionref()			onNavigatingBackFunc = null
+
+	bool menuActive = false
+}
+FileLevelStruct& fileLevel
+
+
+
+struct FileForeverStruct
+{
+	table signalDummy
+	var menu
+	var blackFlash
+}
+FileForeverStruct& fileForever
+
+
+
+void function InitMassLootBoxMenu( var menu )
+{
+	fileForever.menu = menu
+	fileForever.blackFlash = Hud_GetChild( fileForever.menu, "BlackFlash" )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, OnLootBoxMenu_Open )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, OnLootBoxMenu_Close )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, OnLootBoxMenu_NavBack )
+}
+
+
+
+void function OpenMassPackOpeningMenu( ItemFlavor packFlavor, int quantity )
+{
+	fileLevel.packFlavorToOpen = packFlavor
+	fileLevel.packQuantity = quantity
+	fileLevel.menuActive = true
+
+	if ( GetActiveMenu() != fileForever.menu )
+		AdvanceMenu( fileForever.menu )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function OnLootBoxMenu_Open() 
+{
+	GRX_SetOfferRefreshSuppressed( true )
+
+	UI_SetPresentationType( ePresentationType.INACTIVE )
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( fileForever.menu, "ScreenFrame" ), true )
+	RunClientScript( "UIToClient_MassLootCeremony_SetGlobalAnimationEventsTokenize" )
+	thread MassLootCeremonyFlashScreenBlack_Internal()
+	thread MassLootBoxOpenSequenceUI()
+}
+
+
+
+void function MassLootBoxOpenSequenceUI()
+{
+	
+	int ownedPacks = GRX_IsInventoryReady() ? GRX_GetTotalPackCount() : 0
+	if ( ownedPacks == 0 )
+	{
+		CloseActiveMenu()
+		return
+	}
+
+	
+	ItemFlavor pack = fileLevel.packFlavorToOpen
+	RunClientScript( "UIToClient_AllLootTick_Sequence", ItemFlavor_GetGUID( pack ) )
+	
+	ScriptGRXOperationInfo operation
+	operation.expectedQueryGoal = GRX_HTTPQUERYGOAL_OPEN_PACKS
+	int quantity = fileLevel.packQuantity
+	
+	SetLatestPackOpenQuantity( quantity )
+	operation.doOperationFunc = (void function( int opID ) : ( pack, quantity ) {
+		printt( "GRX_OpenPacks", opID, ItemFlavor_GetAssetName( pack ),  ItemFlavor_GetGRXIndex( pack ), quantity )
+		GRX_OpenPacks( opID, ItemFlavor_GetGRXIndex( pack ), quantity )
+	})
+	operation.onDoneCallback = (void function( int status ) : ( operation, pack ) {
+		if ( status == eScriptGRXOperationStatus.DONE_SUCCESS )
+		{
+			GRX_ClearOnDemandContainer( GRXPack_GetContainerAlias( pack ) )
+
+			RunClientScript( "OnGRXMassPackOpeningResultsAvailable" ) 
+			Remote_ServerCallFunction( "Server_GrantChaseItemsIfCollectionCompleted" )
+
+			if ( GRX_UI_IsInValidStateToAttemptGRXOperations() )
+			{
+				thread GRX_CheckAndPurchaseMilestoneRewardOffer_Thread()
+			}
+		}
+		else
+			CloseActiveMenu()
+	})
+	QueueGRXOperation( GetLocalClientPlayer(), operation )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function ClientToUI_OpenMassPackRewardsMenu()
+{
+	fileLevel.menuActive = false
+	CloseActiveMenu()
+	OpenMassPackRewardsMenu()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function OnLootBoxMenu_Close()
+{
+	GRX_SetOfferRefreshSuppressed( false )
+
+	RunClientScript ( "UIToClient_MassLootCeremony_DeleteGlobalAnimationEventsTokenize" )
+	RunClientScript( "UIToClient_MassLootCeremonyExit" )
+}
+
+
+
+void function OnLootBoxMenu_NavBack()
+{
+	if ( fileLevel.menuActive )
+		return
+
+	CloseActiveMenu()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function MassLootCeremonyFlashScreenBlack_Internal()
+{
+	Hud_SetAlpha( fileForever.blackFlash, 255 )
+	Hud_Show( fileForever.blackFlash )
+	wait BLACK_FADE_TIME_HOLD
+	Hud_FadeOverTime( fileForever.blackFlash, 0, BLACK_FADE_TIME, INTERPOLATOR_ACCEL )
+	wait BLACK_FADE_TIME
+	Hud_Hide( fileForever.blackFlash )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,699 @@
+global function InitCardTrackersPanel
+global function GetTrackerUIContext
+global function BuildSortedTrackerArtList
+
+#if DEV
+global function DEV_TrackerSmokeTest
+#endif
+
+enum eTrackerSortCategory {
+	OTHER,
+	SEASONAL,
+	THREE_STACK,
+}
+
+enum eStackOrder {
+	BOTTOM,
+	MIDDLE,
+	TOP,
+}
+
+const string SORT_KEY = "sortCategory"
+const string STACK_POSITION = "stackPosition"
+const string SUFFIX_TOP = "_top"
+const string SUFFIX_MID = "_mid"
+const string SUFFIX_BOT = "_bot"
+
+const table<int,string> TRACKER_CATEGORY_NAMES =
+{
+	[ eTrackerSortCategory.OTHER ] = "#MENU_TRACKER_OTHER",
+	[ eTrackerSortCategory.SEASONAL ]  = "#MENU_TRACKER_SEASONAL",
+	[ eTrackerSortCategory.THREE_STACK ]  = "#MENU_TRACKER_THREE_STACK",
+}
+
+struct TrackerArtSortStruct
+{
+	int sortKey
+	ItemFlavor ornull parentFlavor
+	string parentChar
+	string alphaKey
+	int stackKey
+	ItemFlavor& tracker
+}
+
+struct
+{
+	var                    panel
+	var                    listPanel
+	array<ItemFlavor>      cardTrackerList
+	array<ItemFlavor>	   cachedArtList
+	bool                   showArt
+	bool                   showAll
+	var                    selectedTab
+	ItemFlavor ornull 	   lastNewnessCharacter
+	Newness_Query ornull   newnessQuery
+	array<int>			   trackerCategoryIndices
+	table<int,int>         trackerCategoryCount
+	table<int,int>         trackerCategoryUnlockCount
+
+#if DEV
+		bool 				runSmokeTest
+		var					cachedPanelRef
+#endif
+} file
+
+
+void function InitCardTrackersPanel( var panel )
+{
+	file.panel = panel
+	file.listPanel = Hud_GetChild( panel, "TrackerList" )
+
+	SetPanelTabTitle( panel, "#TRACKERS" )
+
+#if DEV
+		RegisterSignal( "DEV_PanelSmokeTest" )
+#endif
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, CardTrackersPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, CardTrackersPanel_OnHide )
+	AddPanelEventHandler_FocusChanged( panel, CardTrackersPanel_OnFocusChanged )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	
+	
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK_LEGEND", "#X_BUTTON_UNLOCK_LEGEND", null, CustomizeMenus_IsFocusedItemParentItemLocked )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_EQUIP", "#X_BUTTON_EQUIP", null, CustomizeMenus_IsFocusedItemEquippable )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_CLEAR", "#X_BUTTON_CLEAR", null, bool function () : ()
+	{
+		return ( CustomizeMenus_IsFocusedItemUnlocked() && !CustomizeMenus_IsFocusedItemEquippable() )
+	} )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK", "#X_BUTTON_UNLOCK", null, CustomizeMenus_IsFocusedItemLocked )
+	
+	
+	
+	
+
+	file.showArt = false
+	file.showAll = true
+	var toggleSeasonFilterButton = Hud_GetChild( file.panel, "ToggleSeasonFilter" )
+	Hud_SetVisible( toggleSeasonFilterButton, false ) 
+	HudElem_SetRuiArg( toggleSeasonFilterButton, "showAll", file.showAll )
+	HudElem_SetRuiArg( toggleSeasonFilterButton, "unlockedLabel", "#MENU_SEASON_ONLY" )
+	HudElem_SetRuiArg( toggleSeasonFilterButton, "showLockIcon", false )
+	Hud_AddEventHandler( toggleSeasonFilterButton, UIE_CLICK, ToggleSeasonFilter )
+
+	var tabStats = Hud_GetChild( file.panel, "TabStats" )
+	HudElem_SetRuiArg( tabStats, "categoryName", Localize( "#TRACKERS_STATS" ).toupper() )
+	Hud_AddEventHandler( tabStats, UIE_CLICK, ToggleStats )
+
+	var tabArt = Hud_GetChild( file.panel, "TabArt" )
+	HudElem_SetRuiArg( tabArt, "categoryName", Localize( "#TRACKERS_ART" ).toupper() )
+	Hud_AddEventHandler( tabArt, UIE_CLICK, ToggleArt )
+
+	file.selectedTab = tabStats
+}
+
+
+int function GetTrackerUIContext()
+{
+	return file.showArt ? eTrackerType.ART : eTrackerType.STAT
+}
+
+
+void function CardTrackersPanel_OnShow( var panel )
+{
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, CardTrackersPanel_Update )
+	CardTrackersPanel_Update( panel )
+
+#if DEV
+		file.cachedPanelRef = panel
+#endif
+}
+
+
+void function CardTrackersPanel_OnHide( var panel )
+{
+	RemoveNewnessCallbacks()
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, CardTrackersPanel_Update )
+	CardTrackersPanel_Update( panel )
+	var scrollPanel = Hud_GetChild( file.listPanel, "ScrollPanel" )
+	if ( Hud_HasChild( scrollPanel, "GridButton0" ) )
+		Hud_SetSelected( Hud_GetChild( scrollPanel, "GridButton0" ), true )
+	CardTrackersPanel_ClearArtData()
+
+#if DEV
+		Signal( uiGlobal.signalDummy, "DEV_PanelSmokeTest" )
+		file.runSmokeTest = false
+		file.cachedPanelRef = null
+#endif
+}
+
+void function CardTrackersPanel_ClearArtData()
+{
+	file.cachedArtList.clear()
+	file.trackerCategoryCount.clear()
+	file.trackerCategoryUnlockCount.clear()
+	file.trackerCategoryIndices.clear()
+}
+
+void function CardTrackersPanel_Update( var panel )
+{
+	var scrollPanel = Hud_GetChild( file.listPanel, "ScrollPanel" )
+
+	var selectedTab = Hud_GetChild( file.panel, file.showArt ? "TabArt" : "TabStats" )
+	HudElem_SetRuiArg( file.selectedTab, "isSelected", false )
+	HudElem_SetRuiArg( selectedTab, "isSelected", true )
+	file.selectedTab = selectedTab
+
+	var currentList = Hud_GetChild( file.panel, file.showArt ? "TrackerListTwoColumn" : "TrackerList" )
+	Hud_SetVisible( file.listPanel, false )
+	Hud_SetVisible( currentList, true )
+	file.listPanel = currentList
+
+	
+	foreach ( int flavIdx, ItemFlavor unused in file.cardTrackerList )
+	{
+		var button = Hud_GetChild( scrollPanel, "GridButton" + flavIdx )
+		Hud_ClearToolTipData( button )
+		CustomizeButton_UnmarkForUpdating( button )
+	}
+	file.cardTrackerList.clear()
+
+	for ( int trackerIndex = 0; trackerIndex < GLADIATOR_CARDS_NUM_TRACKERS; trackerIndex++ )
+		SendMenuGladCardPreviewCommand( eGladCardPreviewCommandType.TRACKER_STAT, trackerIndex, null )
+
+	
+	if ( IsPanelActive( file.panel ) )
+	{
+		ItemFlavor character = GetTopLevelCustomizeContext()
+
+		array<LoadoutEntry> entries
+		LoadoutEntry entry
+		for ( int i = 0; i < GLADIATOR_CARDS_NUM_TRACKERS; i++ )
+		{
+			entry   = file.showArt ? Loadout_GladiatorCardStatTrackerArt( character, i ) : Loadout_GladiatorCardStatTracker( character, i )
+			entries.append( entry )
+		}
+
+		EHI playerEHI = LocalClientEHI()
+		if ( file.showArt ) 
+		{
+			if ( file.cachedArtList.len() == 0 )
+				FilterAndSortTrackersForDisplay( entries )
+
+			foreach( ItemFlavor tracker in file.cachedArtList )
+				tracker.loadoutSortPriority = tracker.loadoutSortPriority & ~eLoadoutSortPriority.EQUIPPED
+
+			foreach ( loadoutEntry in entries )
+			{
+				if ( LoadoutSlot_IsReady( playerEHI, loadoutEntry ) )
+				{
+					ItemFlavor flav = LoadoutSlot_GetItemFlavor( playerEHI, loadoutEntry, true )
+					flav.loadoutSortPriority = flav.loadoutSortPriority | eLoadoutSortPriority.EQUIPPED
+				}
+			}
+
+			file.cardTrackerList = clone file.cachedArtList
+
+#if DEV
+				if ( file.runSmokeTest )
+					file.cachedArtList.clear()
+#endif
+		}
+		else
+		{
+			file.cardTrackerList = GetLoadoutItemsSortedForMenu( entries, GladiatorCardStatTracker_GetSortOrdinal, GladiatorCardTracker_IsTheEmpty, [] )
+
+			var functionref( ItemFlavor, ItemFlavor ) GetStatRefRarityKey = function( ItemFlavor tracker, ItemFlavor character )
+			{
+				string statRef = GladiatorCardStatTracker_GetStatRef( tracker, character )
+				string rarity = ItemFlavor_GetQuality( tracker ).tostring()
+				return ( statRef + rarity )
+			}
+
+			
+			
+			table< string, ItemFlavor > ownedStatRefsAndRarityToHighestPriorityTrackerMap = {}
+			foreach ( tracker in file.cardTrackerList )
+			{
+				string statRefRarityKey = expect string( GetStatRefRarityKey( tracker, character ) )
+				if ( !( statRefRarityKey in ownedStatRefsAndRarityToHighestPriorityTrackerMap ) && IsItemFlavorUnlockedForLoadoutSlot( playerEHI, entries[0], tracker ) )
+					ownedStatRefsAndRarityToHighestPriorityTrackerMap[ statRefRarityKey ] <- tracker
+			}
+
+			
+			foreach ( tracker in clone file.cardTrackerList )
+			{
+				string statRefRarityKey = expect string( GetStatRefRarityKey( tracker, character ) )
+				bool alreadyUnlocked = statRefRarityKey in ownedStatRefsAndRarityToHighestPriorityTrackerMap
+				if ( alreadyUnlocked && tracker != ownedStatRefsAndRarityToHighestPriorityTrackerMap[ statRefRarityKey ] )
+					file.cardTrackerList.removebyvalue( tracker )
+			}
+		}
+
+		Hud_InitGridButtons( file.listPanel, file.cardTrackerList.len() )
+		if ( file.showArt )
+			Hud_InitGridButtonsCategories( file.listPanel, file.trackerCategoryIndices )
+
+		scrollPanel = Hud_GetChild( file.listPanel, "ScrollPanel" )
+		int lastUsedEvenIndex = -2 
+		int lastUsedOddIndex  = -1 
+		int prevButtonIdx     = -1 
+		string prevLocKey     = ""
+		int prevSortKey       = 0
+		int nextCatBtn        = file.trackerCategoryIndices.len() > 1 ? file.trackerCategoryIndices[1] : file.cardTrackerList.len() 
+		bool nextCatBtnIsOdd  = ( nextCatBtn % 2 == 1 ) 
+		foreach ( int flavIdx, ItemFlavor flav in file.cardTrackerList )
+		{
+			int buttonIdx = prevButtonIdx + 1
+			bool jumpBy2 = false
+			bool lastButtonWasOdd = ( prevButtonIdx % 2 == 1 )
+			int sortKey = eTrackerSortCategory[ GetGlobalSettingsString( ItemFlavor_GetAsset( flav ), SORT_KEY ) ]
+			if ( file.showArt && sortKey == eTrackerSortCategory.THREE_STACK ) 
+			{
+				string currLocKey = ItemFlavor_GetLongName( flav ).slice( 0, -4 )
+				if ( currLocKey != prevLocKey )
+				{
+					if ( lastUsedEvenIndex < lastUsedOddIndex )
+						buttonIdx = lastUsedEvenIndex + 2
+					else
+						buttonIdx = lastUsedOddIndex + 2
+
+					prevLocKey = currLocKey
+				}
+				else if ( nextCatBtn > prevButtonIdx + 2 ) 
+				{
+					
+
+
+
+
+
+
+
+					int stackPos = eStackOrder[ GetGlobalSettingsString( ItemFlavor_GetAsset( flav ), STACK_POSITION ) ]
+					int spacesNeeded
+					if ( stackPos == eStackOrder.MIDDLE ) 
+					{
+						if ( nextCatBtnIsOdd ) 
+							spacesNeeded = lastButtonWasOdd ? 5 : 4 
+						else 
+							spacesNeeded = lastButtonWasOdd ? 4 : 5 
+					}
+					else 
+					{
+						if ( nextCatBtnIsOdd ) 
+							spacesNeeded = lastButtonWasOdd ? 3 : 2
+						else 
+							spacesNeeded = lastButtonWasOdd ? 2 : 3
+					}
+
+					if ( nextCatBtn > prevButtonIdx + spacesNeeded )
+						jumpBy2 = true
+					else if ( ( buttonIdx % 2 == 0 && buttonIdx <= lastUsedEvenIndex ) || ( buttonIdx % 2 == 1 && buttonIdx <= lastUsedOddIndex )  ) 
+						jumpBy2 = true
+				}
+			}
+			else if ( file.showArt && ( prevSortKey == eTrackerSortCategory.THREE_STACK && sortKey != eTrackerSortCategory.THREE_STACK ) && file.trackerCategoryIndices[1] == prevButtonIdx + 2 )
+			{
+				
+				jumpBy2 = true
+			}
+
+			if ( jumpBy2 )
+				buttonIdx = prevButtonIdx + 2
+
+			Assert( buttonIdx < file.cardTrackerList.len() )
+			var button = Hud_GetChild( scrollPanel, "GridButton" + buttonIdx )
+			CustomizeButton_UpdateAndMarkForUpdating( button, entries, flav, PreviewCardTracker, CanEquipCanBuyCharacterItemCheck, true )
+
+			prevSortKey = sortKey
+			prevButtonIdx = buttonIdx
+			if ( buttonIdx % 2 == 0 )
+				lastUsedEvenIndex = buttonIdx
+			else
+				lastUsedOddIndex = buttonIdx
+
+			
+			ToolTipData toolTipData
+			string descText = file.showArt ? ItemFlavor_GetLongName( flav ) : ItemFlavor_GetShortName( flav )
+			toolTipData.descText = Localize( descText )
+			asset parentAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( flav ), "parentItemFlavor" )
+			if ( !file.showArt && parentAsset != $"" && IsValidItemFlavorSettingsAsset( parentAsset ) )
+				toolTipData.titleText = Localize( ItemFlavor_GetShortName( GetItemFlavorByAsset( parentAsset ) ) )
+
+			Hud_SetToolTipData( button, toolTipData )
+
+			if ( file.showArt )
+			{
+				for ( int i = 0; i < file.trackerCategoryIndices.len(); ++i )
+				{
+					if ( file.trackerCategoryIndices[i] == flavIdx )
+					{
+						string cat = Localize( TRACKER_CATEGORY_NAMES[ sortKey ] )
+						string lockUnlock = " " + file.trackerCategoryUnlockCount[sortKey] + " / " + file.trackerCategoryCount[sortKey]
+						var category = Hud_GetChild( scrollPanel, "GridCategory" + i )
+						HudElem_SetRuiArg( category, "label", cat )
+						HudElem_SetRuiArg( category, "display", lockUnlock )
+					}
+				}
+			}
+		}
+
+		RefreshTabNewness( eTrackerType.STAT )
+		RefreshTabNewness( eTrackerType.ART )
+		AddNewnessCallbacks()
+	}
+	else
+	{
+		
+		var statsList = Hud_GetChild( file.panel, "TrackerList" )
+		Hud_InitGridButtons( statsList, 0 )
+		Hud_InitGridButtonsCategories( statsList, [] )
+
+		var artList = Hud_GetChild( file.panel, "TrackerListTwoColumn" )
+		Hud_InitGridButtons( artList, 0 )
+		Hud_InitGridButtonsCategories( artList, [] )
+	}
+
+}
+
+
+void function CardTrackersPanel_OnFocusChanged( var panel, var oldFocus, var newFocus )
+{
+	if ( !IsValid( panel ) ) 
+		return
+	if ( GetParentMenu( panel ) != GetActiveMenu() )
+		return
+
+	UpdateFooterOptions()
+}
+
+
+void function PreviewCardTracker( ItemFlavor flav )
+{
+	SendMenuGladCardPreviewCommand( file.showArt ? eGladCardPreviewCommandType.TRACKER_ART : eGladCardPreviewCommandType.TRACKER_STAT, GetCardPropertyIndex(), flav )
+}
+
+void function ToggleArt( var button )
+{
+	if ( file.showArt == true )
+		return
+
+	file.showArt = true
+	CardTrackersPanel_Update( Hud_GetParent( button ) )
+	Hud_ScrollToTop( file.listPanel )
+}
+
+void function ToggleStats( var button )
+{
+	if ( file.showArt == false )
+		return
+
+	file.showArt = false
+	CardTrackersPanel_Update( Hud_GetParent( button ) )
+	Hud_ScrollToTop( file.listPanel )
+}
+
+void function ToggleSeasonFilter( var button )
+{
+	file.showAll = !file.showAll
+
+	var toggleSeasonFilterButton = Hud_GetChild( file.panel, "ToggleSeasonFilter" )
+	HudElem_SetRuiArg( toggleSeasonFilterButton, "showAll", file.showAll )
+
+	CardTrackersPanel_Update( Hud_GetParent( button ) )
+	Hud_ScrollToTop( file.listPanel )
+}
+
+void function AddNewnessCallbacks()
+{
+	if ( !IsTopLevelCustomizeContextValid() )
+		return
+
+	RemoveNewnessCallbacks()
+
+	ItemFlavor character = GetTopLevelCustomizeContext()
+	Newness_Query nq
+	nq.itemFlavor             = character
+	nq.itemTypeList           = [eItemType.gladiator_card_stat_tracker]
+	nq.uiCategory             = eItemTypeUICategory.CHARACTER
+	nq.cb                     = OnNewnessUpdated
+	nq.panelOrButton          = file.panel
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+	file.newnessQuery         = nq
+	file.lastNewnessCharacter = character
+}
+
+
+void function RemoveNewnessCallbacks()
+{
+	if ( file.lastNewnessCharacter == null )
+		return
+
+	Newness_Query ornull nq = file.newnessQuery
+	if ( nq != null )
+		Newness_RemoveCallback_OnQueryUpdated( expect Newness_Query( nq ) )
+	file.newnessQuery = null
+	file.lastNewnessCharacter = null
+}
+
+void function OnNewnessUpdated( int newCount, var panel )
+{
+	int trackerType = GetTrackerUIContext()
+	RefreshTabNewness( trackerType )
+}
+
+void function RefreshTabNewness( int trackerType )
+{
+	ItemFlavor character = GetTopLevelCustomizeContext()
+
+	array<LoadoutEntry> entries = []
+	string tabName = ""
+	switch( trackerType )
+	{
+		case eTrackerType.STAT:
+			entries.append( Loadout_GladiatorCardStatTracker( character, 0 ) )
+			tabName = "TabStats"
+			break;
+
+		case eTrackerType.ART:
+			entries.append( Loadout_GladiatorCardStatTrackerArt( character, 0 ) )
+			tabName = "TabArt"
+			break;
+	}
+
+	bool hasNew = false
+	array<ItemFlavor> flavors = GetLoadoutItemsSortedForMenu( entries, null, GladiatorCardTracker_IsTheEmpty, [] )
+	foreach ( int flavIdx, ItemFlavor flav in flavors )
+	{
+		if ( Newness_IsItemFlavorNew( flav ) )
+		{
+			hasNew = true
+			break
+		}
+	}
+
+	var tab = Hud_GetChild( file.panel, tabName )
+	Hud_SetNew( tab, hasNew )
+}
+
+void function FilterAndSortTrackersForDisplay( array<LoadoutEntry> entries )
+{
+	EHI playerEHI = LocalClientEHI()
+	array< ItemFlavor > artList = clone entries[0].validItemFlavorList
+	if ( GetCurrentPlaylistVarBool( "filter_uncraftable_items", true ) )
+		artList = FilterItemsForGRX( playerEHI, artList )
+
+	artList = FilterItemsForVisibility( playerEHI, artList )
+
+	array< asset > uniqueArt
+	foreach( ItemFlavor tracker in clone artList )
+	{
+		asset bgImage = GladiatorCardStatTracker_GetBackgroundImage( tracker )
+		if ( uniqueArt.contains( bgImage ) )
+			artList.fastremovebyvalue( tracker )
+		else
+			uniqueArt.append( bgImage )
+	}
+
+	artList.fastremovebyvalue( entries[0].defaultItemFlavor )
+
+#if DEV
+		if ( file.runSmokeTest )
+		{
+			int startLen = artList.len()
+			int numArtToClear = RandomInt( startLen )
+			int numCleared = 0
+			while ( numCleared < numArtToClear )
+			{
+				foreach ( int idx, ItemFlavor unused in clone artList )
+				{
+					int prob = RandomInt( 100 )
+					if ( prob > 50 )
+					{
+						if ( artList.isvalidindex( idx ) )
+						{
+							artList.fastremove( idx )
+							numCleared++
+						}
+						else
+						{
+							numCleared = numArtToClear
+							break 
+						}
+					}
+				}
+			}
+			printf( "Removed %d entries. Start len - %d. End len - %d", numArtToClear, startLen, artList.len() )
+		}
+#endif
+
+	artList.sort( int function( ItemFlavor a, ItemFlavor b ) {
+		int ordinalA = GladiatorCardStatTrackerArt_GetSortOrdinal( a )
+		int ordinalB = GladiatorCardStatTrackerArt_GetSortOrdinal( b )
+		if ( ordinalA > ordinalB )
+			return 1
+		else if ( ordinalA < ordinalB )
+			return -1
+
+		return 0
+	} )
+
+	file.trackerCategoryIndices.clear()
+	int prevSortKey = -1
+	foreach ( int idx, ItemFlavor tracker in artList )
+	{
+		int currSortKey = eTrackerSortCategory[ GetGlobalSettingsString( ItemFlavor_GetAsset( tracker ), SORT_KEY ) ]
+		if ( currSortKey != prevSortKey )
+		{
+			file.trackerCategoryIndices.append( idx )
+			prevSortKey = currSortKey
+			file.trackerCategoryCount[currSortKey] <- 1
+			file.trackerCategoryUnlockCount[currSortKey] <- 0
+		}
+		else
+		{
+			file.trackerCategoryCount[currSortKey]++
+		}
+
+		if ( IsItemFlavorUnlockedForLoadoutSlot( playerEHI, entries[0], tracker ) )
+			file.trackerCategoryUnlockCount[currSortKey]++
+	}
+
+	file.cachedArtList = artList
+}
+
+void function BuildSortedTrackerArtList( array<ItemFlavor> trackerArtFlavors )
+{
+	ItemFlavor empty = trackerArtFlavors[0]
+	Assert( GladiatorCardTracker_IsTheEmpty( empty ) )
+	trackerArtFlavors.fastremovebyvalue( empty ) 
+
+	array<TrackerArtSortStruct> sortArray = []
+	foreach ( ItemFlavor tracker in trackerArtFlavors )
+	{
+		TrackerArtSortStruct sortStruct
+
+		sortStruct.tracker = tracker
+		asset trackerAsset = ItemFlavor_GetAsset( tracker )
+
+		sortStruct.sortKey = eTrackerSortCategory[ GetGlobalSettingsString( trackerAsset, SORT_KEY ) ]
+
+		ItemFlavor ornull parentFlavor = ItemFlavor_GetParentFlavor( tracker )
+		sortStruct.parentFlavor = parentFlavor
+		sortStruct.parentChar = parentFlavor == null ? "" : ItemFlavor_GetCharacterRef( expect ItemFlavor( parentFlavor ) )
+
+		string alphaKey
+		if ( sortStruct.sortKey  == eTrackerSortCategory.THREE_STACK )
+		{
+			alphaKey = ItemFlavor_GetLongName( tracker )
+
+
+
+
+			
+			alphaKey = alphaKey.slice( 0, -4 )
+		}
+		else if ( sortStruct.sortKey == eTrackerSortCategory.SEASONAL )
+		{
+			alphaKey = string( ItemFlavor_GetSourceIcon( tracker ) )
+		}
+		else
+		{
+			alphaKey = string( GladiatorCardStatTracker_GetBackgroundImage( tracker ) )
+		}
+		sortStruct.alphaKey = alphaKey
+
+		sortStruct.stackKey = sortStruct.sortKey == eTrackerSortCategory.THREE_STACK ? eStackOrder[ GetGlobalSettingsString( trackerAsset, STACK_POSITION ) ] : 0
+		sortArray.append( sortStruct )
+	}
+	sortArray.sort( SortTrackerArtFlavors )
+
+	trackerArtFlavors.clear()
+	trackerArtFlavors.append( empty )
+	foreach ( TrackerArtSortStruct sortStruct in sortArray )
+		trackerArtFlavors.append( sortStruct.tracker )
+}
+
+int function SortTrackerArtFlavors( TrackerArtSortStruct artA, TrackerArtSortStruct artB )
+{
+	if ( artA.sortKey > artB.sortKey )
+		return -1
+
+	if ( artA.sortKey < artB.sortKey )
+		return 1
+
+	if ( artA.parentFlavor != null && artB.parentFlavor == null )
+		return 1
+
+	if ( artA.parentFlavor == null && artB.parentFlavor != null )
+		return -1
+
+	if ( artA.parentFlavor != null && artB.parentFlavor != null && artA.sortKey == eTrackerSortCategory.THREE_STACK )
+	{
+		if ( artA.parentChar > artB.parentChar )
+			return 1
+
+		if ( artA.parentChar < artB.parentChar )
+			return -1
+	}
+
+	if ( artA.alphaKey > artB.alphaKey )
+		return 1
+
+	if ( artA.alphaKey < artB.alphaKey )
+		return -1
+
+	if ( artA.sortKey == eTrackerSortCategory.THREE_STACK )
+	{
+		if ( artA.stackKey > artB.stackKey )
+			return -1
+
+		if ( artA.stackKey < artB.stackKey )
+			return 1
+	}
+
+	return 0
+}
+
+#if DEV
+void function DEV_TrackerSmokeTest( bool shouldRun )
+{
+	file.runSmokeTest = shouldRun
+	Signal( uiGlobal.signalDummy, "DEV_PanelSmokeTest" )
+
+	if ( shouldRun )
+	{
+		thread function() : () {
+			EndSignal( uiGlobal.signalDummy, "DEV_PanelSmokeTest" )
+			while ( true )
+			{
+				CardTrackersPanel_Update( file.cachedPanelRef )
+				wait 0.25
+				file.showArt = !file.showArt
+			}
+		}()
+	}
+}
+#endif

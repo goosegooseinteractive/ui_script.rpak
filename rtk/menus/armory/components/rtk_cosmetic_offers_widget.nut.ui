@@ -1,0 +1,364 @@
+global function RTKCosmeticStoreOffersWidget_OnInitialize
+global function RTKCosmeticStoreOffersWidget_OnDestroy
+
+global function RTKCosmeticStoreOffers_ShouldOfferBeShown
+
+global function RTKCosmeticStoreOffers_Telemetry_SendPurchaseEvent
+global function RTKCosmeticStoreOffers_Telemetry_ClearLastOfferOpened
+global function RTKCosmeticStoreOffers_Telemetry_GetLastOfferOpened
+
+global struct RTKCosmeticStoreOffersWidget_Properties
+{
+	int flavGUID
+	int currentOfferIndex
+
+	rtk_behavior buttonBehavior
+	rtk_behavior inputBehavior
+}
+
+global struct RTKCosmeticOfferPipModel
+{
+	bool isActive
+}
+
+global struct RTKCosmeticOfferModel
+{
+	string 	offerTitle
+	int 	offerRarity
+	asset 	offerImage
+	asset 	auxIconImage
+	string 	priceText
+	string 	originalPriceText
+	int 	expireTime
+}
+
+global struct RTKCosmeticStoreOffersModel
+{
+	RTKCosmeticOfferModel& currentOffer
+	array<RTKCosmeticOfferPipModel> pipList
+}
+
+struct PrivateData
+{
+	int guidListenerHandler
+	array<GRXScriptOffer> offerList
+	array<string> offerLocationList
+}
+
+struct
+{
+	string offerOpenedFromWidget
+} file
+
+const array<string> OFFER_LOCATION_HIDE_OFFER = 
+[
+	"leg",
+	"prestige_set_shop",
+	"weapon_set_shop",
+	"weapon_bund_shop",
+]
+
+const array<int> FLAV_TYPES_UNLOCK_OFFERS_WIDGET = 
+[
+	eItemType.character_skin,
+	eItemType.weapon_skin,
+]
+
+const string MODEL_PATH = "cosmeticStoreOffersWidget"
+
+void function RTKCosmeticStoreOffersWidget_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct widgetStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticStoreOffersModel" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH, true ) )
+
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) { RTKCosmeticStoreOffersWidget_OnPress( self ) } )
+
+	rtk_behavior input = self.PropGetBehavior( "inputBehavior" )
+	self.AutoSubscribe( input, "onMouseWheeled", function( rtk_behavior input, float delta ) : ( self ) { RTKCosmeticStoreOffersWidget_OnScroll( self, delta ) } )
+
+	p.guidListenerHandler = self.AddPropertyCallback( "flavGUID", RTKCosmeticStoreOffersWidget_OnGUIDUpdated )
+
+	
+	RTKCosmeticStoreOffers_Telemetry_ClearLastOfferOpened()
+}
+
+void function RTKCosmeticStoreOffersWidget_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+
+	self.RemovePropertyCallback( "flavGUID", p.guidListenerHandler )
+}
+
+void function RTKCosmeticStoreOffersWidget_OnGUIDUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	p.offerList.clear()
+	p.offerLocationList.clear()
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	if ( flavGUID == ASSET_SETTINGS_UNIQUE_ID_INVALID || !IsValidItemFlavorGUID( flavGUID ) )
+		return
+
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+
+	ItemFlavorPurchasabilityInfo purchasasabilityInfo = GRX_GetItemPurchasabilityInfo( itemFlav )
+	if ( purchasasabilityInfo.isPurchasableAtAll && purchasasabilityInfo.locationToDedicatedStoreOffersMap.len() > 0 )
+	{
+		foreach ( string location, offers in purchasasabilityInfo.locationToDedicatedStoreOffersMap )
+		{
+			foreach ( offer in offers )
+			{
+				if ( RTKCosmeticStoreOffers_ShouldOfferBeShown( itemFlav, location, offer ) )
+				{
+					p.offerList.append( offer )
+					p.offerLocationList.append( location )
+				}
+			}
+		}
+	}
+
+	self.PropSetInt( "currentOfferIndex", 0 )
+	RTKCosmeticStoreOffersWidget_OnOfferIndexUpdated( self )
+
+	
+	if ( p.offerList.len() > 0 )
+	{
+		RTKCosmeticStoreOffers_Telemetry_SendViewWidgetEvent( itemFlav, p.offerList.len() )
+	}
+}
+
+void function RTKCosmeticStoreOffersWidget_OnOfferIndexUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct widgetStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticStoreOffersModel" )
+	rtk_struct offerStruct = RTKStruct_GetStruct( widgetStruct, "currentOffer" )
+	rtk_array pipListStruct = RTKStruct_GetArray( widgetStruct, "pipList" )
+
+	RTKCosmeticOfferModel currentOffer
+	int currentOfferIndex = self.PropGetInt( "currentOfferIndex" )
+	if ( currentOfferIndex >= 0 && currentOfferIndex < p.offerList.len() )
+	{
+		currentOffer = RTKCosmeticStoreOffers_GetOfferModelFromScriptOffer( p.offerList[ currentOfferIndex ], p.offerLocationList[ currentOfferIndex ] )
+	}
+
+	array<RTKCosmeticOfferPipModel> pipList
+	foreach( int index, offer in p.offerList )
+	{
+		RTKCosmeticOfferPipModel pip
+		pip.isActive = index == currentOfferIndex
+		pipList.append( pip )
+	}
+
+	RTKStruct_SetValue( offerStruct, currentOffer )
+	RTKArray_SetValue( pipListStruct, pipList )
+}
+
+void function RTKCosmeticStoreOffersWidget_OnPress( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	int currentOfferIndex = self.PropGetInt( "currentOfferIndex" )
+	if ( currentOfferIndex < 0 || currentOfferIndex >= p.offerList.len() )
+		return
+
+	if ( p.offerLocationList[ currentOfferIndex ] == "chainedOffer" ) 
+	{
+		OpenPromoLink( "storeSpecialOffersShop", "#STORE_SPECIAL_OFFERS_SECTION_CHAINED_OFFERS" )
+	}
+	else
+	{
+		StoreInspectMenu_AttemptOpenWithOffer( p.offerList[ currentOfferIndex ] )
+	}
+
+	
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+	RTKCosmeticStoreOffers_Telemetry_SendClickWidgetEvent( itemFlav, p.offerList[ currentOfferIndex ].offerAlias )
+	RTKCosmeticStoreOffers_Telemetry_SaveLastOffersOpened( p.offerList[ currentOfferIndex ].offerAlias )
+}
+
+void function RTKCosmeticStoreOffersWidget_OnScroll( rtk_behavior self, float delta )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.offerList.len() <= 1 )
+		return
+
+	int currentOfferIndex = self.PropGetInt( "currentOfferIndex" )
+	if ( delta > 0 )
+	{
+		currentOfferIndex--
+		if ( currentOfferIndex < 0 )
+		{
+			currentOfferIndex = p.offerList.len() - 1
+		}
+	}
+	else
+	{
+		currentOfferIndex++
+		if ( currentOfferIndex >= p.offerList.len() )
+		{
+			currentOfferIndex = 0
+		}
+	}
+
+	EmitUISound( "UI_Menu_BattlePass_LevelTab" )
+
+	self.PropSetInt( "currentOfferIndex", currentOfferIndex )
+	RTKCosmeticStoreOffersWidget_OnOfferIndexUpdated( self )
+}
+
+RTKCosmeticOfferModel function RTKCosmeticStoreOffers_GetOfferModelFromScriptOffer( GRXScriptOffer scriptOffer, string offerLocation )
+{
+	RTKCosmeticOfferModel offerModel
+
+	offerModel.offerTitle = scriptOffer.titleText
+	offerModel.offerImage = RTKCosmeticStoreOffers_GetLockerOfferIcon( scriptOffer )
+	offerModel.expireTime = scriptOffer.expireTime
+
+	int rarity
+	foreach ( ItemFlavor flav in scriptOffer.output.flavors )
+	{
+		if ( ItemFlavor_HasQuality( flav ) && ItemFlavor_GetQuality( flav ) >= rarity )
+		{
+			rarity = ItemFlavor_GetQuality( flav )
+		}
+	}
+	offerModel.offerRarity = rarity
+
+	bool isEverythingOwned = GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( scriptOffer )
+	offerModel.priceText = Localize( isEverythingOwned ? "#OFFER_WIDGET_SEND_GIFT" : GRX_GetFormattedPrice( scriptOffer.prices[0], 1 ) )
+
+	if ( !isEverythingOwned && scriptOffer.originalPrice != null )
+	{
+		ItemFlavorBag originalPrice = expect ItemFlavorBag( scriptOffer.originalPrice )
+
+		if ( scriptOffer.prices[0].quantities[0] < originalPrice.quantities[0] )
+		{
+			offerModel.originalPriceText = Localize( GRX_GetFormattedPrice( originalPrice, 1  ) )
+		}
+	}
+
+	offerModel.auxIconImage = RTKCosmeticStoreOffers_GetAuxIconForOfferLocation( offerLocation )
+
+	return offerModel
+}
+
+asset function RTKCosmeticStoreOffers_GetLockerOfferIcon( GRXScriptOffer scriptOffer )
+{
+	asset icon
+	if ( scriptOffer.output.flavors.len() < 1 )
+		return icon
+
+	ItemFlavor itemFlav = scriptOffer.output.flavors[ 0 ]
+	switch ( ItemFlavor_GetType( itemFlav ) )
+	{
+		case eItemType.weapon_skin:
+		case eItemType.character_skin:
+		case eItemType.gladiator_card_frame:
+		case eItemType.gladiator_card_stance:
+		case eItemType.character_execution:
+		case eItemType.character_select:
+		case eItemType.emote_icon:
+		case eItemType.gladiator_card_intro_quip:
+		case eItemType.gladiator_card_kill_quip:
+		case eItemType.gladiator_card_stat_tracker:
+		case eItemType.melee_skin:
+		case eItemType.character_emote:
+		case eItemType.skydive_emote:
+			ItemFlavor ornull associatedFlav = GetItemFlavorAssociatedCharacterOrWeapon( itemFlav )
+			if ( associatedFlav != null )
+			{
+				return GetGlobalSettingsAsset( ItemFlavor_GetAsset( expect ItemFlavor( associatedFlav ) ), "legendLockerOfferIcon" )
+			}
+			break
+		case eItemType.account_pack:
+			return $"ui_image/rui/menu/buttons/weapon_pack_button_icons/open_pack_btn_icon_loottick.rpak"
+	}
+
+	return icon
+}
+
+asset function RTKCosmeticStoreOffers_GetAuxIconForOfferLocation( string offerLocation )
+{
+	asset auxIcon
+
+	if ( offerLocation == "chainedOffer" )
+	{
+		auxIcon = $"ui_image/rui/menu/common/deep_link.rpak"
+	}
+
+	return auxIcon
+}
+
+bool function RTKCosmeticStoreOffers_ShouldOfferBeShown( ItemFlavor itemFlav, string location, GRXScriptOffer scriptOffer )
+{
+	
+	if ( OFFER_LOCATION_HIDE_OFFER.contains( location ) )
+		return false
+
+	
+	if ( !FLAV_TYPES_UNLOCK_OFFERS_WIDGET.contains( ItemFlavor_GetType( itemFlav ) ) )
+		return false
+
+	
+	if ( scriptOffer.output.flavors.contains( GRX_CURRENCIES[ GRX_CURRENCY_BONUS_METER_COMPLETION ] ) )
+		return false
+
+	
+	if ( scriptOffer.isGiftable || !GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( scriptOffer ) )
+		return true
+
+	return false
+}
+
+
+void function RTKCosmeticStoreOffers_Telemetry_SaveLastOffersOpened( string offerAlias )
+{
+	file.offerOpenedFromWidget = offerAlias
+}
+
+void function RTKCosmeticStoreOffers_Telemetry_ClearLastOfferOpened()
+{
+	file.offerOpenedFromWidget = ""
+}
+
+string function RTKCosmeticStoreOffers_Telemetry_GetLastOfferOpened()
+{
+	return file.offerOpenedFromWidget
+}
+
+void function RTKCosmeticStoreOffers_Telemetry_SendViewWidgetEvent( ItemFlavor itemFlav, int offerCount )
+{
+	string pageName = "legend_locker_offer_widget"
+	string itemName = ItemFlavor_GetLongName( itemFlav )
+
+	PIN_PageView_OffersWidget_OnDisplay( pageName, itemName, offerCount )
+}
+
+void function RTKCosmeticStoreOffers_Telemetry_SendClickWidgetEvent( ItemFlavor itemFlav, string offerAlias )
+{
+	string pageName = "legend_locker_offer_widget"
+	string itemName = ItemFlavor_GetLongName( itemFlav )
+
+	PIN_UIInteraction_OffersWidget_OnClick( pageName, itemName, offerAlias )
+}
+
+void function RTKCosmeticStoreOffers_Telemetry_SendPurchaseEvent( string offerAlias )
+{
+	string pageName = "legend_locker_offer_widget"
+
+	PIN_Purchase_OffersWidget_OnPurchase( pageName, offerAlias )
+}

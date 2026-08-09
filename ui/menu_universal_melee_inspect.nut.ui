@@ -1,0 +1,470 @@
+global function InitUniversalMeleeInspectMenu
+global function UniversalMeleeInspectMenu_AttemptOpenWithOffer
+
+struct
+{
+	var menu
+	var inspectPanel
+	var mouseCaptureElem
+	var pageHeader
+	var itemGrid
+	var itemInfo
+	var videoInfo
+	bool isOwned
+	bool isSelected
+	bool isBaseItem
+	bool isFullSet
+	bool canAfford
+	bool isHeirloomCurrency
+	int initialIndex
+	array< ItemFlavor > setItems
+	GRXScriptOffer& offer
+	ItemFlavorBag& price
+	ItemFlavor& offerItem
+} file
+
+global struct UniversalMeleeInspectUIData
+{
+	var currencyInfo
+	var purchaseButton
+	var disclaimerInfo
+	var descriptionInfo
+	var previousItemGrid
+}
+
+UniversalMeleeInspectUIData s_inspectUIData
+const int ITEM_GRID_ROWS = 1
+const int ITEM_GRID_COLUMNS = 3
+const int LINK_INDEX = 0
+
+void function InitUniversalMeleeInspectMenu( var newMenuArg )
+{
+	var menu = newMenuArg
+	file.menu = menu
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, UniversalMeleeInspectMenu_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, UniversalMeleeInspectMenu_OnShow )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, UniversalMeleeInspectMenu_OnClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_HIDE, UniversalMeleeInspectMenu_OnHide )
+
+	file.inspectPanel = Hud_GetChild( menu, "InspectPanel" )
+	file.mouseCaptureElem = Hud_GetChild( menu, "ModelRotateMouseCapture" )
+	file.pageHeader = Hud_GetChild( file.inspectPanel, "InspectHeader" )
+	file.itemGrid = Hud_GetChild( file.inspectPanel, "ItemGridPanel" )
+	file.itemInfo = Hud_GetChild( file.inspectPanel, "IndividualItemInfo" )
+	file.videoInfo = Hud_GetChild( file.inspectPanel, "VideoInfo" )
+
+	s_inspectUIData.purchaseButton = Hud_GetChild( file.inspectPanel, "PurchaseOfferButton" )
+	s_inspectUIData.currencyInfo = Hud_GetChild( file.inspectPanel, "CurrencyInfo" )
+	s_inspectUIData.disclaimerInfo = Hud_GetChild( file.inspectPanel, "DisclaimerInfo" )
+	s_inspectUIData.descriptionInfo = Hud_GetChild( file.inspectPanel, "DescriptionInfo" )
+
+	SetGridItems()
+
+	AddButtonEventHandler( s_inspectUIData.purchaseButton, UIE_CLICK, PurchaseOfferButton_OnClick )
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}
+
+void function UniversalMeleeInspectMenu_OnOpen()
+{
+	AddCallback_OnGRXInventoryStateChanged( LockPurchaseButtonWhenInventoryIsNotReady )
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( UniversalMeleeInspectMenu_OnGRXUpdated )
+	AddCallback_OnGRXOffersRefreshed( UniversalMeleeInspectMenu_OnGRXUpdated )
+#if SUPPORTS_COMPACT_UI
+	AddUICallback_UiLayoutModeChanged( UniversalMeleeInspectMenu_OnGRXUpdated )
+#endif
+}
+
+void function UniversalMeleeInspectMenu_OnClose()
+{
+	RemoveCallback_OnGRXInventoryStateChanged( LockPurchaseButtonWhenInventoryIsNotReady )
+	RemoveCallback_OnGRXInventoryStateChanged( UniversalMeleeInspectMenu_OnGRXUpdated )
+	RemoveCallback_OnGRXOffersRefreshed( UniversalMeleeInspectMenu_OnGRXUpdated )
+#if SUPPORTS_COMPACT_UI
+	RemoveUICallback_UiLayoutModeChanged( UniversalMeleeInspectMenu_OnGRXUpdated )
+#endif
+}
+
+void function UniversalMeleeInspectMenu_OnGRXUpdated()
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return
+
+	int index = file.isFullSet ? UniversalMelee_GetSetItemIndex( file.offerItem ) : 0
+
+	SetCurrencyData()
+	SetHeader()
+	SetItemInfo( index )
+	SetCurrencyInfo()
+	SetPurchaseButton( index )
+	SetUniversalMeleeInfo( index )
+	GridPanel_RefreshAndUpdateRowsAndColumns( file.itemGrid, ITEM_GRID_ROWS, file.setItems.len() )
+	AutoEquipAddon()
+}
+
+void function UniversalMeleeInspectMenu_OnShow()
+{
+	UI_SetPresentationType( ePresentationType.STORE_INSPECT )
+	RunClientScript( "UIToClient_PreviewStoreItem", ItemFlavor_GetGUID( file.offerItem ), true )
+
+	RegisterWalletButtonPressCallbacks()
+	Hud_AddEventHandler( Hud_GetChild( file.menu, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_AddEventHandler( Hud_GetChild( file.menu, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+
+	RuiSetBool( Hud_GetRui( Hud_GetChild( file.menu, "CoinsPopUpButton" ) ), "hasACBonus", GRX_IsPlayerEligibleForACBonus() )
+}
+
+void function UniversalMeleeInspectMenu_OnHide()
+{
+	DeregisterWalletButtonPressCallbacks()
+	Hud_RemoveEventHandler( Hud_GetChild( file.menu, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_RemoveEventHandler( Hud_GetChild( file.menu, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+
+#if SUPPORTS_COMPACT_UI
+
+    if ( IsUsingCompactUILayout() )
+
+    {
+        GridPanel_HideAllGridButtons( file.itemGrid )
+    }
+#endif
+}
+
+void function UniversalMeleeInspectMenu_AttemptOpenWithOffer( GRXScriptOffer offer )
+{
+	file.offer = offer
+	file.price = offer.prices[ 0 ]
+	file.isFullSet = offer.output.flavors.len() > 1
+	file.setItems = UniversalMelee_GetSetItems( offer.output.flavors[ 0 ] )
+	file.offerItem = file.isFullSet ? file.setItems[ 0 ] : offer.output.flavors[ 0 ]
+	file.isBaseItem = UniversalMelee_IsBaseItem( file.offerItem )
+
+	if ( UniversalMelee_IsPowerSwordTheme( UniversalMelee_GetTheme( offer.output.flavors[ 0 ] ) ) )
+	{
+		if ( UniversalMelee_IsVariantItem( offer.output.flavors[ 0 ] ) )
+		{
+			file.isFullSet = true
+		}
+		else
+		{
+			file.setItems = [ offer.output.flavors[ 0 ] ]
+		}
+	}
+
+	AdvanceMenu( GetMenu( "UniversalMeleeInspectMenu" ) )
+}
+
+void function SetCurrencyData()
+{
+	file.isOwned = GRX_IsItemOwnedByPlayer( file.offerItem )
+	file.isHeirloomCurrency = file.price.flavors[ 0 ] == GRX_CURRENCIES[ GRX_CURRENCY_HEIRLOOM ]
+	var currencyTotal = GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), file.isHeirloomCurrency ? GRX_CURRENCIES[ GRX_CURRENCY_HEIRLOOM ] : GRX_CURRENCIES[ GRX_CURRENCY_EXOTIC ] )
+	file.canAfford = currencyTotal >= file.price.quantities[ 0 ]
+}
+
+void function SetHeader()
+{
+	var pageHeader = file.pageHeader
+
+	HudElem_SetRuiArg( pageHeader, "offerName", file.offer.titleText )
+	HudElem_SetRuiArg( pageHeader, "underLineVisible", true )
+	HudElem_SetRuiArg( pageHeader, "isSingleItem", false )
+	HudElem_SetRuiArg( pageHeader, "singleItemRarity", 0 )
+	HudElem_SetRuiArg( pageHeader, "offerDesc", Localize("#UNIVERSAL_MELEE_USABILITY") )
+	HudElem_SetRuiArg( pageHeader, "headerTextWrapRatio", 10.0 )
+	HudElem_SetRuiArg( pageHeader, "offerDescTextWrapRatio", 10.0 )
+}
+
+void function SetItemInfo( int index )
+{
+	var itemInfo = file.itemInfo
+	ItemFlavor itemFlav = file.isFullSet ? file.setItems[ index ] : file.offerItem
+	int itemType = ItemFlavor_GetType( itemFlav ) == eItemType.melee_addon && UniversalMelee_IsAddonActivationEmote( itemFlav ) ? eItemType.artifact_component_activation_emote : ItemFlavor_GetType( itemFlav )
+
+	HudElem_SetRuiArg( itemInfo, "isOwned", file.isOwned )
+	HudElem_SetRuiArg( itemInfo, "rarity", 4 )
+	HudElem_SetRuiArg( itemInfo, "rarityText", "#UNIVERSAL_MELEE" )
+	HudElem_SetRuiArg( itemInfo, "itemType", itemTypeNameMap[itemType] )
+	HudElem_SetRuiArg( itemInfo, "itemName", ItemFlavor_GetLongName( itemFlav ) )
+	Hud_SetVisible( itemInfo, file.isFullSet )
+
+	var videoInfo = file.videoInfo
+	string videoInfoText
+	switch ( itemType )
+	{
+		case eItemType.artifact_component_deathbox:
+			videoInfoText = "#MELEE_CUSTOMIZATION_DEATHBOX_SUBTITLE"
+			break
+		case eItemType.melee_addon:
+			videoInfoText = ItemFlavor_GetLongDescription(itemFlav )
+			break
+		default:
+			videoInfoText = ""
+			break
+	}
+
+	HudElem_SetRuiArg( videoInfo, "videoInfo", videoInfoText )
+	Hud_SetVisible( videoInfo, videoInfoText != "" )
+}
+
+void function SetGridItems()
+{
+	var itemGrid = file.itemGrid
+
+	GridPanel_Init( itemGrid, ITEM_GRID_ROWS, ITEM_GRID_COLUMNS, OnBindItemGridButton, ItemGridButtonCountCallback, ItemGridButtonInitCallback )
+	GridPanel_SetFillDirection( itemGrid, eGridPanelFillDirection.RIGHT )
+	GridPanel_SetButtonHandler( itemGrid, UIE_GET_FOCUS, OnItemGridButtonHover )
+}
+
+void function SetCurrencyInfo()
+{
+	var currencyInfo = s_inspectUIData.currencyInfo
+
+	HudElem_SetRuiArg( currencyInfo, "canAfford", file.canAfford )
+	HudElem_SetRuiArg( currencyInfo, "price", GRX_GetFormattedPrice( file.price ) )
+	HudElem_SetRuiArg( currencyInfo, "isHeirloomCurrency", file.isHeirloomCurrency )
+	Hud_SetVisible( currencyInfo, !file.canAfford && !file.isHeirloomCurrency && !file.isOwned )
+}
+
+void function SetUniversalMeleeInfo( int index )
+{
+	ItemFlavor itemFlav = file.isFullSet ? file.setItems[ index ] : file.offerItem
+	string setItemName = Localize( ItemFlavor_GetLongName(  itemFlav ) )
+	string baseItemName = Localize( ItemFlavor_GetLongName(  UniversalMelee_GetBaseSkin( itemFlav ) ) )
+
+	var descriptionInfo = s_inspectUIData.descriptionInfo
+	string descriptionTitle = file.isOwned ? "#BASE_UNIVERSAL_MELEE_OWNED" : "#BASE_UNIVERSAL_MELEE_UNOWNED"
+	HudElem_SetRuiArg( descriptionInfo, "descriptionTitle", Localize( descriptionTitle, setItemName ) )
+	HudElem_SetRuiArg( descriptionInfo, "descriptionText", Localize( "#UNIVERSAL_MELEE_DESCRIPTION", setItemName, baseItemName ) )
+	HudElem_SetRuiArg( descriptionInfo, "isOwned", file.isOwned )
+	Hud_SetVisible( descriptionInfo, file.isBaseItem )
+
+	var disclaimerInfo = s_inspectUIData.disclaimerInfo
+	string disclaimerText = "#UNIVERSAL_MELEE_DISCLAIMER_BASE"
+
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.artifact_component_deathbox )
+	{
+		disclaimerText = "#UNIVERSAL_MELEE_DISCLAIMER"
+	}
+	else if ( file.isFullSet && UniversalMelee_IsAddonActivationEmote( itemFlav ) )
+	{
+		disclaimerText = "#UNIVERSAL_MELEE_DISCLAIMER_ACTIVATION_EMOTE"
+	}
+
+	HudElem_SetRuiArg( disclaimerInfo, "disclaimer", Localize( disclaimerText, baseItemName ) )
+	HudElem_SetRuiArg( disclaimerInfo, "isShowingInfo", !file.canAfford && !file.isHeirloomCurrency && !file.isOwned )
+}
+
+void function SetPurchaseButton( int index )
+{
+	ItemFlavor itemFlav = file.isFullSet ? file.setItems[ 0 ] : file.offerItem
+	string baseItemName = ""
+	array< ItemFlavor > baseItems = UniversalMelee_GetBaseItems( itemFlav )
+	foreach ( baseItem in baseItems )
+	{
+		if ( !GRX_IsItemOwnedByPlayer( baseItem ) )
+		{
+			baseItemName = Localize( ItemFlavor_GetLongName( baseItem ) )
+			break
+		}
+	}
+
+	var purchaseButton = s_inspectUIData.purchaseButton
+	string buttonDescText
+	string buttonText
+	bool isPurchaseButtonLocked
+
+	if ( file.isOwned )
+	{
+		buttonDescText = ""
+		buttonText = "#OWNED"
+		isPurchaseButtonLocked = true
+	}
+	else if ( file.isBaseItem && ( MeleeSkin_IsRewardForActiveEvent( itemFlav ) || MeleeSkin_IsRewardForActiveStoreEvent( itemFlav ) ) )
+	{
+		buttonText = Localize( "#EVENT_TAB_TITLE" )
+		isPurchaseButtonLocked = false
+	}
+	else if ( !file.isBaseItem && !UniversalMelee_AreBaseItemsOwned( itemFlav ) )
+	{
+		buttonDescText = baseItemName
+		buttonText = Localize( "#BASE_UNIVERSAL_MELEE_REQUIRED", baseItemName )
+		isPurchaseButtonLocked = true
+	}
+	else if ( !file.isFullSet && !UniversalMelee_HasPreviousItem( itemFlav ) )
+	{
+		ItemFlavor ornull previousSetItem = UniversalMelee_GetPreviousSetItem( itemFlav )
+
+		if ( previousSetItem != null )
+		{
+			expect ItemFlavor( previousSetItem )
+			buttonDescText = Localize( ItemFlavor_GetLongName( previousSetItem ) )
+		}
+		buttonText = "#UNIVERSAL_MELEE_REQUIRED_PREVIOUS"
+		isPurchaseButtonLocked = true
+	}
+	else if ( !file.isHeirloomCurrency && !file.canAfford )
+	{
+		buttonDescText = ""
+		buttonText = "#CONFIRM_GET_EXOTIC"
+		isPurchaseButtonLocked = false
+	}
+	else
+	{
+		buttonDescText = GRX_GetFormattedPrice( file.price )
+		buttonText = "#PURCHASE"
+		isPurchaseButtonLocked = false
+	}
+
+	HudElem_SetRuiArg( purchaseButton, "buttonDescText", buttonDescText )
+	HudElem_SetRuiArg( purchaseButton, "buttonText", buttonText )
+	Hud_SetLocked( purchaseButton, isPurchaseButtonLocked )
+}
+
+void function AutoEquipAddon()
+{
+	if ( !UniversalMelee_HasAddons( file.offer.output.flavors[ 0 ] ) )
+		return
+
+	ItemFlavor addOnToEquip = UniversalMelee_GetAddons( file.offer.output.flavors[ 0 ] )[ 0 ]
+
+	if ( ItemFlavor_GetType( addOnToEquip ) == eItemType.melee_addon )
+	{
+		EHI playerEHI = LocalClientEHI()
+		array< LoadoutEntry > addOnSlots = Loadout_MeleeAddOns()
+
+		int emptySlotIndex = -1
+		for ( int i = 0; i < addOnSlots.len(); i++ ) 
+		{
+			ItemFlavor equippedItem = LoadoutSlot_GetItemFlavor( playerEHI, addOnSlots[i] )
+			if ( equippedItem == addOnToEquip )
+				return
+			else if ( emptySlotIndex == -1 && equippedItem == addOnSlots[0].defaultItemFlavor )
+				emptySlotIndex = i
+		}
+
+		Assert( emptySlotIndex != -1 )
+		if ( emptySlotIndex == -1 )
+			return
+
+		RequestSetItemFlavorLoadoutSlot( playerEHI, addOnSlots[ emptySlotIndex ], addOnToEquip )
+	}
+}
+
+void function LockPurchaseButtonWhenInventoryIsNotReady()
+{
+	Hud_SetLocked( s_inspectUIData.purchaseButton, !GRX_IsInventoryReady() )
+}
+
+void function PurchaseOfferButton_OnClick( var button )
+{
+	if ( Hud_IsLocked( button ) )
+	{
+		EmitUISound( "menu_deny" )
+		return
+	}
+
+	if (!file.canAfford && !file.isHeirloomCurrency)
+	{
+		OpenExoticShardsModal( button )
+	}
+	else if ( file.isBaseItem && ( MeleeSkin_IsRewardForActiveEvent( file.offerItem ) || MeleeSkin_IsRewardForActiveStoreEvent( file.offerItem ) ) )
+	{
+		array<ItemFlavor> activeEvents = GetAllActiveMilestoneEvents( GetUnixTimestamp() )
+		if ( activeEvents.len() > 0 )
+		{
+			foreach ( activeEvent in activeEvents )
+			{
+				
+				if ( IsMilestoneEventStoreOnly( activeEvent ) )
+				{
+					string milestoneId = MilestoneEvent_GetEventId( activeEvent )
+					JumpToStoreMilestoneEventsMenu( milestoneId )
+				}
+				else
+				{
+					JumpToEventTab( "RTKEventsPanel" )
+				}
+			}
+		}
+	}
+	else
+	{
+		PurchaseDialogConfig pdc
+		pdc.offer = file.offer
+		pdc.quantity = 1
+
+		PurchaseDialog( pdc )
+	}
+}
+
+void function OnBindItemGridButton( var panel, var button, int index )
+{
+	if ( file.setItems.len() == 0 )
+		return
+
+	ItemFlavor currentIndexItem = file.setItems[ index ]
+	bool isCurrentSelectedItem = currentIndexItem.guid == file.offerItem.guid
+	var rui = Hud_GetRui( button )
+
+	RuiSetImage( rui, "itemThumbnail", ItemFlavor_GetIcon( currentIndexItem ) )
+
+	if ( Artifacts_IsArtifactTheme( currentIndexItem ) && ItemFlavor_GetType( currentIndexItem ) == eItemType.artifact_component_deathbox )
+	{
+		RuiSetFloat3( rui, "colorTag1", Artifacts_GetComponentMainColor( currentIndexItem ) )
+		RuiSetFloat3( rui, "colorTag2", Artifacts_GetComponentSecondaryColor( currentIndexItem ) )
+	}
+
+	bool showLink = UniversalMelee_GetAddons( currentIndexItem ).len() > 0 && index == LINK_INDEX
+	if ( UniversalMelee_IsPowerSwordTheme( UniversalMelee_GetTheme( currentIndexItem ) ) )
+	{
+		showLink = UniversalMelee_IsVariantItem( currentIndexItem ) && index == LINK_INDEX
+	}
+
+	RuiSetBool( rui, "isOwned", GRX_IsItemOwnedByPlayer( currentIndexItem ) )
+	RuiSetBool( rui, "isLocked", !UniversalMelee_HasPreviousItem( currentIndexItem ) )
+	RuiSetBool( rui, "isSelected", isCurrentSelectedItem )
+	RuiSetBool( rui, "showLink", showLink )
+	RuiSetBool( rui, "showArrow", !file.isFullSet && index != file.setItems.len() - 1 )
+	RuiSetInt( rui, "rarity", 0 )
+	RuiSetInt( rui, "itemQty", 1)
+
+	if ( isCurrentSelectedItem )
+	{
+		s_inspectUIData.previousItemGrid = button
+	}
+}
+
+int function ItemGridButtonCountCallback( var panel )
+{
+	return file.setItems.len()
+}
+
+void function ItemGridButtonInitCallback( var button )
+{
+}
+
+void function OnItemGridButtonHover( var panel, var button, int index )
+{
+	if ( file.isFullSet )
+	{
+		ItemFlavor currentIndexItem = file.setItems[ index ]
+		if ( currentIndexItem != file.offerItem )
+		{	RunClientScript( "UIToClient_PreviewStoreItem", ItemFlavor_GetGUID( currentIndexItem ), true, 0, false )
+			file.offerItem = currentIndexItem
+			SetItemSelected( button )
+			SetItemInfo( index )
+			SetUniversalMeleeInfo( index )
+		}
+	}
+}
+
+void function SetItemSelected( var currentButton )
+{
+	var previousRui = Hud_GetRui( s_inspectUIData.previousItemGrid )
+	RuiSetBool( previousRui, "isSelected", false )
+
+	var rui = Hud_GetRui( currentButton )
+	RuiSetBool( rui, "isSelected", true )
+	s_inspectUIData.previousItemGrid = currentButton
+}

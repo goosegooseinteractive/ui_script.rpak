@@ -1,0 +1,282 @@
+global function RTKCrossProgressionPanel_OnInitialize
+global function RTKCrossProgressionPanel_OnDestroy
+global function RTKCrossProgressionPanel_UpdateDataModel
+global function RTKCrossProgressionPanel_SetDialogHeight
+global function RTKCrossProgressionPanel_SetHeader
+global function RTKMutator_HasNxProfile
+
+global struct RTKCrossProgressionPanel_Properties
+{
+	rtk_behavior migrateButton
+	rtk_behavior faqButton
+	rtk_behavior continueButton
+}
+
+global struct RTKCrossProgressionFlowModel
+{
+	int state
+}
+
+struct PrivateData
+{
+	string crossProgressionRootPath = ""
+}
+
+global enum eCrossProgressionState
+{
+	ANNOUNCEMENT,
+	MIGRATING,
+	MIGRATED,
+	_COUNT,
+}
+
+const string CROSS_PROGRESSION_DATA_MODEL_NAME = "crossProgression"
+const string FLOW_DATA_MODEL_NAME = "flow"
+const string MIGRATION_DATA_MODEL_NAME = "migration"
+
+struct
+{
+	int offlineMigrationState = eCrossProgressionState.ANNOUNCEMENT
+} file
+
+void function OnStartMigrate()
+{
+	RTKCrossProgressionPanel_SetHeader()
+	RTKCrossProgressionPanel_SetDialogHeight()
+	
+	RTKCrossProgressionPanel_SetFlowModel()
+}
+
+void function OnAnnouncementContiue()
+{
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+void function OnContinue( var button )
+{
+	int state = RTKCrossProgressionPanel_GetState()
+	printt( "[CrossProgression] OnContinue state", state )
+
+	switch ( state )
+	{
+		case eCrossProgressionState.ANNOUNCEMENT:
+			OnAnnouncementContiue()
+			break
+
+		case eCrossProgressionState.MIGRATED:
+			UI_CloseCrossProgressionDialog()
+			break
+
+		case eCrossProgressionState.MIGRATING:
+			break
+	}
+}
+
+void function ViewFAQ()
+{
+	LaunchExternalWebBrowser( Localize(  "#CROSS_PROGRESSION_FAQ_URL" ), WEBBROWSER_FLAG_NONE )
+}
+
+void function OnButtonY( var button )
+{
+	int state = RTKCrossProgressionPanel_GetState()
+	printt( "[CrossProgression] OnButtonY state", state )
+
+	if ( state == eCrossProgressionState.MIGRATED )
+		ViewFAQ()
+}
+
+void function RTKCrossProgressionPanel_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+void function RTKCrossProgressionPanel_SetMigrationModel()
+{
+	
+
+
+
+
+
+
+
+
+}
+
+void function RTKCrossProgressionPanel_SetFlowModel()
+{
+	
+
+
+
+
+
+
+
+
+
+
+}
+
+void function RTKCrossProgressionPanel_UpdateDataModel()
+{
+	RTKCrossProgressionPanel_SetMigrationModel()
+	RTKCrossProgressionPanel_SetFlowModel()
+}
+
+int function RTKCrossProgressionPanel_GetState()
+{
+	return eCrossProgressionState.MIGRATED
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+void function RTKCrossProgressionPanel_SetHeader()
+{
+	string title
+	string subtitle
+
+	switch ( RTKCrossProgressionPanel_GetState() )
+	{
+		case eCrossProgressionState.MIGRATED:
+			title = "#CROSS_PROGRESSION_PREVIEW_TITLE"
+			subtitle = "#CROSS_PROGRESSION_PREVIEW_DESC"
+			break
+		case eCrossProgressionState.MIGRATING:
+			title = "#CROSS_PROGRESSION_MIGRATING_TITLE"
+			subtitle = ""
+			break
+		case eCrossProgressionState.ANNOUNCEMENT:
+		default:
+			title = "#CROSS_PROGRESSION_ROLLOUT_TITLE"
+			subtitle = ""
+			break
+	}
+
+	UI_CrossProgressionDialog_UpdateHeader( title, subtitle )
+}
+
+void function RTKCrossProgressionPanel_SetDialogHeight()
+{
+	float height
+
+	switch ( RTKCrossProgressionPanel_GetState() )
+	{
+		case eCrossProgressionState.MIGRATED:
+			height = 920.0
+			break
+		case eCrossProgressionState.MIGRATING:
+		case eCrossProgressionState.ANNOUNCEMENT:
+		default:
+			height = 540.0
+			break
+	}
+
+	UI_CrossProgressionDialog_SetHeight( height )
+}
+
+void function RTKCrossProgressionPanel_OnDestroy( rtk_behavior self )
+{
+	DeregisterButtonPressedCallback ( KEY_SPACE, OnContinue )
+	DeregisterButtonPressedCallback ( BUTTON_A, OnContinue )
+	DeregisterButtonPressedCallback( BUTTON_Y, OnButtonY )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, CROSS_PROGRESSION_DATA_MODEL_NAME )
+}
+
+bool function RTKMutator_HasNxProfile( rtk_array profiles )
+{
+	for ( int i = 0; i < RTKArray_GetCount( profiles ); i++ )
+	{
+		rtk_struct profile = RTKArray_GetStruct( profiles, i )
+
+		if ( RTKStruct_GetInt( profile, "platformId" ) == HARDWARE_SWITCH || RTKStruct_GetInt( profile, "platformId" ) == HARDWARE_SWITCH2 )
+			return true
+	}
+
+	return false
+}

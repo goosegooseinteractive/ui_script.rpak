@@ -1,0 +1,502 @@
+
+global function InitRTKWishlistDialog
+
+
+global function RTKWishlistDialog_OnInitialize
+global function RTKWishlistDialog_OnDestroy
+
+
+global function OpenWishlistActivateDialog
+global function TryOpenWishlistOpenPackDialog
+global function WishlistDialog_SetLoading
+
+
+global function RTKMutator_IsWishlistDialogRecommended
+
+global struct RTKWishlistDialog_Properties
+{
+	rtk_behavior rightButton
+	rtk_behavior leftButton
+}
+
+
+global enum eWishlistDialogState
+{
+	ACTIVATE, 
+	RECOMMENDED, 
+	INVALID,
+	MAYBE_INVALID 
+}
+
+global struct RTKWishlistDialogModel
+{
+	string title
+	string subtitle
+	string disclaimer
+
+	array<RTKWishlistItemData> weaponData
+	array<RTKWishlistItemData> characterData
+
+	RTKWishlistButtonData& rightButton
+	RTKWishlistButtonData& leftButton
+
+	int state = -1
+}
+
+struct
+{
+	var menu
+	int state
+	int packOpenQuantity
+	int packGUID
+	Wishlist ornull wishlist
+
+	bool isLoading
+}file
+
+const string MODEL_PATH_NAME = "wishlistDialog"
+int MAX_PACKS_QUANTITY = 50
+
+int ornull function GetCurrentPackRarityOrNull()
+{
+	int ornull packRarity
+	if ( IsValidItemFlavorGUID( file.packGUID ) )
+		packRarity = ItemFlavor_GetQuality( GetItemFlavorByGUID( file.packGUID ) )
+
+	return packRarity
+}
+
+
+void function InitRTKWishlistDialog( var menu )
+{
+	file.menu = menu
+	SetDialog( menu, true )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, WishlistDialog_OnNavigateBack )
+}
+
+void function WishlistDialog_OnNavigateBack()
+{
+	if ( GetActiveMenu() == file.menu )
+		RTKWishlistWarningDialog_OnLeftButtonPressed()
+}
+
+
+void function OpenWishlistActivateDialog( Wishlist wishlist )
+{
+	if ( GetActiveMenu() == file.menu )
+		return
+
+	file.state = eWishlistDialogState.ACTIVATE
+	file.wishlist = wishlist
+	AdvanceMenu( file.menu )
+}
+
+
+bool function TryOpenWishlistOpenPackDialog( int packGUID, int packOpenQuantity )
+{
+	if ( !Wishlist_IsEnabled() )
+		return false
+
+	if ( GetActiveMenu() == file.menu )
+		return false
+
+	if ( !ItemFlavor_IsWishlistPack( GetItemFlavorByGUID( packGUID ) ) )
+		return false
+
+	int state = RTKWishlistDialog_GetState( packOpenQuantity, packGUID )
+
+	
+	if ( state == -1 )
+		return false
+
+	
+	file.state = state
+	file.packOpenQuantity = packOpenQuantity
+	file.packGUID = packGUID
+
+	AdvanceMenu( file.menu )
+	return true
+}
+
+
+void function RTKWishlistDialog_OnInitialize( rtk_behavior self )
+{
+	MAX_PACKS_QUANTITY = GetConVarInt( "mtx_mass_pack_opening_max_packs_to_open" )
+
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistDialogModel" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true ) )
+
+	RTKStruct_SetValue( model, RTKWishlistDialog_GetDialogData() )
+
+	RTKWislistWarningDialog_SetLeftButton( self )
+	RTKWislistWarningDialog_SetRightButton( self )
+
+	PIN_PageView_WishlistDialog( GetEnumString( "eWishlistDialogState", file.state ) )
+}
+
+void function RTKWishlistDialog_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+
+	
+	
+	RTKWishlistDialog_CleanCacheFile()
+}
+
+void function RTKWishlistWarningDialog_OnLeftButtonPressed()
+{
+	switch ( file.state )
+	{
+		case eWishlistDialogState.ACTIVATE:
+			CloseActiveMenu()
+			break
+		case eWishlistDialogState.INVALID:
+		case eWishlistDialogState.MAYBE_INVALID:
+			CloseActiveMenu()
+			OpenWishlistMenu()
+			break
+		case eWishlistDialogState.RECOMMENDED:
+			CloseActiveMenu()
+			OpenWishlistMenuSeeded()
+			break
+	}
+}
+
+void function RTKWislistWarningDialog_SetLeftButton( rtk_behavior self )
+{
+	rtk_behavior leftButton = self.PropGetBehavior( "leftButton" )
+	if ( leftButton != null )
+	{
+		self.AutoSubscribe( leftButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			RTKWishlistWarningDialog_OnLeftButtonPressed()
+		} )
+	}
+}
+
+void function RTKWislistWarningDialog_SetRightButton( rtk_behavior self )
+{
+	rtk_behavior rightButton = self.PropGetBehavior( "rightButton" )
+
+	if ( rightButton != null )
+	{
+		self.AutoSubscribe( rightButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			switch ( file.state )
+			{
+				case eWishlistDialogState.ACTIVATE:
+					RTKWishlistDialog_SaveWishlist( RTKWishlistDialog_CloseDialog )
+					break
+
+				case eWishlistDialogState.INVALID:
+				case eWishlistDialogState.MAYBE_INVALID:
+					thread RTKWishlistDialog_OpenPacks_Thread()
+					break
+
+				case eWishlistDialogState.RECOMMENDED:
+					RTKWishlistDialog_SaveWishlist( RTKWishlistDialog_OpenPacks_Thread )
+					break
+			}
+		} )
+	}
+}
+
+void function RTKWishlistDialog_CloseDialog()
+{
+	
+	RTKWishlistMenu_SetButtonsLoading()
+
+	if ( GetActiveMenu() == file.menu ) 
+		CloseActiveMenu()
+}
+
+void function RTKWishlistDialog_SaveWishlist( void functionref() ornull onSuccessCallback )
+{
+	if ( file.wishlist == null )
+	{
+		EmitUISound( "UI_Menu_Deny" )
+		if ( GetActiveMenu() == file.menu )
+			CloseActiveMenu()
+
+		return
+	}
+
+	Wishlist wishlist = expect Wishlist( file.wishlist )
+	Wishlist_UpdateWishlistSelections( wishlist, void function( int status ) : ( onSuccessCallback ) {
+		if ( status != eScriptGRXOperationStatus.DONE_SUCCESS )
+		{
+			EmitUISound( "UI_Menu_Deny" )
+			if ( GetActiveMenu() == file.menu )
+				CloseActiveMenu()
+		}
+		else
+		{
+			EmitUISound( GRXCurrency_GetPurchaseSound( GRX_CURRENCIES[GRX_CURRENCY_CREDITS] ) )
+
+			if ( onSuccessCallback != null )
+			{
+				void functionref() callback = expect void functionref()( onSuccessCallback )
+				thread callback()
+			}
+		}
+		WishlistDialog_SetLoading( false )
+	} )
+	WishlistDialog_SetLoading( true )
+}
+
+
+RTKWishlistDialogModel function RTKWishlistDialog_GetDialogData()
+{
+	RTKWishlistDialogModel data
+
+	switch ( file.state )
+	{
+		case eWishlistDialogState.ACTIVATE:
+			data = RTKWishlistDialog_GetActivateDialogData()
+			break
+		case eWishlistDialogState.INVALID:
+			data = RTKWishlistDialog_GetInvalidDialogData()
+			break
+		case eWishlistDialogState.MAYBE_INVALID:
+			data = RTKWishlistDialog_GetMaybeInvalidDialogData()
+			break
+		case eWishlistDialogState.RECOMMENDED:
+			data = RTKWishlistDialog_GetRecommendedDialogData()
+			break
+	}
+
+	data.state = file.state
+	return data
+}
+
+array<RTKWishlistItemData> function RTKWishlistDialog_GetAllWeaponData( Wishlist wishlist )
+{
+	array<RTKWishlistItemData> weaponData
+	bool isInvalidWishlist = file.state == eWishlistDialogState.INVALID
+	int ornull packRarity = GetCurrentPackRarityOrNull()
+
+	foreach ( guid in wishlist.weaponCategories )
+	{
+		RTKWishlistItemData data
+		data = RTKWishlistMenu_GetWeaponData( GetItemFlavorByGUID( guid ), false, packRarity )
+
+		bool isMaybeUnavailable = !isInvalidWishlist && Wishlist_IsWishlistCategoryIsPossiblyInvalidWhenOpening( guid, file.packOpenQuantity, packRarity, "RTKWishlistDialog_GetAllWeaponData" )
+		data.completePercentage = RTKWishlistDialog_GetCategoryCompletePercentage( data, isMaybeUnavailable )
+		data.hasWarningText = isMaybeUnavailable ? true : data.isDisabled
+
+		weaponData.append( data )
+	}
+
+	int remainingSlots = WISHLIST_REQUIRED_WEAPONCLASS_COUNT - weaponData.len()
+	for ( int i = 0; i < remainingSlots; i++ )
+	{
+		bool isSlotLocked = i >= Wishlist_GetWishlistParametersForLocalPlayer().adjustedWeaponCategoryCount - weaponData.len()
+		weaponData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+	}
+
+	return weaponData
+}
+
+array<RTKWishlistItemData> function RTKWishlistDialog_GetAllCharacterData( Wishlist wishlist )
+{
+	array<RTKWishlistItemData> characterData
+	bool isInvalidWishlist = file.state == eWishlistDialogState.INVALID
+	int ornull packRarity = GetCurrentPackRarityOrNull()
+
+	foreach ( guid in wishlist.characters )
+	{
+		RTKWishlistItemData data
+		data = RTKWishlistMenu_GetCharacterData( GetItemFlavorByGUID( guid ), false, packRarity )
+
+		bool isMaybeUnavailable = !isInvalidWishlist && Wishlist_IsWishlistCategoryIsPossiblyInvalidWhenOpening( guid, file.packOpenQuantity, packRarity, "RTKWishlistDialog_GetAllCharacterData" )
+		data.completePercentage = RTKWishlistDialog_GetCategoryCompletePercentage( data, isMaybeUnavailable )
+		data.hasWarningText = isMaybeUnavailable ? true : data.isDisabled
+
+		characterData.append( data )
+	}
+
+	int remainingSlots = WISHLIST_REQUIRED_CHARACTER_COUNT - characterData.len()
+	for ( int i = 0; i < remainingSlots; i++ )
+	{
+		bool isSlotLocked = i >= Wishlist_GetWishlistParametersForLocalPlayer().adjustedCharacterCount - characterData.len()
+		characterData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+	}
+
+	return characterData
+}
+
+string function RTKWishlistDialog_GetCategoryCompletePercentage( RTKWishlistItemData data, bool isMaybeUnavailable )
+{
+	if ( data.isDisabled || isMaybeUnavailable )
+		return data.completePercentage
+
+	return ""
+}
+
+RTKWishlistDialogModel function RTKWishlistDialog_GetActivateDialogData()
+{
+	RTKWishlistDialogModel data
+	data.title = "#WISHLIST_DIALOG_ACTIVATE_TITLE"
+	data.subtitle = ""
+	data.disclaimer = "#WISHLIST_DIALOG_ACTIVATE_DISCLAIMER"
+	data.leftButton.text = "#CANCEL"
+
+	data.rightButton.text = "#WISHLIST_ACTIVATE"
+	data.rightButton.subText = Wishlist_GetSaveOfferFormatedPrice()
+
+	Wishlist wishlist = expect Wishlist( file.wishlist )
+	data.characterData = RTKWishlistDialog_GetAllCharacterData( wishlist )
+	data.weaponData = RTKWishlistDialog_GetAllWeaponData( wishlist )
+
+	return data
+}
+
+RTKWishlistDialogModel function RTKWishlistDialog_GetInvalidDialogData()
+{
+	RTKWishlistDialogModel data
+	data.title = "#WISHLIST_DIALOG_INVALID_TITLE"
+	data.subtitle = RTKWishlistDialog_GetPackOpeningSubtitle()
+	data.disclaimer = "#WISHLIST_DIALOG_INVALID_DISCLAIMER"
+
+	data.leftButton.text = "#WISHLIST_DIALOG_EDIT_WISHLIST"
+	data.rightButton.text = file.packOpenQuantity > 1 ? "#WISHLIST_DIALOG_OPEN_PACKS" : "#WISHLIST_DIALOG_OPEN_PACK"
+
+	Wishlist wishlist = Wishlist_GetWishlistForLocalPlayer()
+	data.characterData = RTKWishlistDialog_GetAllCharacterData( wishlist )
+	data.weaponData = RTKWishlistDialog_GetAllWeaponData( wishlist )
+
+	return data
+}
+
+RTKWishlistDialogModel function RTKWishlistDialog_GetMaybeInvalidDialogData()
+{
+	RTKWishlistDialogModel data
+	data.title = "#WISHLIST_DIALOG_MAY_INVALID_TITLE"
+	data.subtitle = RTKWishlistDialog_GetPackOpeningSubtitle()
+	data.disclaimer = "#WISHLIST_DIALOG_MAY_INVALID_DISCLAIMER"
+
+	data.leftButton.text = "#WISHLIST_DIALOG_EDIT_WISHLIST"
+	data.rightButton.text = file.packOpenQuantity > 1 ? "#WISHLIST_DIALOG_OPEN_PACKS" : "#WISHLIST_DIALOG_OPEN_PACK"
+
+	Wishlist wishlist = Wishlist_GetWishlistForLocalPlayer()
+	data.characterData = RTKWishlistDialog_GetAllCharacterData( wishlist )
+	data.weaponData = RTKWishlistDialog_GetAllWeaponData( wishlist )
+
+	return data
+}
+
+RTKWishlistDialogModel function RTKWishlistDialog_GetRecommendedDialogData()
+{
+	RTKWishlistDialogModel data
+	data.title = "#WISHLIST_DIALOG_RECOMMENDED_TITLE"
+	data.subtitle = RTKWishlistDialog_GetPackOpeningSubtitle()
+	data.disclaimer = "#WISHLIST_DIALOG_RECOMMENDED_DISCLAIMER"
+
+	data.leftButton.text = "#WISHLIST_DIALOG_EDIT_WISHLIST"
+	data.rightButton.text = file.packOpenQuantity > 1 ? "#WISHLIST_DIALOG_OPEN_PACKS" : "#WISHLIST_DIALOG_OPEN_PACK"
+
+	Wishlist wishlist = Wishlist_Generate( null )
+	data.characterData = RTKWishlistDialog_GetAllCharacterData( wishlist )
+	data.weaponData = RTKWishlistDialog_GetAllWeaponData( wishlist )
+
+	file.wishlist = wishlist
+
+	return data
+}
+
+string function RTKWishlistDialog_GetPackOpeningSubtitle()
+{
+	string packName = Localize( RTKPackOpeningSelectionController_GetPackName( GetItemFlavorByGUID( file.packGUID ) ) )
+	if ( file.packOpenQuantity > 1 )
+		return Localize( "#WISHLIST_DIALOG_PACK_OPENING_PLURAL", file.packOpenQuantity, packName )
+	else
+		return Localize( "#WISHLIST_DIALOG_PACK_OPENING", packName )
+
+	return ""
+}
+
+
+void function RTKWishlistDialog_CleanCacheFile()
+{
+	file.state = -1
+	file.packOpenQuantity = 0
+	file.packGUID = -1
+	file.wishlist = null
+	file.isLoading = false
+}
+
+int function RTKWishlistDialog_GetState( int packsToOpen, int packGUID )
+{
+	
+	
+
+	int ornull packRarity
+	if ( IsValidItemFlavorGUID( packGUID ) )
+	{
+		packRarity = ItemFlavor_GetQuality( GetItemFlavorByGUID( packGUID ) )
+	}
+
+	switch ( Wishlist_GetSelectionUIState( packsToOpen, packRarity, "RTKWishlistDialog_GetState" ) )
+	{
+		case eWishlistFrontState.MAYBE_INVALID:
+			return eWishlistDialogState.MAYBE_INVALID
+		case eWishlistFrontState.INVALID:
+			return eWishlistDialogState.INVALID
+		case eWishlistFrontState.INACTIVE:
+			return eWishlistDialogState.RECOMMENDED
+	}
+
+	return -1
+}
+
+void function RTKWishlistDialog_OpenPacks_Thread()
+{
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+
+	while ( !GRX_IsInventoryReady() )
+	{
+		WaitFrame()
+	}
+
+	if ( !IsValidItemFlavorGUID( file.packGUID, eValidation.DONT_ASSERT ) )
+		return
+
+	ItemFlavor packFlav = GetItemFlavorByGUID( file.packGUID )
+	int packOpenQuantity = file.packOpenQuantity
+
+	
+	
+	if ( GetActiveMenu() == file.menu )
+		CloseActiveMenu()
+
+	if ( packOpenQuantity == 1 )
+		OnLobbyOpenLootBoxMenu_ButtonPress( packFlav )
+	else if( packOpenQuantity > 1 && packOpenQuantity <= MAX_PACKS_QUANTITY )
+		OpenMassPackOpeningMenu( packFlav, packOpenQuantity )
+
+	EmitUISound( "ui_menu_openlootbox" )
+}
+
+void function WishlistDialog_SetLoading( bool isLoading )
+{
+	rtk_struct ornull model = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+	if ( model == null )
+		return
+	expect rtk_struct( model )
+
+	rtk_struct rightButton = RTKStruct_GetStruct( model, "rightButton" )
+	rtk_struct leftButton = RTKStruct_GetStruct( model, "leftButton" )
+
+	RTKStruct_SetBool( rightButton, "isLoading", isLoading )
+	RTKStruct_SetBool( leftButton, "isLoading", isLoading )
+	RTKStruct_SetBool( rightButton, "isInteractive", !isLoading )
+	RTKStruct_SetBool( leftButton, "isInteractive", !isLoading )
+
+	file.isLoading = isLoading
+}
+
+
+
+bool function RTKMutator_IsWishlistDialogRecommended( int input )
+{
+	return eWishlistDialogState.RECOMMENDED == input
+}

@@ -1,0 +1,205 @@
+global function Perk_ControllerRotation_Init
+global function Perk_ControllerRotation_IsEnabled
+
+
+
+
+
+
+
+
+
+
+
+
+
+global const string RING_CONSOLE_BLOCKED_TARGET_NAME = "blocked"
+global const string RING_CONSOLE_CLEAR_TARGET_NAME = "clear"
+
+
+struct ZoneBeaconUsage
+{
+	entity beacon
+	int uses
+}
+
+struct
+{
+	bool isEnabled
+	bool isReplicatorItemEnabled
+
+
+
+
+} file
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________INITS___________________________(){}
+#endif
+void function Perk_ControllerRotation_Init()
+{
+	PerkInfo controllerRotation
+
+
+
+
+
+
+
+	controllerRotation.perkId = ePerkIndex.CONTROLLER_ROTATION
+	Perks_RegisterClassPerk( controllerRotation )
+
+	file.isEnabled = GetCurrentPlaylistVarBool( "perk_controller_rotation_is_enabled", true )
+	if( !Perk_ControllerRotation_IsEnabled() )
+		return
+
+	file.isReplicatorItemEnabled = GetCurrentPlaylistVarBool( "perk_controller_rotation_replicator_item", false )
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+bool function Perk_ControllerRotation_IsEnabled()
+{
+	return file.isEnabled
+}
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________CALLBACKS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________FUNCTIONS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

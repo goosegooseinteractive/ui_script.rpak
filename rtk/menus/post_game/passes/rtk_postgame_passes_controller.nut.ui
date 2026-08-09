@@ -1,0 +1,1228 @@
+global function InitRTKPostgamePassesPanel
+global function InitRTKPostgamePassesPanelLobby
+global function RTKPostgamePasses_InitMetaData
+global function RTKPostgamePasses_OnInitialize
+global function RTKPostgamePasses_OnPreDestroy
+global function RTKPostgamePasses_OnDestroy
+global function PostGame_GetFormatedTooltipDescriptionFromActiveBoosts
+global function PostGame_GetIconFromActiveBoosts
+
+global struct RTKPostgamePasses_Properties
+{
+	rtk_behavior topPagination
+	rtk_panel listBinder
+	rtk_behavior leftArrow
+	rtk_behavior rightArrow
+}
+
+enum ePostgamePassLayout
+{
+	COLLAPSED
+	EXPANDED
+	COMPACT
+}
+
+global struct RTKPostgamePass_Struct
+{
+	string displayName = ""
+	bool passIsComplete = false
+	int xpEarnedText = 0
+	string xpEarnedExplainationText = ""
+	string xpShortProgressText = ""
+	string xpProgressText = ""
+	asset xpAssetPath = $""
+	float xpAssetHeight = 24
+	float xpAssetWidth = 24
+	string boostProgressText = ""
+	string boostProgressTitle = ""
+	asset boostAssetPath = $""
+	string ownershipName = ""
+	int ownershipTier = 0
+	asset ownershipTierAsset = $""
+	string rewardText = ""
+	asset badgeSubstituteAssetPath = $""
+	asset badgeAssetPath = $"ui/gcard_badge_account_t1.rpak"
+	int prevBadgeTier = 0
+	int badgeTier = 0
+	float xpCurrentPercent = 0.0
+	float xpPreviousPercent = 0.0
+	array< RTKBrowseLootPoolItem > rewards
+	int passIndex = -2
+	array< RTKAngledProgressBarExtensions_Struct > animationStates
+	bool seen = false
+	int layout = ePostgamePassLayout.COLLAPSED
+	bool fitImage = false
+}
+
+global struct RTKPostgamePassesControllerPanel_ModelStruct
+{
+	array< RTKPostgamePass_Struct > passes
+	array< RTKChallengeItemModel > challengesProgressed
+	array< RTKChallengeItemModel > challengesSuggested
+	array< RTKChallengeItemModel > trials
+	int focusedPassIndex = -1
+	int passCount = -1
+	bool showNavigationPips = true
+	bool shrinkNavigationPips = false
+	bool showNavigationArrows = true
+}
+
+struct PrivateData
+{
+	array < rtk_panel > passTiles
+	array< RTKAngledProgressBarExtensions_Struct > animationStates
+	array< array< array< RTKBrowseLootPoolItem > > > rewardsForLevels 
+}
+
+struct FileStruct_SessionPersistence
+{
+	array< bool > seenPasses
+}
+FileStruct_SessionPersistence& file
+
+const string modelName = "postgamePasses"
+const int MAX_SUGGESTED_CHALLENGES = 5 
+const int MAX_PROGRESSED_CHALLENGES = 15
+const int MAX_LEVELUPS_TO_DISPLAY = 5
+
+void function InitRTKPostgamePassesPanelLobby( var panel )
+{
+	InitDeathScreenPanelFooter( panel, eDeathScreenPanel.PASSES, true )
+}
+
+void function InitRTKPostgamePassesPanel( var panel )
+{
+	InitDeathScreenPanelFooter( panel, eDeathScreenPanel.PASSES )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, Panel_OnHide )
+}
+
+void function Panel_OnHide( var panel )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+	StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+}
+
+bool function OnNavForward()
+{
+	var menu = GetMenu( "DeathScreenMenu" )
+	if ( menu == null )
+	{
+		return false
+	}
+
+	if ( !Hud_HasChild( menu, "DeathScreenTabSummary" ) )
+	{
+		return false
+	}
+
+	var deathScreenTabSummary = Hud_GetChild( GetMenu( "DeathScreenMenu" ), "DeathScreenTabSummary" )
+
+	if ( !Hud_HasChild( deathScreenTabSummary, "RTKPostgamePassesPanel" ) )
+	{
+		return false
+	}
+
+	var vguiPanel = Hud_GetChild( deathScreenTabSummary, "RTKPostgamePassesPanel" )
+
+	rtk_panel ornull rootPanel = Hud_GetRTKPanel( vguiPanel )
+	if ( rootPanel == null )
+	{
+		return false
+	}
+	expect rtk_panel( rootPanel )
+
+	rtk_behavior ornull rtkBehavior = rootPanel.GetBehaviorByIndex( 1 )
+	if ( rtkBehavior == null )
+	{
+		return false
+	}
+	expect rtk_behavior( rtkBehavior )
+
+	rtk_behavior ornull topPagination = rtkBehavior.PropGetBehavior( "topPagination" )
+	if ( topPagination == null )
+	{
+		return false
+	}
+	expect rtk_behavior( topPagination )
+
+	int totalPages = RTKPagination_GetTotalPages( topPagination )
+	int curPage = RTKPagination_GetCurrentPage( topPagination )
+
+	if ( curPage < totalPages - 1 )
+	{
+		StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+		RTKPagination_NextPage( topPagination, "", true )
+		return true
+	}
+
+	return false
+}
+
+void function RTKPostgamePasses_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "RTKPostgamePasses_DestroyThreads" )
+}
+
+void function RTKPostgamePasses_FocusPassTile( rtk_behavior self, int index, bool navigateToIndex = false, bool force = false, float animationDelay = 0.0 )
+{
+	if ( animationDelay > 0.0 )
+	{
+		EndSignal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+	}
+
+	PrivateData p
+	self.Private( p )
+
+	
+	
+	
+	
+	
+	
+
+	rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, modelName, true )
+	if ( modelStruct == null )
+		return
+
+	expect rtk_struct( modelStruct )
+
+	rtk_behavior ornull topPagination = self.PropGetBehavior( "topPagination" )
+	if ( topPagination != null )
+	{
+		expect rtk_behavior( topPagination )
+
+		int currentPage = RTKPagination_GetCurrentPage( topPagination )
+
+		if ( index >= p.passTiles.len() )
+			return
+
+		if ( currentPage == index && !force )
+			return
+
+		if ( navigateToIndex )
+			RTKPagination_GoToPage( topPagination, index )
+
+		RTKStruct_SetInt( modelStruct, "focusedPassIndex", index )
+
+		rtk_array passesArray = RTKStruct_GetArray( modelStruct, "passes" )
+		if ( RTKArray_GetCount( passesArray ) > index )
+		{
+			rtk_struct passStruct = RTKArray_GetStruct( passesArray, index )
+			RTKStruct_SetBool( passStruct, "seen", true )
+			RTKStruct_SetInt( passStruct, "layout", ePostgamePassLayout.EXPANDED )
+		}
+		if ( RTKArray_GetCount( passesArray ) > currentPage )
+		{
+			rtk_struct passStruct = RTKArray_GetStruct( passesArray, currentPage )
+			RTKStruct_SetInt( passStruct, "layout", ePostgamePassLayout.COMPACT )
+		}
+
+		if ( !navigateToIndex )
+		{
+			if ( animationDelay > 0.0 )
+			{
+				wait animationDelay
+			}
+
+			if ( index >= p.passTiles.len() )
+				return
+
+			rtk_panel passTilePanel = p.passTiles[ index ]
+
+			rtk_behavior ornull angledProgressBarExtensions = passTilePanel.FindBehaviorInDescendantsByName("AngledProgressBarExtensions")
+			if ( angledProgressBarExtensions == null )
+				return
+
+			expect rtk_behavior( angledProgressBarExtensions )
+			RTKAngledProgressBarExtensions_Animate( angledProgressBarExtensions )
+		}
+	}
+}
+
+void function RTKPostgamePasses_OnInitialize( rtk_behavior self )
+{
+	DeathScreenSetOnNavForwardCallback( eDeathScreenPanel.PASSES, OnNavForward )
+
+	PrivateData p
+	self.Private( p )
+
+	entity localPlayer = GetLocalClientPlayer()
+
+	if ( !IsFullyConnected() || !IsValid( localPlayer )  )
+	{
+		printt("RTKPostgamePasses_OnInitialize failed - ", IsFullyConnected(), IsValid( localPlayer ), GRX_IsInventoryReady())
+		return
+	}
+
+	rtk_struct modelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelName, "RTKPostgamePassesControllerPanel_ModelStruct" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, modelName, true ) )
+
+	RTKPostgamePasses_BuildPassesData( self )
+	RTKPostgamePasses_BuildChallengesData( self )
+
+	
+	rtk_struct postGameWeaponModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "weapons", "", [ "postGame" ] )
+	RTKPostgamePasses_BuildTrialsData( self, postGameWeaponModel )
+
+	
+	rtk_behavior ornull topPagination = self.PropGetBehavior( "topPagination" )
+	if ( topPagination != null )
+	{
+		expect rtk_behavior( topPagination )
+
+		self.AutoSubscribe( topPagination, "onScrollPreStart", function () : ( self, topPagination ) {
+			int targetPage = RTKPagination_GetTargetPage( topPagination )
+			RTKPostgamePasses_FocusPassTile( self, targetPage, false )
+		} )
+
+		self.AutoSubscribe( topPagination, "onScrollFinished", function () : ( self, topPagination ) {
+			int currentPage = RTKPagination_GetCurrentPage( topPagination )
+			if ( file.seenPasses.len() <= currentPage )
+				file.seenPasses.resize( currentPage + 1, false )
+			file.seenPasses[ currentPage ] = true
+		} )
+	}
+
+	
+	rtk_panel ornull listBinder = self.PropGetPanel( "listBinder" )
+	if ( listBinder != null && topPagination != null)
+	{
+		expect rtk_panel( listBinder )
+		expect rtk_behavior( topPagination )
+
+		self.AutoSubscribe( listBinder, "onChildRemoved", function ( rtk_panel newChild, int newChildIndex ) : ( self, p ) {
+			p.passTiles.remove( newChildIndex )
+		})
+
+		self.AutoSubscribe( listBinder, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, topPagination, p ) {
+			p.passTiles.insert( newChildIndex, newChild )
+
+			
+			rtk_behavior angledProgressBarExtensions = newChild.FindBehaviorInDescendantsByName("AngledProgressBarExtensions")
+			RTKAngledProgressBarExtensions_PrepareAnimations( angledProgressBarExtensions, p.animationStates[ newChildIndex ] )
+
+			array< rtk_behavior > buttons = newChild.FindBehaviorsByTypeName( "Button" )
+			foreach ( button in buttons )
+			{
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex ) {
+					RTKPostgamePasses_FocusPassTile( self, newChildIndex, true )
+				} )
+			}
+		} )
+	}
+
+	thread RTKPostgamePasses_IntroAnimation( self )
+}
+
+void function RTKPostgamePasses_IntroAnimation( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+	EndSignal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+
+	wait 0.1
+
+	thread RTKPostgamePasses_FocusPassTile( self, 0, false, true, 0.1 )
+
+	rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, modelName, true )
+	if ( modelStruct == null )
+		return
+
+	expect rtk_struct( modelStruct )
+
+	rtk_array passesArray = RTKStruct_GetArray( modelStruct, "passes" )
+	if ( RTKArray_GetCount( passesArray ) > 0 )
+	{
+		RTKStruct_SetInt( modelStruct, "focusedPassIndex", 0 )
+		rtk_struct passStruct = RTKArray_GetStruct( passesArray, 0 )
+		RTKStruct_SetBool( passStruct, "seen", true )
+		RTKStruct_SetInt( passStruct, "layout", ePostgamePassLayout.EXPANDED )
+	}
+
+	WaitEndFrame() 
+	WaitFrame() 
+
+	rtk_behavior ornull topPagination = self.PropGetBehavior( "topPagination" )
+	if ( topPagination != null )
+	{
+		expect rtk_behavior( topPagination )
+
+		RTKPagination_GoToPage( topPagination, 0 )
+	}
+}
+
+void function RTKPostgamePasses_OnPreDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+	DeathScreenClearOnNavForwardCallback( eDeathScreenPanel.PASSES )
+}
+
+void function RTKPostgamePasses_OnDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgamePasses_DestroyThreads" )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, modelName )
+}
+
+void function RTKPostgamePasses_BuildPassesData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	entity localPlayer = GetLocalClientPlayer()
+
+	array<ItemFlavor ornull> passes
+	passes.push( GetActiveBattlePassV2() )
+
+	passes.push( PlayerPass_GetAssignedPass( localPlayer, ePassType.NEWPLAYER ) )
+	passes.push( PlayerPass_GetAssignedPass( localPlayer, ePassType.RETURNING_PLAYER ) )
+
+	if ( PlayerPass_IsPassTypeActive( localPlayer, ePassType.LEGEND ) )
+	{
+		ItemFlavor currentLegend = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_Character() )
+		array< ItemFlavor > legendPasses = PlayerPass_GetAssignedPassesOfType( localPlayer, ePassType.LEGEND )
+		foreach ( ItemFlavor legendPass in legendPasses )
+		{
+			if ( ItemFlavor_GetParentFlavor( legendPass ) != currentLegend )
+				continue 
+
+			ItemFlavor ornull legendPassOrNull = legendPass
+			passes.push( legendPassOrNull )
+		}
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelName, "RTKPostgamePassesControllerPanel_ModelStruct" )
+	rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelRootStruct, "passes", "RTKPostgamePass_Struct" )
+	RTKArray_Clear( modelArray )
+	p.animationStates.clear()
+	p.rewardsForLevels.clear()
+
+	foreach ( ItemFlavor ornull pass in passes )
+	{
+		if ( pass == null )
+		{
+			continue
+		}
+
+		expect ItemFlavor( pass )
+
+		EHI playerEHI = ToEHI( localPlayer )
+		int passType = BattlePass_GetType( pass )
+		bool hasPremiumPass = passType == ePassType.SEASONAL ? DoesPlayerOwnBattlePassTier( localPlayer, pass, eBattlePassV2OwnershipTier.PREMIUM ) : false
+		bool hasUltimatePass = passType == ePassType.SEASONAL ? DoesPlayerOwnBattlePassTier( localPlayer, pass, eBattlePassV2OwnershipTier.ULTIMATE ) : false
+		bool hasUltimatePlusPass = passType == ePassType.SEASONAL ? DoesPlayerOwnBattlePassTier( localPlayer, pass, eBattlePassV2OwnershipTier.ULTIMATE_PLUS ) : false
+		int battlepassTier = GetPlayerBattlePassTier( localPlayer, pass )
+
+		
+		
+		
+		
+		
+		
+
+		int currentXP = 0
+		int prevXP = 0
+		switch( passType )
+		{
+			case ePassType.SEASONAL:
+				currentXP = GetPlayerBattlePassXPProgress( playerEHI, pass, false )
+				prevXP    = GetPlayerBattlePassXPProgress( playerEHI, pass, true )
+				break
+
+			default:
+				currentXP = PlayerPass_GetProgress( localPlayer, pass )
+				prevXP    = PlayerPass_GetLastSeenProgress( localPlayer, pass, ePassLastSeenType.MATCH )
+		}
+
+		int newXP = currentXP - prevXP
+		int battlePassMaxLevel = BattlePass_GetPassMaxLevelIndex( pass, passType ) + 1
+		bool battlePassCompleted = IsPassComplete( pass, passType )
+
+		int XP_PER_LEVEL = 10 
+		int battlePassPrevLevel = GetPassLevelForXP( pass, prevXP, passType )
+		int battlePassCurLevel = GetPassLevelForXP( pass, currentXP, passType )
+		int battlePassNextLevel = minint( battlePassMaxLevel,  battlePassCurLevel + 1 )
+
+
+
+
+
+
+
+		if ( battlePassCurLevel == battlePassMaxLevel )
+			continue
+
+		int truncatedXP = 0
+		if ( battlePassCurLevel - battlePassPrevLevel > MAX_LEVELUPS_TO_DISPLAY )
+		{
+			printt("RTKPostgamePasses_BuildPassesData: over levelup limit", battlePassCurLevel - battlePassPrevLevel, battlePassCurLevel, battlePassPrevLevel, MAX_LEVELUPS_TO_DISPLAY)
+			int oldPrevXP = prevXP
+			prevXP = GetTotalPassXPForLevel( pass, battlePassCurLevel - MAX_LEVELUPS_TO_DISPLAY, passType )
+			truncatedXP = prevXP - oldPrevXP
+			newXP = currentXP - prevXP
+			battlePassPrevLevel = GetPassLevelForXP( pass, prevXP, passType )
+			printt("RTKPostgamePasses_BuildPassesData: new battlePassPrevLevel ", battlePassPrevLevel, prevXP, newXP)
+		}
+
+		
+		if ( newXP == 0 )
+		{
+			switch( passType )
+			{
+				case ePassType.SEASONAL:
+				case ePassType.NEWPLAYER:
+				case ePassType.RETURNING_PLAYER:
+					break
+				default:
+					continue
+			}
+		}
+
+		if ( newXP < 0 )
+		{
+			Assert( false, "This should be impossible, newXP should always be zero or positive. Outside of dev this will appear to skip to the current progress state without showing new progress." )
+			Warning("RTKPostgamePasses_BuildPassesData: newXP was negative. Outside of dev this will appear to skip to the current progress state without showing new progress.")
+			newXP = 0
+			prevXP = currentXP
+			battlePassPrevLevel = GetPassLevelForXP( pass, prevXP, passType )
+		}
+
+		RTKPostgamePass_Struct passScriptStruct
+		passScriptStruct.passIndex = RTKArray_GetCount( modelArray )
+		passScriptStruct.displayName = ItemFlavor_GetLongName( pass )
+		passScriptStruct.xpEarnedText = newXP
+		passScriptStruct.xpShortProgressText = battlePassCompleted ? Localize( "#BATTLEPASS_LEVEL_PROGRESS", XP_PER_LEVEL, XP_PER_LEVEL )
+			: Localize( "#BATTLEPASS_LEVEL_PROGRESS", (currentXP % XP_PER_LEVEL), XP_PER_LEVEL )
+		passScriptStruct.xpProgressText = battlePassCompleted ? Localize( "#BATTLEPASS_MAX_LEVEL" )
+			: Localize( "#BATTLE_STARS_TO_LEVEL_N", ( XP_PER_LEVEL - (currentXP % XP_PER_LEVEL) ), minint( GetPassDisplayLevelFromActualLevel( pass, passType, battlePassNextLevel ), battlePassMaxLevel ) )
+		passScriptStruct.prevBadgeTier = GetPassDisplayLevelFromActualLevel( pass, passType, battlePassPrevLevel )
+		passScriptStruct.badgeTier = GetPassDisplayLevelFromActualLevel( pass, passType, battlePassCurLevel )
+		passScriptStruct.xpCurrentPercent = battlePassCompleted ? 1.0 : min( 1.0, max( 0.0, (currentXP % XP_PER_LEVEL) / float( XP_PER_LEVEL ) ) )
+		passScriptStruct.xpPreviousPercent = min( 1.0, max( 0.0, (prevXP % XP_PER_LEVEL) / float( XP_PER_LEVEL ) ) )
+
+		RTKAngledProgressBarExtensions_Struct animationState
+		animationState.animate = false
+		animationState.prime = false
+		animationState.skipToEnd = false
+		animationState.startValue = float( prevXP )
+		animationState.endValue = float( currentXP )
+		animationState.minValues = []
+		animationState.maxValues = []
+
+		int xpEarnedStartValue = truncatedXP
+		int xpEarnedEndValue = truncatedXP
+		for (int k = battlePassPrevLevel; k <= battlePassNextLevel; k++)
+		{
+			bool isLastLevel = k == battlePassNextLevel - 1 || k == battlePassMaxLevel
+			bool isFirstLevel = k == battlePassPrevLevel
+
+			int minXPForLevel = GetTotalPassXPForLevel( pass, k - 1, passType )
+			int maxXPForLevel = GetTotalPassXPForLevel( pass, k, passType )
+
+			animationState.minValues.push( float( minXPForLevel ) )
+			animationState.maxValues.push( float( maxXPForLevel ) )
+
+			int xpAllocatedToThisLevel = minint(maxXPForLevel - prevXP, newXP)
+			prevXP += xpAllocatedToThisLevel
+			newXP -= xpAllocatedToThisLevel
+			xpEarnedStartValue += xpAllocatedToThisLevel
+			xpEarnedEndValue += xpAllocatedToThisLevel
+
+			void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) barMoveCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct, xpAllocatedToThisLevel, xpEarnedStartValue, xpEarnedEndValue, battlePassCompleted ) {
+				rtk_panel passTilePanel = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+				if ( animationState.startValue < animationState.endValue )
+				{
+					rtk_behavior outlineAnimator = passTilePanel.FindBehaviorInDescendantsByName("OutlineAnimator")
+					if ( outlineAnimator != null )
+					{
+						RTKAnim_SetAnimationPropertyValue( outlineAnimator, "Pulse", "duration", tween.duration )
+						RTKAnimator_PlayAnimation( outlineAnimator, "Pulse" )
+					}
+				}
+
+				if ( isFirstLevel )
+				{
+					RTKAngledProgressBarExtensions_ShowOldProgress( angledProgressBarExtensions, animationState )
+
+					rtk_behavior XPProgressRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "XPProgressRowAnimator" )
+					RTKAnimator_PlayAnimation( XPProgressRowAnimator, "AnimateOut" )
+				}
+				else
+				{
+					RTKAngledProgressBarExtensions_HideOldProgress( angledProgressBarExtensions )
+				}
+
+				rtk_behavior XPEarnedLabelAnimator = passTilePanel.FindBehaviorInDescendantsByName("XPEarnedLabelAnimator")
+				RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "duration", tween.duration )
+				RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "startValue", float( xpEarnedStartValue - xpAllocatedToThisLevel ) )
+				RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "endValue", float( xpEarnedEndValue ) )
+				RTKAnimator_PlayAnimation( XPEarnedLabelAnimator, "AnimateLabel" )
+
+				rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, modelName, true )
+				if ( modelStruct == null )
+					return
+
+				expect rtk_struct( modelStruct )
+
+				int targetLevel = ( tween.tweenIndex ) / 2
+				rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelStruct, "passes", "RTKPostgamePass_Struct" )
+				rtk_struct passStruct = RTKArray_GetStruct( modelArray, passScriptStruct.passIndex )
+				rtk_array rewardsArray = RTKStruct_GetArray( passStruct, "rewards" )
+
+				Assert( passScriptStruct.passIndex < p.rewardsForLevels.len(), "This should be impossible, there should always be rewards for passes" )
+				if ( passScriptStruct.passIndex >= p.rewardsForLevels.len() )
+				{
+					Warning("RTKPostgamePasses_BuildPassesData: passScriptStruct.passIndex invalid")
+					return
+				}
+
+				Assert( targetLevel < p.rewardsForLevels[ passScriptStruct.passIndex ].len(), "This should be impossible, there should always be rewards for upcoming levels" )
+				if ( targetLevel >= p.rewardsForLevels[ passScriptStruct.passIndex ].len() )
+				{
+					Warning("RTKPostgamePasses_BuildPassesData: targetLevel invalid")
+					return
+				}
+
+				RTKArray_SetValue( rewardsArray, p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ] )
+				int rewardCount = p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ].len()
+				if ( rewardCount > 2  )
+				{
+					RTKStruct_SetString( passStruct, "rewardText", "" )
+				} else if ( rewardCount > 1  )
+				{
+					RTKStruct_SetString( passStruct, "rewardText", Localize( "#BATTLEPASS_TRACK_NEXT" ) )
+				}
+				else
+				{
+					RTKStruct_SetString( passStruct, "rewardText", Localize( "#BATTLE_PASS_NEXT_REWARD" ) )
+				}
+
+				rtk_behavior passBadgeAnimator = passTilePanel.FindBehaviorInDescendantsByName("PassBadgeAnimator")
+				RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "duration", 0.0 )
+				RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "startValue", float( k ) )
+				RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "endValue", float( k + 1 ) )
+				RTKAnimator_PlayAnimation( passBadgeAnimator, "AnimateTier" )
+
+				EmitUISound( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+
+				if ( isLastLevel )
+				{
+					RTKStruct_SetBool( passStruct, "passIsComplete", battlePassCompleted )
+				}
+			})
+			animationState.animationStartedCallbacks.push( barMoveCallback )
+
+			void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) barMovedCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+				rtk_panel passTilePanel            = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+				if ( isLastLevel )
+				{
+					rtk_behavior XPProgressRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "XPProgressRowAnimator" )
+					RTKAnimator_PlayAnimation( XPProgressRowAnimator, "AnimateIn" )
+
+					rtk_behavior boostRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "BoostRowAnimator" )
+					RTKAnimator_PlayAnimation( boostRowAnimator, "AnimateIn" )
+				}
+				StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+			})
+			animationState.animationFinishedCallbacks.push( barMovedCallback )
+
+			void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) levelupCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+				RTKAngledProgressBarExtensions_HideOldProgress( angledProgressBarExtensions )
+
+				rtk_panel passTilePanel = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+
+				rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, modelName, true )
+				if ( modelStruct == null )
+					return
+
+				expect rtk_struct( modelStruct )
+
+				int targetLevel = ( tween.tweenIndex - 1) / 2
+				rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelStruct, "passes", "RTKPostgamePass_Struct" )
+				rtk_struct passStruct = RTKArray_GetStruct( modelArray, passScriptStruct.passIndex )
+				rtk_array rewardsArray = RTKStruct_GetArray( passStruct, "rewards" )
+				for ( int j = 0; j < p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ].len(); j++ )
+				{
+					p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ][j].checked = !p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ][j].locked
+				}
+				RTKArray_SetValue( rewardsArray, p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ] )
+
+				rtk_behavior outlineLevelUpAnimator = passTilePanel.FindBehaviorInDescendantsByName("OutlineLevelUpAnimator")
+				if ( outlineLevelUpAnimator != null )
+				{
+					RTKAnim_SetAnimationPropertyValue( outlineLevelUpAnimator, "Pulse", "duration", tween.duration * 0.5 )
+					RTKAnimator_PlayAnimation( outlineLevelUpAnimator, "Pulse" )
+				}
+
+				EmitUISound( "UI_Menu_MatchSummary_LevelUp_BattlePass" )
+			})
+			animationState.animationStartedCallbacks.push( levelupCallback )
+
+			void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) leveledupCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+				
+			})
+			animationState.animationFinishedCallbacks.push( leveledupCallback )
+		}
+
+		
+		
+
+		
+		p.animationStates.push( animationState )
+
+		switch( passType )
+		{
+			case ePassType.SEASONAL:
+				passScriptStruct.xpEarnedExplainationText = Localize( "#BATTLE_PASS_STARS_EARNED" )
+				passScriptStruct.ownershipTier = battlepassTier
+				passScriptStruct.ownershipTierAsset = $"ui_image/rui/menu/postgame/postmatch_panel_top_right.rpak"
+				passScriptStruct.ownershipName = hasUltimatePlusPass ? Localize("#BATTLEPASS_ULTIMATE_PLUS")
+					: hasUltimatePass ? Localize("#BATTLEPASS_ULTIMATE")
+					: hasPremiumPass ? Localize("#BATTLEPASS_PREMIUM")
+					: Localize("#BATTLEPASS_FREE")
+				passScriptStruct.xpAssetPath = $"ui_image/rui/menu/buttons/favorite_star.rpak"
+				passScriptStruct.xpAssetHeight = 24
+				passScriptStruct.xpAssetWidth = 24
+				ItemFlavor bpLevelBadge = GetBattlePassProgressBadge( pass )
+				GladCardBadgeDisplayData gcbdd = GetBadgeData( playerEHI, null, 0, bpLevelBadge, passScriptStruct.badgeTier, false )
+				if ( gcbdd.ruiAsset == $"" )
+				{
+					gcbdd.ruiAsset = $"ui/gcard_badge_basic.rpak"
+					gcbdd.imageAsset = $"rui/gladiator_cards/badge_empty"
+				}
+				passScriptStruct.badgeAssetPath = gcbdd.ruiAsset
+
+				BoostTable boosts = Boost_GetPreviousAppliedBoosts( GetLocalClientPlayer() )
+				bool hasPassBoost = Boost_GetBoostEventQuantityFromCategory( eBoostCategory.BP_STARS, boosts ) > 0
+				passScriptStruct.boostProgressTitle = hasPassBoost ? Localize( "#DEATH_SCREEN_BOOSTED" ) : ""
+				passScriptStruct.boostProgressText = hasPassBoost ? PostGame_GetFormatedTooltipDescriptionFromActiveBoosts( boosts, eBoostCategory.BP_STARS ) : ""
+				passScriptStruct.boostAssetPath = PostGame_GetIconFromActiveBoosts( boosts, eBoostCategory.BP_STARS )
+				break
+
+			case ePassType.RETURNING_PLAYER:
+			case ePassType.NEWPLAYER:
+				passScriptStruct.xpEarnedExplainationText = Localize( "#NEWPLAYERPASS_STARS_EARNED" )
+				passScriptStruct.ownershipName = ""
+				passScriptStruct.xpAssetPath = $"ui_image/rui/menu/battlepass/newplayerpass/npp_points_icon.rpak"
+				passScriptStruct.xpAssetHeight = 24
+				passScriptStruct.xpAssetWidth = 17.6
+				passScriptStruct.badgeSubstituteAssetPath = $"ui_image/rui/events/new_player_pass01/gcard_badge_account_beginner_challenge.rpak"
+
+				passScriptStruct.xpProgressText = battlePassCompleted ? "#BATTLEPASS_MAX_LEVEL"
+				: Localize( "#NEWPLAYERPASS_CARD_TO_LEVEL_N", minint( GetPassDisplayLevelFromActualLevel( pass, passType, battlePassNextLevel ), battlePassMaxLevel ) )
+
+				int cardsToNextLevel = ( XP_PER_LEVEL - (currentXP % XP_PER_LEVEL) )
+				if( cardsToNextLevel > 1 )
+				{
+					passScriptStruct.xpProgressText = battlePassCompleted ? "#BATTLEPASS_MAX_LEVEL"
+					: Localize( "#NEWPLAYERPASS_CARDS_TO_LEVEL_N", ( XP_PER_LEVEL - (currentXP % XP_PER_LEVEL) ), minint( GetPassDisplayLevelFromActualLevel( pass, passType, battlePassNextLevel ), battlePassMaxLevel ) )
+				}
+				break
+
+
+			case ePassType.LEGEND:
+				ItemFlavor parentLegend = expect ItemFlavor( ItemFlavor_GetParentFlavor( pass ) )
+
+				passScriptStruct.xpEarnedExplainationText = Localize( "#LEGENDPASS_XP_EARNED" )
+				passScriptStruct.ownershipName = ""
+				passScriptStruct.xpAssetPath = $"ui_image/rui/menu/battlepass/legendpass/lps_currency_icon.rpak"
+				passScriptStruct.xpAssetHeight = 24
+				passScriptStruct.xpAssetWidth = 24
+				passScriptStruct.badgeSubstituteAssetPath = ItemFlavor_GetIcon( parentLegend )
+				passScriptStruct.fitImage = true
+				passScriptStruct.xpProgressText = battlePassCompleted ? "#BATTLEPASS_MAX_LEVEL"
+					: Localize( "#LEGENDPASS_XP_TO_LEVEL_N", ( XP_PER_LEVEL - (currentXP % XP_PER_LEVEL) ), minint( GetPassDisplayLevelFromActualLevel( pass, passType, battlePassNextLevel ), battlePassMaxLevel ) )
+				break
+
+
+			default:
+				passScriptStruct.xpEarnedExplainationText = ""
+				passScriptStruct.ownershipName = ""
+				passScriptStruct.xpAssetPath = $""
+				passScriptStruct.badgeSubstituteAssetPath = $""
+		}
+
+		p.rewardsForLevels.push([]) 
+
+		for (int targetLevel = battlePassPrevLevel + 1; targetLevel <= battlePassNextLevel + 1; targetLevel++)
+		{
+			array< RTKBrowseLootPoolItem > rewardsForLevel
+
+			
+			array<BattlePassReward> rewards
+			for ( int potentialRewardTier = minint( battlepassTier, eBattlePassV2RewardTier.ULTIMATE_PLUS); potentialRewardTier >= eBattlePassV2RewardTier.FREE; potentialRewardTier-- )
+			{
+				rewards.extend( GetBattlePassV2Rewards(
+					pass,
+					targetLevel,
+					potentialRewardTier,
+					localPlayer,
+					false
+				) )
+			}
+
+			
+			for ( int potentialRewardTier = eBattlePassV2RewardTier.ULTIMATE_PLUS; potentialRewardTier >= eBattlePassV2RewardTier.FREE && rewards.len() < 1; potentialRewardTier-- )
+			{
+				rewards.extend( GetBattlePassV2Rewards(
+					pass,
+					targetLevel,
+					potentialRewardTier,
+					localPlayer,
+					false
+				) )
+			}
+
+			if ( rewards.len() > 2  )
+			{
+				rewards = [ rewards[0], rewards[1], rewards[2] ]
+				passScriptStruct.rewardText = "" 
+			} else if ( rewards.len() > 1  )
+			{
+				rewards = [ rewards[0], rewards[1] ]
+				passScriptStruct.rewardText = Localize( "#BATTLEPASS_TRACK_NEXT" )
+			}
+			else
+			{
+				passScriptStruct.rewardText = Localize( "#BATTLE_PASS_NEXT_REWARD" )
+			}
+
+			foreach( int rewardIndex, BattlePassReward bpReward in rewards )
+			{
+				CheckForBattlePassRewardPlaylistOverrides( bpReward, pass, targetLevel )
+				int originalGUID = ItemFlavor_GetGUID( bpReward.flav )
+				SubstituteBattlePassRewardsForUserRestrictions( localPlayer, bpReward )
+
+				int itemType = ItemFlavor_GetType( bpReward.flav )
+				asset prizeImage
+				if ( ItemFlavor_GetGUID( bpReward.flav ) == originalGUID )
+				{
+					prizeImage = ItemFlavor_GetBattlepassIcon( bpReward.flav )
+					if ( bpReward.iconOverride == $"" )
+					{
+						prizeImage = GetGlobalSettingsAsset( ItemFlavor_GetAsset( bpReward.flav ), "icon" )
+					}
+				}
+				else if ( itemType == eItemType.account_currency || itemType == eItemType.account_currency_bundle ) 
+				{
+					prizeImage = $"rui/menu/common/currency_crafting"
+				}
+
+				if ( prizeImage == $"" )
+				{
+					prizeImage = CustomizeMenu_GetRewardButtonImage( bpReward.flav )
+				}
+
+				bool canOwn = (
+								(( bpReward.bpRewardTier == eBattlePassV2RewardTier.PREMIUM ) && hasPremiumPass) ||
+								(( bpReward.bpRewardTier == eBattlePassV2RewardTier.ULTIMATE_PLUS ) && hasUltimatePlusPass) ||
+								( bpReward.bpRewardTier == eBattlePassV2RewardTier.FREE )
+						)
+				RTKBrowseLootPoolItem itemStruct
+				itemStruct.checked = false
+				itemStruct.locked = !canOwn
+				itemStruct.isFeaturedItem = false
+				itemStruct.image = prizeImage
+				itemStruct.quality = ItemFlavor_GetQuality( bpReward.flav )
+				itemStruct.frameColor = GetBattlepassRarityColor( itemStruct.quality, true )
+				itemStruct.backgroundColor = GetBattlepassRarityColor( itemStruct.quality, false )
+				itemStruct.eventImage = ItemFlavor_GetSourceIcon( bpReward.flav )
+				itemStruct.quantity = 1
+
+				if ( ItemFlavor_GetType( bpReward.flav ) == eItemType.account_currency_bundle )
+				{
+					itemStruct.quantity = GRXCurrencyBundle_GetValue( bpReward.flav )
+				}
+
+				rewardsForLevel.push( itemStruct )
+			}
+
+			p.rewardsForLevels[ passScriptStruct.passIndex ].push( rewardsForLevel )
+
+			passScriptStruct.rewards = rewardsForLevel
+		}
+
+		rtk_struct newModelStruct = RTKArray_PushNewStruct( modelArray )
+		RTKStruct_SetValue( newModelStruct, passScriptStruct )
+
+		if ( p.rewardsForLevels[ passScriptStruct.passIndex ].len() > 0 )
+		{
+			rtk_struct passStruct = RTKArray_GetStruct( modelArray, passScriptStruct.passIndex )
+			rtk_array rewardsArray = RTKStruct_GetArray( passStruct, "rewards" )
+			RTKArray_SetValue( rewardsArray, p.rewardsForLevels[ passScriptStruct.passIndex ][ 0 ] )
+		}
+	}
+
+	int passCount = RTKArray_GetCount( modelArray )
+	RTKStruct_SetBool( modelRootStruct, "showNavigationPips", passCount <= 10 )
+	RTKStruct_SetBool( modelRootStruct, "shrinkNavigationPips", passCount > 4 )
+	RTKStruct_SetBool( modelRootStruct, "showNavigationArrows", passCount > 10 )
+	RTKStruct_SetInt( modelRootStruct, "passCount", passCount )
+}
+
+bool function CheckAddChallengeToModelArray( rtk_array targetArray, ItemFlavor challengeFlav, table<int, bool> challengesTracker, int maxChallengesInArray = MAX_PROGRESSED_CHALLENGES, bool allowComplete = true, bool onlyWithProgress = false )
+{
+	if ( RTKArray_GetCount( targetArray ) >= maxChallengesInArray )
+	{
+		return false
+	}
+
+	if ( !Challenge_IsAssigned( GetLocalClientPlayer(), challengeFlav ) )
+		return true
+
+	if ( !allowComplete )
+	{
+		if ( Challenge_IsComplete( GetLocalClientPlayer(), challengeFlav ) )
+			return true
+
+		
+		if ( Challenge_GetProgressPercent( GetLocalClientPlayer(), challengeFlav, Challenge_GetCurrentTier( GetLocalClientPlayer(), challengeFlav )  ) >= 1.0 )
+			return true
+
+		
+		if ( Challenge_IsEitherOr( challengeFlav ) )
+		{
+			return true
+		}
+
+		if ( Challenge_LastTierIsInfinite( challengeFlav ) )
+			return true
+
+		if ( Challenge_IsMetaChallenge( challengeFlav ) )
+			return true
+	}
+
+	if ( onlyWithProgress )
+	{
+		if ( Challenge_GetProgressValue( GetLocalClientPlayer(), challengeFlav, Challenge_GetCurrentTier( GetLocalClientPlayer(), challengeFlav ) ) <= 0 )
+			return true
+	}
+
+	if ( CheckForRepeatedChallenges(challengeFlav.guid, challengesTracker) )
+		return true
+
+	ChallengeBlock block 
+	rtk_struct newChallengeStruct = RTKArray_PushNewStruct( targetArray )
+	RTKChallengesPanel_BuildBaseChallengeListItemInfo( newChallengeStruct, challengeFlav, block )
+
+	int challengeListType = RTKChallenges_GetChallengeListItemButtonDisplayType( challengeFlav )
+	if ( challengeListType != eChallengeListItemButtonType.BASIC && challengeListType != eChallengeListItemButtonType.META )
+	{
+		rtk_struct challengeStruct = RTKStruct_AddStructProperty( newChallengeStruct, "individualData", RTKChallenges_GetChallengeDataModelStructName( challengeListType ) )
+		RTKChallengesPanel_BuildIndividualChallengeListItemInfo( challengeStruct, challengeFlav )
+	}
+
+	return true
+}
+
+bool function AddChallengesForTimespanToModelArray( int timeSpan,  rtk_array targetArray, table<int, bool> challengesTracker, int maxChallengesInArray = MAX_PROGRESSED_CHALLENGES, bool allowComplete = true, bool onlyWithProgress = false )
+{
+	array<ItemFlavor> allChallengeFlavs
+
+	if ( timeSpan == eChallengeTimeSpanKind.SEASON_WEEKLY )
+	{
+		for ( int i = 1 ; i < NUM_CHALLENGE_WEEKS_MAX ; i++ )
+		{
+			allChallengeFlavs = GetAssignedChallengesByTimeSpan( GetLocalClientPlayer(), timeSpan, i )
+		}
+	}
+	else
+	{
+		allChallengeFlavs = GetAssignedChallengesByTimeSpan( GetLocalClientPlayer(), timeSpan )
+	}
+
+	foreach ( int i, ItemFlavor challengeFlav in allChallengeFlavs )
+	{
+		if ( !CheckAddChallengeToModelArray( targetArray, challengeFlav, challengesTracker, maxChallengesInArray, allowComplete, onlyWithProgress ) )
+			return false
+	}
+	return true
+}
+
+void function RTKPostgamePasses_BuildChallengesData( rtk_behavior self )
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelName, "RTKPostgamePassesControllerPanel_ModelStruct" )
+	rtk_array challengesProgressedArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelRootStruct, "challengesProgressed", "RTKChallengeItemModel" )
+	rtk_array challengesSuggestedArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelRootStruct, "challengesSuggested", "RTKChallengeItemModel" )
+	RTKArray_Clear( challengesProgressedArray )
+	RTKArray_Clear( challengesSuggestedArray )
+
+	entity localPlayer = GetLocalClientPlayer()
+	table<int, bool> challengesTracker
+
+	
+	array<ChallengeProgressData> challengeNewProgressDataArray = GetPlayerChallengesWithNewProgress( localPlayer, true, false )
+	foreach ( ChallengeProgressData baseChallengeData in challengeNewProgressDataArray )
+	{
+		array<ChallengeProgressData> groupArray = [baseChallengeData]
+		bool grouped                            = baseChallengeData.groupArray.len() != 0
+		if ( grouped )
+			groupArray.extend( baseChallengeData.groupArray )
+
+		foreach ( int index, ChallengeProgressData challengeData in groupArray )
+		{
+			if ( !CheckAddChallengeToModelArray( challengesProgressedArray, challengeData.challengeFlav, challengesTracker, MAX_PROGRESSED_CHALLENGES, true ) )
+				break
+		}
+	}
+
+	
+	ItemFlavor ornull activeBattlePass = GetActiveBattlePassV2()
+	if ( activeBattlePass != null )
+	{
+		expect ItemFlavor( activeBattlePass )
+
+		ItemFlavor ornull grindChallenge = GetBattlePassRecurringGrindlordChallenge( activeBattlePass )
+		if ( grindChallenge != null )
+			CheckAddChallengeToModelArray( challengesProgressedArray, expect ItemFlavor(grindChallenge), challengesTracker, MAX_PROGRESSED_CHALLENGES, true )
+	}
+
+	
+	array<ItemFlavor> favChallengesFlavs = GetFavoriteChallenges( GetLocalClientPlayer() )
+	foreach ( int i, ItemFlavor challengeFlav in favChallengesFlavs )
+	{
+		if ( !CheckAddChallengeToModelArray( challengesSuggestedArray, challengeFlav, challengesTracker, MAX_SUGGESTED_CHALLENGES, false ) )
+			break
+	}
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	ItemFlavor ornull currentEventShop = EventShop_GetCurrentActiveEventShop()
+	if ( currentEventShop != null )
+	{
+		array< ItemFlavor > currentAssignedDailyEventShopChallenges = GetAssignedChallengesByTimeSpan( localPlayer, eChallengeTimeSpanKind.EVENTSHOP_DAILY_CHALLENGE, -1, currentEventShop )
+
+		foreach ( ItemFlavor challenge in currentAssignedDailyEventShopChallenges )
+		{
+			if ( !CheckAddChallengeToModelArray( challengesSuggestedArray, challenge, challengesTracker, MAX_SUGGESTED_CHALLENGES, false ) )
+				break
+		}
+	}
+
+	
+	array<ItemFlavor> rewardCampaignChallenges = RewardCampaign_GetCurrentTempUnlockChallenges( localPlayer )
+	foreach ( ItemFlavor challenge in rewardCampaignChallenges )
+	{
+		if ( !CheckAddChallengeToModelArray( challengesSuggestedArray, challenge, challengesTracker, MAX_SUGGESTED_CHALLENGES, false ) )
+			break
+	}
+
+	array<int> timeSpans = []
+
+	if ( PlayerPass_GetAssignedPass( GetLocalClientPlayer(), ePassType.NEWPLAYER ) != null )
+		timeSpans.push( eChallengeTimeSpanKind.BEGINNER )
+
+	if ( PlayerPass_GetAssignedPass( GetLocalClientPlayer(), ePassType.RETURNING_PLAYER ) != null  )
+	{
+		timeSpans.push( eChallengeTimeSpanKind.RETURNING_PLAYER )
+	}
+
+
+	if ( PlayerPass_IsPassTypeActive( GetLocalClientPlayer(), ePassType.LEGEND ) )
+	{
+		timeSpans.push( eChallengeTimeSpanKind.PLAYER_PASS )
+	}
+
+
+	timeSpans.extend([
+		eChallengeTimeSpanKind.MYTHIC,
+		eChallengeTimeSpanKind.DAILY,
+		eChallengeTimeSpanKind.SEASON_WEEKLY_RECURRING,
+		eChallengeTimeSpanKind.SEASON_WEEKLY
+	])
+
+	
+	foreach ( int timeSpan in timeSpans )
+	{
+		if ( !AddChallengesForTimespanToModelArray( timeSpan, challengesSuggestedArray, challengesTracker, MAX_SUGGESTED_CHALLENGES, false, true ) )
+			break
+	}
+
+	
+	foreach ( int timeSpan in timeSpans )
+	{
+		if ( !AddChallengesForTimespanToModelArray( timeSpan,  challengesSuggestedArray, challengesTracker, MAX_SUGGESTED_CHALLENGES, false, false ) )
+			break
+	}
+}
+
+bool function CheckForRepeatedChallenges(int challengeId, table<int, bool> idToRepeatedChallenge)
+{
+	bool isRepeatedChallenge = challengeId in idToRepeatedChallenge
+	if (!isRepeatedChallenge)
+	{
+		idToRepeatedChallenge[challengeId] <- true
+		return false
+	}
+	return true
+}
+
+void function RTKPostgamePasses_BuildTrialsData(  rtk_behavior self, rtk_struct postGameWeaponModel  )
+{
+	rtk_array allWeaponsAllTrialsArray = RTKStruct_GetOrCreateScriptArrayOfStructs( postGameWeaponModel, "allWeaponsAllTrials", "MasteryWeapon_TrialQueryResult" )
+	RTKArray_Clear( allWeaponsAllTrialsArray )
+	table<ItemFlavor, MasteryWeapon_MatchTrialPerWeapon>  matchTrialResult = Mastery_GetPreviousMatchTrialUpdates()
+	array<PostGameWeaponMasteryTrialsChangedModel> changedTrials           = []
+	array<MasteryWeapon_TrialQueryResult> ornull allTrials                 = []
+
+	foreach ( weapon, matchTrial in matchTrialResult )
+	{
+		PostGameWeaponMasteryTrialsChangedModel weaponTrials
+
+		weaponTrials.id = WeaponItemFlavor_GetClassname( weapon )
+		weaponTrials.totalUpdated = matchTrial.changedTrialList.len()
+		weaponTrials.icon = WeaponItemFlavor_GetHudIcon( weapon )
+		weaponTrials.name = ItemFlavor_GetShortName( weapon )
+
+		weaponTrials.changedTrials = matchTrial.changedTrialList
+
+		
+		matchTrial.changedTrialList.sort( PostGame_SortChangedTrial )
+
+		
+		int rewardsRecieved = 0
+		foreach( trial in matchTrial.changedTrialList )
+		{
+			if( trial.isComplete )
+				rewardsRecieved += trial.trialConfig.rewards.len()
+
+			MasteryWeapon_TrialQueryResult queryResult
+			queryResult.trialConfig = trial.trialConfig
+			queryResult.trialData.currentValue = trial.currentValue
+			queryResult.trialData.isCompleted = trial.isComplete
+			queryResult.trialData.isUnlocked = true
+
+			foreach( reward in queryResult.trialConfig.rewards )
+			{
+				MasteryReward masteryReward = clone( reward )
+				masteryReward.isOwned = queryResult.trialData.isCompleted
+				masteryReward.isTall = false
+				queryResult.rewards.append( masteryReward )
+			}
+
+			rtk_struct newStruct = RTKArray_PushNewStruct( allWeaponsAllTrialsArray )
+			RTKStruct_SetValue( newStruct, queryResult )
+		}
+		weaponTrials.totalRewards = rewardsRecieved
+
+		
+		allTrials = Mastery_GetWeaponTrialList( weapon )
+		if( allTrials != null )
+		{
+			expect array<MasteryWeapon_TrialQueryResult>( allTrials )
+			allTrials.sort( Mastery_SortTrialQueryResult )
+
+			int totalCompleted = 0
+			int totalUnlocked = 0
+
+			foreach( MasteryWeapon_TrialQueryResult trial in allTrials )
+			{
+				if( trial.trialData.isCompleted )
+					totalCompleted++
+
+				if( trial.trialData.isUnlocked )
+					totalUnlocked++
+
+				foreach( MasteryWeapon_ChangedTrial changedTrial in matchTrial.changedTrialList )
+				{
+					if ( changedTrial.trialConfig.name != trial.trialConfig.name )
+						continue
+
+					trial.trialData.currentValue = maxint( trial.trialData.currentValue, changedTrial.currentValue )
+					if ( changedTrial.isComplete )
+						trial.trialData.isCompleted = true
+				}
+			}
+			weaponTrials.trialsCompleted = totalCompleted
+			weaponTrials.trialsUnlocked = totalUnlocked
+
+			weaponTrials.allTrials = allTrials
+		}
+
+		weaponTrials.totalTrials = weaponTrials.allTrials.len()
+		weaponTrials.tooltipTitle = Localize( "#MASTERY_WEAPONS_TRIALS_TOOLTIP", Localize( weaponTrials.name ), weaponTrials.trialsCompleted, weaponTrials.totalTrials )
+
+		changedTrials.push( weaponTrials )
+	}
+
+	rtk_array postGameTrialsModel = RTKStruct_GetOrCreateScriptArrayOfStructs( postGameWeaponModel, "trials", "PostGameWeaponMasteryTrialsChangedModel" )
+	RTKArray_SetValue( postGameTrialsModel, changedTrials )
+
+	rtk_struct overviewStruct = RTKStruct_GetOrCreateScriptStruct( postGameWeaponModel, "overview", "PostGameWeaponMasteryModel" )
+	RTKStruct_SetBool( overviewStruct, "hasTrialChanges", changedTrials.len() > 0 )
+}
+
+int function PostGame_SortChangedTrial( MasteryWeapon_ChangedTrial a, MasteryWeapon_ChangedTrial b )
+{
+	if ( a.isComplete && !b.isComplete )
+		return -1
+	if ( b.isComplete && !a.isComplete )
+		return 1
+
+	int aChange = a.currentValue - a.lastValue
+	int bChange = b.currentValue - b.lastValue
+
+	if ( aChange < bChange )
+		return -1
+	if ( bChange < aChange )
+		return 1
+
+	return 0
+}
+
+string function PostGame_GetFormatedTooltipDescriptionFromActiveBoosts( BoostTable boosts, int boostType )
+{
+	string formatedString = ""
+	int idx = 0
+	foreach ( Boost boost in boosts )
+	{
+		idx++
+		if ( boost.boostCategory == boostType )
+		{
+			formatedString += Localize( boost.boostDescriptionShort )
+			if ( idx < boosts.len() )
+				formatedString += "\n"
+		}
+	}
+	return formatedString
+}
+
+asset function PostGame_GetIconFromActiveBoosts( BoostTable boosts, int boostType )
+{
+	foreach ( Boost boost in boosts )
+	{
+		if ( boost.boostCategory == boostType && boost.uiBadgeIconSmall != $"" )
+		{
+			return boost.uiBadgeIconSmall
+		}
+	}
+	return $"ui_image/rui/menu/buttons/battlepass/battlepass_new/bp2_reward_xp_boost.rpak"
+}

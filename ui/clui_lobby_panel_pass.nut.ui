@@ -1,0 +1,3808 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function InitBattlepassPanel
+global function InitNewplayerpassPanel
+global function InitReturningplayerpassPanel
+
+
+global function InitLegendpassPanel
+
+
+global function GetLoadscreenPreviewBox
+
+global function InitPassPurchaseMenu
+
+global function TryDisplayBattlePassAwards
+
+global function Battlepass_ShouldShowLow
+
+global function BattlePass_PopulateRewardButton
+global function BattlePass_PopulateGenericItemButton
+global function BattlePass_SetRewardButtonIconSettings
+global function BattlePass_SetUnlockedString
+
+global function ServerCallback_GotBPFromPremier
+
+global function GetBattlePassRewardHeaderText
+global function GetBattlePassRewardItemName
+
+global function BattlePass_PurchaseButton_OnActivate
+global function BattlePass_Purchase
+global function ShouldDisplayTallButton
+global function GetCharacterIconToDisplay
+global function BattlePass_OpenBoostedBreakdown
+
+
+
+global function Season_GetLongName
+global function Season_GetShortName
+global function Season_GetTimeRemainingText
+global function Season_GetSmallLogo
+global function Season_GetSmallLogoBg
+global function Season_GetLobbyBannerLeftImage
+global function Season_GetLobbyBannerLeftImageCapstone
+global function Season_GetLobbyBannerRightImage
+global function Season_GetLobbyBannerRightImageCapstone
+
+global function Season_GetLobbyLogoCaptsoneOffset
+global function Season_GetLobbyLogoCaptsoneScale
+
+global function Season_GetTitleTextColor
+global function Season_GetHeaderTextColor
+global function Season_GetTimeRemainingTextColor
+global function Season_GetNewColor
+global function Season_GetColor
+
+global function Season_GetTabBarFocusedCol
+global function Season_GetTabBarSelectedCol
+global function Season_GetTabBGFocusedCol
+global function Season_GetTabBGSelectedCol
+global function Season_GetTabTextDefaultCol
+global function Season_GetTabTextFocusedCol
+global function Season_GetTabTextSelectedCol
+global function Season_GetTabGlowFocusedCol
+
+global function Season_GetSubTabBarFocusedCol
+global function Season_GetSubTabBarSelectedCol
+global function Season_GetSubTabBGFocusedCol
+global function Season_GetSubTabBGSelectedCol
+global function Season_GetSubTabTextDefaultCol
+global function Season_GetSubTabTextFocusedCol
+global function Season_GetSubTabTextSelectedCol
+global function Season_GetSubTabGlowFocusedCol
+
+
+
+
+
+
+
+struct BattlePassPageData
+{
+	int startLevel
+	int endLevel
+}
+
+struct ItemPresentationItemPositionData
+{
+	vector offset = < 0,0,0 >
+	float scale = 1.0
+	bool showEmoteBase = true
+	bool showAnimationOnly = false
+}
+
+
+
+
+
+global const string FEATURE_EVENT_BOOSTED_TUTORIAL = "eventboosted"
+
+struct FileStruct_LifetimeLevel
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		int numCraftingMetalsInBattlePass = 0
+		int numApexCoinsInBattlePass = 0
+		bool isPremiumPassPurchasable = false
+		bool isBundlePassPurchasable = false
+
+	table signalDummy
+	int   videoChannel = -1
+}
+FileStruct_LifetimeLevel& fileLevel
+
+
+
+const float CURSOR_DELAY_BASE = 0.3
+const float CURSOR_DELAY_MED = 0.3
+const float CURSOR_DELAY_FAST = 0.1
+
+const int numBattlePassBulletPoints = 16
+
+global struct RewardGroup
+{
+	int                     level
+	array<BattlePassReward> rewards
+}
+struct RewardButtonData
+{
+	var               button
+	var               footer
+	int               rewardGroupSubIdx
+	RewardGroup&      rewardGroup
+	int               rewardSubIdx
+	BattlePassReward& bpReward
+}
+
+
+struct
+{
+
+		var loadscreenPreviewBox
+
+
+} file
+
+
+const int MAX_LEVELS_PER_PAGE = 8
+const int REWARDS_PER_PAGE = 9
+
+
+const vector BATTLEPASS_WEAPON_SKIN_LOCAL_ANGLES = <5, -45, 0>
+const vector BATTLEPASS_WEAPON_OFFSET = <0, 0, 29.0>
+
+
+
+
+
+
+
+void function InitBattlepassPanel( var panel )
+{
+	RegisterSignal( "KillTryDisplayBattlePassAwards" )
+	file.loadscreenPreviewBox = Hud_GetChild( panel, "LoadscreenPreviewBox" )
+	RTKBattlepass_InitializeMenuPanel( panel, ePassType.SEASONAL )
+}
+
+void function InitNewplayerpassPanel( var panel )
+{
+	RTKBattlepass_InitializeMenuPanel( panel, ePassType.NEWPLAYER )
+}
+
+void function InitReturningplayerpassPanel( var panel )
+{
+	RTKBattlepass_InitializeMenuPanel( panel, ePassType.RETURNING_PLAYER )
+}
+
+
+void function InitLegendpassPanel( var panel )
+{
+	RTKBattlepass_InitializeMenuPanel( panel, ePassType.LEGEND )
+}
+
+
+var function GetLoadscreenPreviewBox()
+{
+	return file.loadscreenPreviewBox
+}
+
+void function BattlePass_PopulateRewardButton( BattlePassReward bpReward, var rewardButton, bool isOwned, bool canUseTallButton, var ruiOverride = null, bool showWeaponRender = false )
+{
+	var btnRui
+	if ( rewardButton != null )
+		btnRui = Hud_GetRui( rewardButton )
+	if ( ruiOverride != null )
+		btnRui = ruiOverride
+
+	Assert( btnRui != null )
+
+	RuiSetBool( btnRui, "isOwned", isOwned )
+	RuiSetBool( btnRui, "isPremium", bpReward.isPremium )
+
+	int itemType = ItemFlavor_GetType( bpReward.flav )
+	int rarity = maxint( 0, ItemFlavor_GetQuality( bpReward.flav ) ) 
+	if( itemType == eItemType.emote_icon ) 
+		rarity = 0
+
+	int frameRarity = GRX_GetRarityOverrideFromQuantity( bpReward.flav, maxint( 0, ItemFlavor_GetQuality( bpReward.flav ) ), bpReward.quantity ) 
+	RuiSetIntIfExists( btnRui, "frameRarity", frameRarity )
+	RuiSetInt( btnRui, "rarity", rarity )
+
+	asset rewardImage = ItemFlavor_GetBattlepassRewardButtonImage( bpReward.flav )
+	RuiSetImage( btnRui, "buttonImage", rewardImage )
+	if ( RuiHasFloat2Arg( btnRui, "fullIconSize") )
+	{
+		RuiSetFloat2( btnRui, "fullIconSize", GetImageSize( rewardImage ) )
+	}
+	if ( RuiHasBoolArg( btnRui, "showWeaponRender") )
+	{
+		RuiSetBool( btnRui, "showWeaponRender", showWeaponRender )
+	}
+	
+	RuiSetImage( btnRui, "buttonImageSecondLayer", $"" )
+	RuiSetFloat2( btnRui, "buttonImageSecondLayerOffset", <0.0, 0.0, 0.0> )
+
+
+
+	if ( itemType == eItemType.account_pack )
+		RuiSetBool( btnRui, "isLootBox", true )
+	else
+		RuiSetBool( btnRui, "isLootBox", false )
+
+	RuiSetString( btnRui, "itemCountString", "" )
+	if ( itemType == eItemType.account_currency )
+	{
+		RuiSetString( btnRui, "itemCountString", FormatAndLocalizeNumber( "1", float( bpReward.quantity ), true ) )
+	}
+	else if ( itemType == eItemType.account_pack )
+	{
+		if( float( bpReward.quantity ) > 1.0 )
+			RuiSetString( btnRui, "itemCountString", FormatAndLocalizeNumber( "1", float( bpReward.quantity ), true ) )
+	}
+
+	RuiSetInt( btnRui, "bpLevel", bpReward.level )
+	RuiSetBool( btnRui, "isRewardBar", false )
+	RuiSetBool( btnRui, "showCharacterIcon", false )
+
+	if ( GRX_IsInventoryReady() )
+	{
+		ItemFlavor ornull activeBattlePass = GetActiveBattlePass()
+
+		if( activeBattlePass != null  )
+		{
+			expect ItemFlavor( activeBattlePass )
+			bool hasPremiumPass = DoesPlayerOwnBattlePass( GetLocalClientPlayer(), activeBattlePass )
+			RuiSetBool( btnRui, "isPremiumBPOwned", hasPremiumPass )
+		}
+	}
+
+	BattlePass_SetRewardButtonIconSettings( bpReward.flav, btnRui, rewardButton, canUseTallButton, showWeaponRender )
+
+	RuiSetBool( btnRui, "forceShowRarityBG", ShouldForceShowRarityBG( bpReward.flav ) )
+
+	if ( rewardButton != null )
+		Hud_Show( rewardButton )
+}
+
+void function BattlePass_PopulateGenericItemButton( BattlePassReward bpReward, var rewardButton, bool isOwned = false )
+{
+	var btnRui
+	if ( rewardButton == null )
+		return
+
+	btnRui = Hud_GetRui( rewardButton )
+	asset rewardIcon = ItemFlavor_GetBattlepassRewardButtonImage( bpReward.flav )
+	int quantity = bpReward.quantity
+	if (  ItemFlavor_GetType( bpReward.flav ) == eItemType.voucher && quantity <= 1 && Voucher_GetEffectBattlepassStars( bpReward.flav ) > 0 )
+	{
+		quantity = Voucher_GetEffectBattlepassStars( bpReward.flav )
+	}
+	int itemTier = GRX_GetRarityOverrideFromQuantity( bpReward.flav, ItemFlavor_GetQuality( bpReward.flav, 0 ), quantity ) 
+
+	RuiSetFloat2( btnRui, "customIconAspectRatio", GetImageSize( rewardIcon ) )
+	RuiSetImage( btnRui, "icon", rewardIcon )
+	RuiSetInt( btnRui, "itemTier", itemTier )
+	RuiSetInt( btnRui, "quantity", quantity )
+	RuiSetBool( btnRui, "isChecked", isOwned )
+}
+
+void function BattlePass_ForceFullIconForWeaponSkin( ItemFlavor flav, var btnRui, bool useTallButton, asset rewardImage )
+{
+	asset weaponIcon = WeaponItemFlavor_GetHudIcon( WeaponSkin_GetWeaponFlavor( flav ) )
+	RuiSetBool( btnRui, "showCharacterIcon", weaponIcon != $"" )
+	RuiSetImage( btnRui, "characterIcon", weaponIcon )
+
+	RuiSetBool( btnRui, "forceFullIcon", true )
+	RuiSetFloat2( btnRui, "characterIconSize", <60, 30, 0> )
+
+	if ( !useTallButton )
+	{
+		
+		
+		RuiSetImage( btnRui, "buttonImage", $"white" )
+		RuiSetImage( btnRui, "buttonImageSecondLayer", rewardImage )
+		RuiSetFloat2( btnRui, "buttonImageSecondLayerOffset", <0.0, 0.16, 0.0> )
+	}
+}
+
+void function BattlePass_SetRewardButtonIconSettings( ItemFlavor flav, var btnRui, var rewardButton, bool canUseTallButton, bool showWeaponRender = false )
+{
+	asset rewardImage = CustomizeMenu_GetRewardButtonImage( flav )
+
+	if ( rewardButton != null )
+		Hud_SetHeight( rewardButton, Hud_GetBaseHeight( rewardButton ) )
+
+	RuiSetBool( btnRui, "forceFullIcon", false )
+	if ( ShouldDisplayTallButton( flav ) )
+	{
+		if ( canUseTallButton )
+		{
+			if ( rewardButton != null )
+				Hud_SetHeight( rewardButton, Hud_GetBaseHeight( rewardButton ) * 1.5 )
+		}
+
+		int itemType = ItemFlavor_GetType( flav )
+		if ( itemType != eItemType.character_skin && ( itemType != eItemType.weapon_skin || !showWeaponRender ) )
+		{
+			asset icon = GetCharacterIconToDisplay( flav )
+			RuiSetBool( btnRui, "showCharacterIcon", icon != $"" )
+			RuiSetImage( btnRui, "characterIcon", icon )
+			RuiSetFloat2( btnRui, "characterIconSize", <35, 35, 0> )
+
+			if ( itemType == eItemType.weapon_skin )
+			{
+				if ( icon != $"" && icon != rewardImage )
+					BattlePass_ForceFullIconForWeaponSkin( flav, btnRui, canUseTallButton, rewardImage )
+			}
+		}
+		else
+		{
+			RuiSetBool( btnRui, "forceFullIcon", true )
+
+			if ( itemType == eItemType.weapon_skin )
+			{
+				asset weaponIcon = WeaponItemFlavor_GetHudIcon( WeaponSkin_GetWeaponFlavor( flav ) )
+				RuiSetBool( btnRui, "showCharacterIcon", weaponIcon != $"" )
+				RuiSetImage( btnRui, "characterIcon", weaponIcon )
+				RuiSetFloat2( btnRui, "characterIconSize", <60, 30, 0> )
+			}
+		}
+
+		return
+	}
+
+	if ( ItemFlavor_GetType( flav ) == eItemType.weapon_skin && GetGlobalSettingsBool( ItemFlavor_GetAsset( flav ), "forceFullWeaponIcon" ) )
+	{
+		BattlePass_ForceFullIconForWeaponSkin( flav, btnRui, false, rewardImage ) 
+		return
+	}
+}
+
+bool function ShouldForceShowRarityBG( ItemFlavor flav )
+{
+	int itemType = ItemFlavor_GetType( flav )
+	switch ( itemType )
+	{
+		case eItemType.weapon_skin:
+		case eItemType.weapon_charm:
+		case eItemType.character_skin:
+		case eItemType.gladiator_card_frame:
+		case eItemType.gladiator_card_stance:
+		case eItemType.gladiator_card_intro_quip:
+		case eItemType.gladiator_card_kill_quip:
+		case eItemType.gladiator_card_stat_tracker:
+		case eItemType.loadscreen:
+		case eItemType.account_pack:
+		case eItemType.voucher:
+			return true
+	}
+
+	return false
+}
+
+asset function GetCharacterIconToDisplay( ItemFlavor flav )
+{
+	ItemFlavor ornull char = GetItemFlavorAssociatedCharacterOrWeapon( flav )
+
+	if ( char != null )
+	{
+		expect ItemFlavor( char )
+		asset icon = ItemFlavor_GetIcon( char )
+		if ( icon != ItemFlavor_GetIcon( flav ) )
+			return icon
+	}
+
+	return $""
+}
+
+bool function ShouldDisplayTallButton( ItemFlavor flav )
+{
+	int itemType = ItemFlavor_GetType( flav )
+
+	switch ( itemType )
+	{
+		case eItemType.character_skin:
+			
+			
+			return ItemFlavor_GetIcon( flav ) != $""
+
+		case eItemType.character_execution:
+		case eItemType.gladiator_card_frame:
+		case eItemType.gladiator_card_stance:
+		case eItemType.character_emote:
+		case eItemType.skydive_emote:
+		case eItemType.emote_icon:
+			return true
+
+		case eItemType.weapon_skin:
+			
+			
+			return ItemFlavor_GetQuality( flav ) >= eRarityTier.EPIC && ItemFlavor_GetIcon( flav ) != $""
+	}
+
+	return false
+}
+
+bool function ContainsOwnedBPPresaleVoucher( GRXScriptOffer offer )
+{
+	foreach( GRXStoreOfferItem item in offer.items )
+	{
+		if ( ItemFlavor_GetType(GetItemFlavorByGRXIndex( item.itemIdx )) == eItemType.battlepass_presale_voucher &&
+			 GRX_IsItemOwnedByPlayer( GetItemFlavorByGRXIndex( item.itemIdx )))
+		{
+			return true
+		}
+	}
+	return false
+}
+
+void function BattlePass_PurchaseButton_OnActivate( var button )
+{
+	BattlePass_Purchase( button, 1 )
+}
+
+void function BattlePass_Purchase( var button, int startQuantity )
+{
+	entity player = GetLocalClientPlayer()
+	EHI playerEHI = ToEHI( player )
+
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( playerEHI )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() )
+	{
+		return
+	}
+	expect ItemFlavor( activeBattlePass )
+
+	bool hasPremiumPass = DoesPlayerOwnBattlePassTier( player, activeBattlePass, eBattlePassV2OwnershipTier.PREMIUM )
+
+	if ( !hasPremiumPass )
+	{
+		AdvanceMenu( GetMenu( "RTKBattlepassPurchaseMenu" ) )
+	}
+	else if ( GetPlayerBattlePassPurchasableLevels( ToEHI( GetLocalClientPlayer() ), activeBattlePass ) > 0 )
+	{
+		if ( ItemFlavor_IsItemDisabledForGRX( BattlePass_GetXPPurchaseFlav( activeBattlePass ) ) )
+		{
+			EmitUISound( "menu_deny" )
+			return
+		}
+
+		RewardPurchaseDialogConfig rpdcfg
+
+		rpdcfg.secondaryButtonIsEnabled = CanPlayerPurchaseBattlePassLevelsWithLegendTokens( player, activeBattlePass )
+
+		rpdcfg.purchaseButtonTextCallback = string function( int purchaseQuantity ) : ( activeBattlePass ) {
+			ItemFlavor xpPurchaseFlav              = BattlePass_GetXPPurchaseFlav( activeBattlePass )
+			array<GRXScriptOffer> xpPurchaseOffers = GRX_GetItemDedicatedStoreOffers( xpPurchaseFlav, "battlepass" )
+			Assert( xpPurchaseOffers.len() == 1, format( "'%s' has no offer at location 'battlepass'. Most likely due to misconfigured edition on offer. Run with +mtx_log_level 4 and search for 'Added locationOffer to ' messages in log file.", ItemFlavor_GetAssetName( xpPurchaseFlav ) ) )
+			if ( xpPurchaseOffers.len() < 1 )
+			{
+				Warning( "No offer for xp purchase for '%s'", string(ItemFlavor_GetAsset( activeBattlePass )) )
+				return ""
+			}
+			GRXScriptOffer xpPurchaseOffer = xpPurchaseOffers[0]
+			Assert( xpPurchaseOffer.prices.len() == 1 )
+			if ( xpPurchaseOffer.prices.len() < 1 )
+				return ""
+
+			return GRX_GetFormattedPrice( xpPurchaseOffer.prices[0], purchaseQuantity )
+		}
+
+		rpdcfg.secondaryPurchaseButtonTextCallback = string function ( int purchaseQuantity ) : ( activeBattlePass ) {
+			ItemFlavor xpPurchaseLegendTokenFlav              = BattlePass_GetXPPurchaseLegendTokenFlav( activeBattlePass )
+			array<GRXScriptOffer> xpPurchaseLegendTokenOffers = GRX_GetItemDedicatedStoreOffers( xpPurchaseLegendTokenFlav, "battlepass" )
+			Assert( xpPurchaseLegendTokenOffers.len() == 1, format( "'%s' has no offer at location 'battlepass'. Most likely due to misconfigured edition on offer. Run with +mtx_log_level 4 and search for 'Added locationOffer to ' messages in log file.", ItemFlavor_GetAssetName( xpPurchaseLegendTokenFlav ) ) )
+			if ( xpPurchaseLegendTokenOffers.len() < 1 )
+			{
+				Warning( "No offer for xp purchase legend token for '%s'", string(ItemFlavor_GetAsset( activeBattlePass )) )
+				return ""
+			}
+			GRXScriptOffer xpPurchaseLegendTokenOffer = xpPurchaseLegendTokenOffers[0]
+			Assert( xpPurchaseLegendTokenOffer.prices.len() == 1 )
+			if ( xpPurchaseLegendTokenOffer.prices.len() < 1 )
+				return ""
+
+			return GRX_GetFormattedPrice( xpPurchaseLegendTokenOffer.prices[0], purchaseQuantity )
+		}
+
+		rpdcfg.maxPurchasableLevelsCallback = int function() : ( activeBattlePass ) {
+			return GetPlayerBattlePassPurchasableLevels( ToEHI( GetLocalClientPlayer() ), activeBattlePass )
+		}
+
+		rpdcfg.startingPurchaseLevelIdxCallback = int function() : ( activeBattlePass ) {
+			return GetPlayerBattlePassLevel( GetLocalClientPlayer(), activeBattlePass, false )
+		}
+
+		rpdcfg.secondaryButtonAvailabilityCallback = bool function( int purchaseQuantity ) : ( activeBattlePass ) {
+			if ( !CanPlayerPurchaseBattlePassLevelsWithLegendTokens( GetLocalClientPlayer(), activeBattlePass ) )
+				return false
+			bool hasEnoughLevels = GetPlayerBattlePassPurchasableLevelsWithLegendTokens( ToEHI( GetLocalClientPlayer() ), activeBattlePass ) >= purchaseQuantity
+			return hasEnoughLevels
+		}
+
+		rpdcfg.secondaryPurchaseButtonDescTextCallback = string function ( int purchaseQuantity ) : ( activeBattlePass ) {
+			int levelsLeft = 0
+			int levelsMax = 0
+
+			if ( CanPlayerPurchaseBattlePassLevelsWithLegendTokens( GetLocalClientPlayer(), activeBattlePass ) )
+			{
+				levelsLeft = GetPlayerBattlePassUnpurchasedLevelsWithLegendTokens( ToEHI( GetLocalClientPlayer() ), activeBattlePass )
+				levelsMax = GetMaxBattlePassLevelsWithLegendTokens()
+			}
+
+			return Localize( "#BATTLE_PASS_MAX_N_PURCHASE_LEVEL_WITH_LEGEND_TOKEN", levelsLeft, levelsMax )
+		}
+
+		rpdcfg.rewardsCallback = array<BattlePassReward> function( int purchaseQuantity, int startingPurchaseLevelIdx ) : ( activeBattlePass ) {
+			entity localClientPlayer = GetLocalClientPlayer()
+			bool hasPremiumPass    = DoesPlayerOwnBattlePass( localClientPlayer, activeBattlePass )
+			bool hasUltimatePlusPass      = DoesPlayerOwnUltimatePlusBattlePass( localClientPlayer, activeBattlePass )
+			int rewardTier = hasUltimatePlusPass ? eBattlePassV2RewardTier.ULTIMATE_PLUS : hasPremiumPass ? eBattlePassV2RewardTier.PREMIUM : eBattlePassV2RewardTier.FREE
+			return GetBattlePassV2Rewards( activeBattlePass, startingPurchaseLevelIdx + purchaseQuantity , rewardTier, localClientPlayer, true, startingPurchaseLevelIdx + 1 ) 
+		}
+
+		rpdcfg.getPurchaseFlavCallback = ItemFlavor function() : ( activeBattlePass ) {
+			return BattlePass_GetXPPurchaseFlav( activeBattlePass )
+		}
+
+		rpdcfg.eliteBattlePassDescTextCallback = array<string> function ( int purchaseQuantity ) : ( activeBattlePass ) {
+			array<string> out
+			out.resize(3)
+
+			out[0] = Localize( "#BP_UPGRADE_ULT_PLUS_DESC" )
+			out[1] = " "
+
+			bool playerOwnsUltimate = DoesPlayerOwnBattlePassTier( GetLocalClientPlayer(), activeBattlePass, eBattlePassV2OwnershipTier.ULTIMATE )
+			if ( playerOwnsUltimate )
+			{
+				if( Script_UserHasEAAccess() )
+				{
+					out[1] = GetEntitlementOriginalPricesAsStr( [ BattlepassGetEntitlementUltToUltPlus() ] )[0]
+				}
+				out[2] = GetEntitlementPricesAsStr( [ BattlepassGetEntitlementUltToUltPlus() ] )[0]
+			}
+			else
+			{
+				if( Script_UserHasEAAccess() )
+				{
+					out[1] = GetEntitlementOriginalPricesAsStr( [ BattlepassGetEntitlementUltimatePlus() ] )[0]
+				}
+				out[2] =  GetEntitlementPricesAsStr( [ BattlepassGetEntitlementUltimatePlus() ] )[0]
+			}
+			return out
+		}
+
+		rpdcfg.getSecondaryPurchaseFlavCallback = ItemFlavor function() : ( activeBattlePass ) {
+			return BattlePass_GetXPPurchaseLegendTokenFlav( activeBattlePass )
+		}
+
+		rpdcfg.toolTipDataMaxPurchase.titleText     = "#BATTLE_PASS_MAX_PURCHASE_LEVEL"
+		rpdcfg.toolTipDataMaxPurchase.descText      = "#BATTLE_PASS_MAX_PURCHASE_LEVEL_DESC"
+		rpdcfg.toolTipDataSecondaryButton.titleText = "#BATTLE_PASS_PURCHASE_LEVEL_LEGEND_TOKEN_OVER_LIMIT"
+		rpdcfg.toolTipDataSecondaryButton.descText  = Localize( "#BATTLE_PASS_PURCHASE_LEVEL_LEGEND_TOKEN_OVER_LIMIT_DESC", GetMaxBattlePassLevelsWithLegendTokens() )
+
+		asset lockIcon = $"rui/menu/buttons/lock"
+
+		rpdcfg.levelIndexStart                = 1
+		rpdcfg.headerText                     = "#BATTLE_PASS_YOU_WILL_RECEIVE"
+		rpdcfg.quantityText                   = "#BATTLE_PASS_PLUS_N_LEVEL"
+		rpdcfg.titleText                      = "#BATTLE_PASS_PURCHASE_LEVEL"
+		rpdcfg.descText                       = "#BATTLE_PASS_PURCHASE_LEVEL_DESC"
+		rpdcfg.buttonLinkerText               = "#BATTLE_PASS_PURCHASE_LEVEL_BUTTON_LINKER"
+		rpdcfg.quantityTextPlural             = "#BATTLE_PASS_PLUS_N_LEVELS"
+		rpdcfg.titleTextPlural                = "#BATTLE_PASS_PURCHASE_LEVELS"
+		rpdcfg.descTextPlural                 = "#BATTLE_PASS_PURCHASE_LEVELS_DESC"
+		rpdcfg.secondaryButtonUnavailableText = "%$" + lockIcon + "% " + Localize( "#BATTLE_PASS_PURCHASE_LEVEL_LEGEND_TOKEN_UNAVAILABLE" )
+		rpdcfg.startQuantity                  = startQuantity
+		rpdcfg.eliteBattlePassText            = "#BATTLEPASS_UPGRADE_PASS"
+		bool isRestricted = GRX_IsOfferRestricted( GetLocalClientPlayer() )
+		rpdcfg.eliteBatllePassOptionIsEnabled = !DoesPlayerOwnBattlePassTier( player, activeBattlePass, eBattlePassV2OwnershipTier.ULTIMATE_PLUS ) && !isRestricted
+
+		RewardPurchaseDialog( rpdcfg )
+	}
+	
+	else
+	{
+		bpPresaleOfferData presaleOfferData = GetBPPresaleOfferData()
+		if ( presaleOfferData.basicOffer == null || presaleOfferData.bundleOffer == null )
+		{
+			Assert( presaleOfferData.basicOffer == null && presaleOfferData.bundleOffer == null,
+			"Error: One of the BP Presale Offers is null while the other is valid. While Presale is live, both offers must be valid.")
+			return
+		}
+		
+		
+		GRXScriptOffer offer = expect GRXScriptOffer( presaleOfferData.basicOffer )
+		if ( ContainsOwnedBPPresaleVoucher( offer ) )
+		{
+			return
+		}
+		OpenBPPresaleDialog( presaleOfferData )
+	}
+}
+
+bool function Battlepass_ShouldShowLow( ItemFlavor flav )
+{
+	switch ( ItemFlavor_GetType( flav ) )
+	{
+		case eItemType.character_skin:
+		case eItemType.gladiator_card_frame:
+		case eItemType.gladiator_card_stance:
+		case eItemType.character:
+		case eItemType.emote_icon:
+			return true
+	}
+	return false
+}
+
+string function GetBattlePassRewardHeaderText( BattlePassReward reward )
+{
+	string headerText = ItemFlavor_GetRewardShortDescription( reward.flav )
+	if ( ItemFlavor_HasQuality( reward.flav ) )
+	{
+		int rarity = GRX_GetRarityOverrideFromQuantity( reward.flav, maxint( 0, ItemFlavor_GetQuality( reward.flav ) ), reward.quantity )
+		string rarityName = ItemQuality_GetQualityName( rarity )
+		if ( headerText == "" )
+			headerText = Localize( "#BATTLE_PASS_ITEM_HEADER", Localize( rarityName ) )
+		else
+			headerText = Localize( "#BATTLE_PASS_ITEM_HEADER_DESC", Localize( rarityName ), headerText )
+	}
+
+	return headerText
+}
+
+string function GetBattlePassRewardItemName( BattlePassReward reward )
+{
+	return ItemFlavor_GetLongName( reward.flav )
+}
+
+
+
+
+string function BattlePass_SetUnlockedString( var button, int level )
+{
+	int numRares       = GetNumPremiumRewardsOfTypeUpToLevel( level, eRarityTier.RARE, [ eItemType.account_currency, eItemType.account_currency_bundle ] )
+	int numEpics       = GetNumPremiumRewardsOfTypeUpToLevel( level, eRarityTier.EPIC, [ eItemType.account_currency, eItemType.account_currency_bundle ] )
+	int numLegendaries = GetNumPremiumRewardsOfTypeUpToLevel( level, eRarityTier.LEGENDARY, [ eItemType.account_currency, eItemType.account_currency_bundle ] )
+
+	ItemFlavor apexCoins        = GRX_CURRENCIES[ GRX_CURRENCY_PREMIUM ]
+	ItemFlavor craftingCurrency = GRX_CURRENCIES[ GRX_CURRENCY_CRAFTING ]
+
+	int numCoins    = GetNumPremiumRewardsOfTypeUpToLevel( level, -1, [], [ apexCoins ] )
+	int numCrafting = GetNumPremiumRewardsOfTypeUpToLevel( level, -1, [], [ craftingCurrency ] )
+
+	printt( "numRares " + numRares )
+	printt( "numEpics " + numEpics )
+	printt( "numLegendaries " + numLegendaries )
+	printt( "numCoins " + numCoins )
+	printt( "numCrafting " + numCrafting )
+
+	const int MAX_UNLOCK_THINGS = 5
+	const int MAX_COLOR_TIERS = 3
+
+	array<string> unlockedStrings
+	int colorTiersUsed
+	if ( colorTiersUsed < MAX_COLOR_TIERS && unlockedStrings.len() < MAX_UNLOCK_THINGS && numLegendaries > 0 )
+	{
+		int quality = eRarityTier.LEGENDARY
+		int count   = numLegendaries
+		unlockedStrings.append( Localize( "#BATTLEPASS_DISPLAY_QUANTITY_QUALITY", count, Localize( ItemQuality_GetQualityName( quality ) ), (colorTiersUsed + 1) ) )
+		HudElem_SetRuiArg( button, "unlockedStringColorTier" + (colorTiersUsed + 1), quality )
+		HudElem_SetRuiArg( button, "altStyle" + (colorTiersUsed + 1) + "Color", SrgbToLinear( GetKeyColor( COLORID_MENU_TEXT_LOOT_TIER0, quality + 1 ) / 255.0 ) )
+		colorTiersUsed++
+	}
+
+	if ( colorTiersUsed < MAX_COLOR_TIERS && unlockedStrings.len() < MAX_UNLOCK_THINGS && numEpics > 0 )
+	{
+		int quality = eRarityTier.EPIC
+		int count   = numEpics
+		unlockedStrings.append( Localize( "#BATTLEPASS_DISPLAY_QUANTITY_QUALITY", count, Localize( ItemQuality_GetQualityName( quality ) ), (colorTiersUsed + 1) ) )
+		HudElem_SetRuiArg( button, "unlockedStringColorTier" + (colorTiersUsed + 1), quality )
+		HudElem_SetRuiArg( button, "altStyle" + (colorTiersUsed + 1) + "Color", SrgbToLinear( GetKeyColor( COLORID_MENU_TEXT_LOOT_TIER0, quality + 1 ) / 255.0 ) )
+		colorTiersUsed++
+	}
+
+	if ( colorTiersUsed < MAX_COLOR_TIERS && unlockedStrings.len() < MAX_UNLOCK_THINGS && numRares > 0 )
+	{
+		int quality = eRarityTier.RARE
+		int count   = numRares
+		unlockedStrings.append( Localize( "#BATTLEPASS_DISPLAY_QUANTITY_QUALITY", count, Localize( ItemQuality_GetQualityName( quality ) ), (colorTiersUsed + 1) ) )
+		HudElem_SetRuiArg( button, "unlockedStringColorTier" + (colorTiersUsed + 1), quality )
+		HudElem_SetRuiArg( button, "altStyle" + (colorTiersUsed + 1) + "Color", SrgbToLinear( GetKeyColor( COLORID_MENU_TEXT_LOOT_TIER0, quality + 1 ) / 255.0 ) )
+		colorTiersUsed++
+	}
+
+	if ( unlockedStrings.len() < MAX_UNLOCK_THINGS && numCoins > 0 )
+	{
+		int count          = numCoins
+		string imageString = ItemFlavor_GetIcon( apexCoins )
+		unlockedStrings.append( Localize( "#BATTLEPASS_DISPLAY_QUANTITY_CURRENCY", "%$" + imageString + "%", count, 0 ) )
+	}
+
+	if ( unlockedStrings.len() < MAX_UNLOCK_THINGS && numCrafting > 0 )
+	{
+		int count          = numCrafting
+		string imageString = ItemFlavor_GetIcon( craftingCurrency )
+		unlockedStrings.append( Localize( "#BATTLEPASS_DISPLAY_QUANTITY_CURRENCY", "%$" + imageString + "%", count, 0 ) )
+	}
+
+	int stringCount = unlockedStrings.len()
+	while ( unlockedStrings.len() < MAX_UNLOCK_THINGS )
+		unlockedStrings.append( "" )
+
+	string unlockedString = Localize( "#BATTLEPASS_REWARDS_DISPLAY_" + stringCount, unlockedStrings[0], unlockedStrings[1], unlockedStrings[2], unlockedStrings[3], unlockedStrings[4] )
+
+	HudElem_SetRuiArg( button, "unlockedString", unlockedString )
+
+	return unlockedString
+}
+
+int function GetNumPremiumRewardsOfTypeUpToLevel( int endLevel, int tier, array<int> excludeItemTypes = [], array<ItemFlavor> onlyMatchItemFlavs = [] )
+{
+	ItemFlavor ornull activeBattlePass = GetActiveBattlePass()
+
+	if ( activeBattlePass == null )
+		return 0
+
+	expect ItemFlavor( activeBattlePass )
+
+	int count
+
+	for ( int levelIdx = 0; levelIdx <= endLevel; levelIdx++ )
+	{
+		array< BattlePassReward > rewards = GetBattlePassV2Rewards( activeBattlePass, levelIdx, eBattlePassV2RewardTier.UNSPECIFIED, GetLocalClientPlayer() )
+		foreach ( reward in rewards )
+		{
+			if ( reward.isPremium )
+			{
+				if ( (tier == -1 || ItemFlavor_GetQuality( reward.flav ) == tier)
+				&& (
+				(onlyMatchItemFlavs.len() == 0 && !excludeItemTypes.contains( ItemFlavor_GetType( reward.flav ) ))
+				|| (onlyMatchItemFlavs.len() > 0 && onlyMatchItemFlavs.contains( reward.flav ))
+				)
+				)
+				{
+					printt( string(ItemFlavor_GetAsset( reward.flav )) )
+					count += reward.quantity
+				}
+			}
+		}
+	}
+
+	return count
+}
+
+
+
+
+struct
+{
+	var menu
+	var rewardPanel
+	var header
+	var background
+
+	var purchaseButton
+	var inc1Button
+	var inc5Button
+	var dec1Button
+	var dec5Button
+
+	table<var, BattlePassReward> buttonToItem
+
+	int purchaseQuantity = 1
+
+	bool closeOnGetTopLevel = false
+
+} s_passPurchaseXPDialog
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct
+{
+	var menu
+	var rewardPanel
+	var passPurchaseButton
+	var passGiftButton
+	var bundlePurchaseButton
+	var passGetCoinsButton
+	var	passBasicInfo
+	var passBundleInfo
+	var backgroundsPanel
+	var passBanner
+	var overlayPanel
+	var seasonLogoBox
+	var offersBorders
+
+	bool closeOnGetTopLevel = false
+} s_passPurchaseMenu
+
+void function InitPassPurchaseMenu( var menu )
+{
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, PassPurchaseMenu_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, PassPurchaseMenu_OnClose )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_GET_TOP_LEVEL, PassPurchaseMenu_OnGetTopLevel )
+
+	s_passPurchaseMenu.menu = menu
+	s_passPurchaseMenu.passPurchaseButton = Hud_GetChild( menu, "PassPurchaseButton" )
+	s_passPurchaseMenu.passGiftButton = Hud_GetChild( menu, "PassGiftButton" )
+	s_passPurchaseMenu.passGetCoinsButton = Hud_GetChild( menu, "PassGetCoinsButton" )
+	s_passPurchaseMenu.bundlePurchaseButton = Hud_GetChild( menu, "BundlePurchaseButton" )
+	s_passPurchaseMenu.passBasicInfo = Hud_GetChild( menu, "PassPriceInfo" )
+	s_passPurchaseMenu.passBundleInfo = Hud_GetChild( menu, "BundlePriceInfo" )
+
+	s_passPurchaseMenu.backgroundsPanel = Hud_GetChild( menu, "Backgrounds" )
+	s_passPurchaseMenu.passBanner = Hud_GetChild( menu, "HeaderBanner" )
+	Hud_AddEventHandler( s_passPurchaseMenu.passPurchaseButton, UIE_GET_FOCUS, PassPurchaseButton_OnFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.passPurchaseButton, UIE_LOSE_FOCUS, PassPurchaseButton_OnLoseFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGiftButton, UIE_GET_FOCUS, PassPurchaseButton_OnFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGiftButton, UIE_LOSE_FOCUS, PassPurchaseButton_OnLoseFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGetCoinsButton, UIE_GET_FOCUS, PassPurchaseButton_OnFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGetCoinsButton, UIE_LOSE_FOCUS, PassPurchaseButton_OnLoseFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.bundlePurchaseButton, UIE_GET_FOCUS, BundlePurchaseButton_OnFocus )
+	Hud_AddEventHandler( s_passPurchaseMenu.bundlePurchaseButton, UIE_LOSE_FOCUS, BundlePurchaseButton_OnLoseFocus )
+
+	Hud_AddEventHandler( s_passPurchaseMenu.passPurchaseButton, UIE_CLICK, PassPurchaseButton_OnActivate )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGiftButton, UIE_CLICK, PassGiftButton_OnActivate )
+	Hud_AddEventHandler( s_passPurchaseMenu.bundlePurchaseButton, UIE_CLICK, BundlePurchaseButton_OnActivate )
+	Hud_AddEventHandler( s_passPurchaseMenu.passGetCoinsButton, UIE_CLICK, GetCoinsButton_OnActivate )
+
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddMenuFooterOption( menu, LEFT, BUTTON_X, true, "#X_GIFT_INFO_TITLE", "#GIFT_INFO_TITLE", OpenGiftInfoPopUp, IsGiftingEnabled )
+}
+void function PassPurchaseButton_OnFocus( var button )
+{
+	HudElem_SetRuiArg( s_passPurchaseMenu.backgroundsPanel, "isPremiumFocused", true )
+	Hud_SetLocked( s_passPurchaseMenu.bundlePurchaseButton, true )
+}
+
+void function PassPurchaseButton_OnLoseFocus( var button )
+{
+	HudElem_SetRuiArg( s_passPurchaseMenu.backgroundsPanel, "isPremiumFocused", false )
+	Hud_SetLocked( s_passPurchaseMenu.bundlePurchaseButton, !fileLevel.isBundlePassPurchasable )
+}
+
+void function PassPurchaseButton_OnActivate( var button )
+{
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( ToEHI( GetLocalClientPlayer() ) )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() )
+		return
+
+	if ( !fileLevel.isPremiumPassPurchasable )
+		return
+
+	expect ItemFlavor( activeBattlePass )
+
+	Assert( false, "BattlePass V1 no longer supported" )
+}
+
+void function PassGiftButton_OnActivate( var button )
+{
+	if ( Hud_IsLocked( button ) )
+		return
+
+	if ( !IsTwoFactorAuthenticationEnabled() )
+	{
+		OpenTwoFactorInfoDialog( button )
+		return
+	}
+
+	Assert( false, "BattlePass V1 no longer supported" )
+}
+
+void function BundlePurchaseButton_OnFocus( var button )
+{
+	HudElem_SetRuiArg( s_passPurchaseMenu.backgroundsPanel, "isBundleFocused", true )
+	Hud_SetLocked( s_passPurchaseMenu.passPurchaseButton, true )
+	Hud_SetLocked( s_passPurchaseMenu.passGiftButton, true )
+	Hud_SetLocked( s_passPurchaseMenu.passGetCoinsButton, true )
+}
+
+void function BundlePurchaseButton_OnLoseFocus( var button )
+{
+	HudElem_SetRuiArg( s_passPurchaseMenu.backgroundsPanel, "isBundleFocused", false )
+	Hud_SetLocked( s_passPurchaseMenu.passPurchaseButton, !fileLevel.isPremiumPassPurchasable )
+	UpdatePackGiftButton( s_passPurchaseMenu.passGiftButton )
+	Hud_SetLocked( s_passPurchaseMenu.passGetCoinsButton, !fileLevel.isPremiumPassPurchasable )
+}
+
+void function BundlePurchaseButton_OnActivate( var button )
+{
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( ToEHI( GetLocalClientPlayer() ) )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() )
+		return
+
+	if ( !fileLevel.isBundlePassPurchasable )
+		return
+
+	Assert( false, "BattlePass V1 no longer supported" )
+}
+
+void function GetCoinsButton_OnActivate( var button )
+{
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( ToEHI( GetLocalClientPlayer() ) )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() )
+		return
+
+	if ( !fileLevel.isPremiumPassPurchasable )
+		return
+
+	Assert( false, "BattlePass V1 no longer supported" )
+}
+
+void function PassPurchaseMenu_OnOpen()
+{
+	SetCurrentTabForPIN( "PassPanel" ) 
+
+	RunClientScript( "ClearBattlePassItem" )
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS )
+
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( ToEHI( GetLocalClientPlayer() ) )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() )
+		return
+
+	expect ItemFlavor( activeBattlePass )
+	asset battlePassAsset = ItemFlavor_GetAsset( activeBattlePass )
+	bool offerRestricted  = GRX_IsOfferRestricted( GetLocalClientPlayer() )
+
+	var rui = Hud_GetRui( s_passPurchaseMenu.passBanner )
+	RuiSetString( rui, "seasonName", GetGlobalSettingsStringAsAsset( battlePassAsset, "aboutPurchaseTitle" ) )
+	RuiSetColorAlpha( rui, "headerColor", GetGlobalSettingsVector( battlePassAsset, "headerColor" ), 1 )
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( UpdatePassPurchaseButtons )
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( GetMenu( "PassPurchaseMenu" ), "DarkBackground" ), true )
+	HudElem_SetRuiArg( s_passPurchaseMenu.passBundleInfo, "priceTextString", Localize( "#OFFER_BUNDLE_NAME" ) )
+	HudElem_SetRuiArg( s_passPurchaseMenu.passBasicInfo, "priceTextString", Localize( "#OFFER_BASIC_NAME" ) )
+	HudElem_SetRuiArg( s_passPurchaseMenu.passGetCoinsButton, "buttonText", Localize( "#CONFIRM_GET_PREMIUM" ) )
+}
+
+
+void function PassPurchaseMenu_OnClose()
+{
+	RemoveCallback_OnGRXInventoryStateChanged( UpdatePassPurchaseButtons )
+}
+
+void function PassPurchaseMenu_OnGetTopLevel()
+{
+	if ( s_passPurchaseMenu.closeOnGetTopLevel )
+	{
+		s_passPurchaseMenu.closeOnGetTopLevel = false
+		CloseActiveMenu()
+	}
+	UpdatePackGiftButton( s_passPurchaseMenu.passGiftButton )
+}
+
+void function UpdatePassPurchaseButtons()
+{
+	ItemFlavor ornull activeBattlePass = GetPlayerActiveBattlePass( ToEHI( GetLocalClientPlayer() ) )
+	if ( activeBattlePass == null || !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return
+	expect ItemFlavor( activeBattlePass )
+
+	Assert( false, "BattlePass V1 no longer supported" )
+}
+
+void function UpdatePadNavigationPurchaseButtons( bool canAfford )
+{
+	if ( canAfford )
+	{
+		Hud_SetNavRight( s_passPurchaseMenu.passGiftButton, s_passPurchaseMenu.passPurchaseButton )
+		Hud_SetNavRight( s_passPurchaseMenu.passPurchaseButton, s_passPurchaseMenu.bundlePurchaseButton )
+		Hud_SetNavLeft( s_passPurchaseMenu.bundlePurchaseButton, s_passPurchaseMenu.passPurchaseButton )
+		Hud_SetNavLeft( s_passPurchaseMenu.passPurchaseButton, s_passPurchaseMenu.passGiftButton )
+	}
+	else
+	{
+		Hud_SetNavRight( s_passPurchaseMenu.passGetCoinsButton, s_passPurchaseMenu.bundlePurchaseButton )
+		Hud_SetNavLeft( s_passPurchaseMenu.bundlePurchaseButton, s_passPurchaseMenu.passGetCoinsButton )
+	}
+}
+
+void function OnBattlePassPurchaseResults( bool wasSuccessful )
+{
+	if ( wasSuccessful )
+	{
+		s_passPurchaseMenu.closeOnGetTopLevel = true
+	}
+}
+
+
+
+bool function TryDisplayBattlePassAwards( bool playSound = false, bool threaded = true  )
+{
+	if ( threaded )
+	{
+		Signal( uiGlobal.signalDummy, "KillTryDisplayBattlePassAwards" )
+		EndSignal( uiGlobal.signalDummy, "KillTryDisplayBattlePassAwards" )
+		WaitEndFrame()
+	}
+
+	if ( IsDialog( GetActiveMenu() ) )
+		return false
+
+	if ( HasBattlePassRewards() )
+		return OpenRewardSummaryMenu( GetBattlePassRewards(), CloseActiveMenuNoDialogFlow )
+
+	return false
+}
+
+int function SortByAwardLevel( BattlePassReward a, BattlePassReward b )
+{
+	if ( a.level > b.level )
+		return 1
+	else if ( a.level < b.level )
+		return -1
+
+	bool isEliteA = a.isUltimatePlus
+	isEliteA = isEliteA || a.bpRewardTier == eBattlePassV2RewardTier.ULTIMATE_PLUS
+
+	bool isEliteB = b.isUltimatePlus
+	isEliteB = isEliteB || b.bpRewardTier == eBattlePassV2RewardTier.ULTIMATE_PLUS
+
+	if ( isEliteA && !isEliteB )
+		return 1
+	else if ( isEliteB && !isEliteA )
+		return -1
+
+	bool isPremiumA = a.isPremium
+	isPremiumA = isPremiumA || a.bpRewardTier == eBattlePassV2RewardTier.PREMIUM
+
+	bool isPremiumB = b.isPremium
+	isPremiumB = isPremiumB || b.bpRewardTier == eBattlePassV2RewardTier.PREMIUM
+
+	if ( isPremiumA && !isPremiumB )
+		return 1
+	else if ( isPremiumB && !isPremiumA )
+		return -1
+
+	return 0
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function BattlePass_OpenBoostedBreakdown( var button )
+{
+	UI_OpenFeatureTutorialDialog( FEATURE_EVENT_BOOSTED_TUTORIAL )
+}
+
+array< featureTutorialTab > function BattlePass_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"GAMEMODE_RULES_OVERVIEW_TAB_NAME"
+
+	ItemFlavor ornull rewardCampaign = RewardCampaign_GetActiveRewardCampaign()
+	if ( rewardCampaign != null )
+	{
+		expect ItemFlavor( rewardCampaign )
+		array<RewardCampaignTutorialData> tutorialData = RewardCampaign_GetTutorialData( rewardCampaign )
+		foreach( RewardCampaignTutorialData tutorial in tutorialData )
+		{
+			tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( tutorial.title, tutorial.desc, tutorial.icon ) )
+		}
+	}
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+	return tabs
+}
+
+
+string function BattlePass_PopulateAboutTitle()
+{
+	return "#BATTLEPASS_BREAKOUT_TITLE"
+}
+
+
+void function ServerCallback_GotBPFromPremier()
+{
+	thread _GotBPFromPremier()
+}
+
+void function _GotBPFromPremier()
+{
+	DialogData dialogData
+	dialogData.header = "#BATTLEPASS_EA_ACCESS_PREMIUM_HEADER"
+	dialogData.message = "#BATTLEPASS_EA_ACCESS_PREMIUM_BODY"
+	dialogData.darkenBackground = true
+	dialogData.noChoiceWithNavigateBack = true
+
+	AddDialogButton( dialogData, "#CLOSE" )
+
+	while ( IsDialog( GetActiveMenu() ) )
+		WaitFrame()
+
+	OpenDialog( dialogData )
+}
+
+
+
+
+
+string function Season_GetLongName( ItemFlavor season )
+{
+	return ItemFlavor_GetLongName( season )
+}
+
+
+string function Season_GetShortName( ItemFlavor season )
+{
+	return Localize( ItemFlavor_GetShortName( season ) )
+}
+
+
+string function Season_GetTimeRemainingText( ItemFlavor season )
+{
+	int seasonEndUnixTime   = CalEvent_GetFinishUnixTime( season )
+	int remainingSeasonTime = seasonEndUnixTime - GetUnixTimestamp()
+
+	if ( remainingSeasonTime <= 0 )
+		return Localize( "#BATTLE_PASS_SEASON_ENDED" )
+
+	DisplayTime dt = SecondsToDHMS( remainingSeasonTime )
+
+	return Localize( "#SEASON_ENDS_IN_DAYS", string( dt.days ) )
+}
+
+asset function Season_GetSmallLogo( ItemFlavor season )
+{
+	ItemFlavor ornull pass = Season_GetCurrentOrFinalBattlePass( season )
+	if ( pass != null )
+	{
+		expect ItemFlavor( pass )
+		return GetGlobalSettingsAsset( ItemFlavor_GetAsset( pass ), "smallLogo" )
+	}
+
+	return $""
+}
+
+asset function Season_GetLobbyBannerLeftImage( ItemFlavor season )
+{
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( season ), "lobbyButtonImage" )
+}
+
+asset function Season_GetLobbyBannerLeftImageCapstone( ItemFlavor season )
+{
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( season ), "lobbyButtonImageCapstone" )
+}
+
+asset function Season_GetLobbyBannerRightImage( ItemFlavor season )
+{
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( season ), "lobbyBgRightImage" )
+}
+
+asset function Season_GetLobbyBannerRightImageCapstone( ItemFlavor season )
+{
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( season ), "lobbyBgRightImageCapstone" )
+}
+
+
+asset function Season_GetSmallLogoBg( ItemFlavor season )
+{
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( season ), "lobbyDiamondImage" )
+}
+
+vector function Season_GetLobbyLogoCaptsoneOffset( ItemFlavor season )
+{
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( season ), "lobbyLogoCapstoneOffset" )
+}
+
+float function Season_GetLobbyLogoCaptsoneScale( ItemFlavor season )
+{
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( season ), "lobbyLogoCapstoneScale" )
+}
+
+
+vector function Season_GetTitleTextColor( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "seasonTitleColor" )
+}
+
+
+vector function Season_GetHeaderTextColor( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "seasonHeaderColor" )
+}
+
+
+vector function Season_GetTimeRemainingTextColor( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "seasonTimeRemainingColor" )
+}
+
+vector function Season_GetNewColor( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "seasonNewColor" )
+}
+
+vector function Season_GetColor( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "seasonCol" )
+}
+
+
+vector function Season_GetTabBGFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabBGFocusedCol" )
+}
+
+vector function Season_GetTabBarFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabBarFocusedCol" )
+}
+
+vector function Season_GetTabBGSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabBGSelectedCol" )
+}
+
+vector function Season_GetTabBarSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabBarSelectedCol" )
+}
+
+vector function Season_GetTabTextDefaultCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabTextDefaultCol" )
+}
+
+vector function Season_GetTabTextFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabTextFocusedCol" )
+}
+
+vector function Season_GetTabTextSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabTextSelectedCol" )
+}
+
+vector function Season_GetTabGlowFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "tabGlowFocusedCol" )
+}
+
+
+vector function Season_GetSubTabBGFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabBGFocusedCol" )
+}
+
+vector function Season_GetSubTabBarFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabBarFocusedCol" )
+}
+
+vector function Season_GetSubTabBGSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabBGSelectedCol" )
+}
+
+vector function Season_GetSubTabBarSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabBarSelectedCol" )
+}
+
+vector function Season_GetSubTabTextDefaultCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabTextDefaultCol" )
+}
+
+vector function Season_GetSubTabTextFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabTextFocusedCol" )
+}
+
+vector function Season_GetSubTabTextSelectedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabTextSelectedCol" )
+}
+
+vector function Season_GetSubTabGlowFocusedCol( ItemFlavor event )
+{
+	Assert( ItemFlavor_GetType( event ) == eItemType.calevent_season )
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( event ), "subtabGlowFocusedCol" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

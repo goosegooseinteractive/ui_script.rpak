@@ -1,0 +1,162 @@
+global function RTKMilestoneEventController_OnInitialize
+global function RTKMilestoneEventController_OnDestroy
+
+global function RTKMilestoneEventController_SetInitialEventPage
+
+global struct RTKMilestoneEventController_Properties
+{
+	rtk_panel contentPanel
+	rtk_behavior paginationBehavior
+	bool isStoreEventsPanel
+	rtk_panel loadingSpinner
+}
+
+struct PrivateData
+{
+	rtk_behavior ornull parentMilestoneBehavior
+	void functionref( string ) OnTabChanged
+}
+
+struct
+{
+	ItemFlavor ornull activeEvent
+} file
+
+void function RTKMilestoneEventController_OnInitialize( rtk_behavior self )
+{
+	if ( !GRX_AreOffersReady() )
+	{
+		thread InstantiateStoreEventPanelWhenGRXIsReady( self )
+	}
+	else
+	{
+		InstantiateStoreEventPanel( self )
+	}
+}
+
+void function RTKMilestoneEventController_OnDestroy( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	PrivateData p
+	self.Private( p )
+
+	StoreMilestoneMenu_RemoveOnTabChangedCallback( p.OnTabChanged )
+}
+
+void function InstantiateStoreEventPanelWhenGRXIsReady( rtk_behavior self )
+{
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+	if ( GetActiveMenu() != GetMenu( "StoreOnlyMilestoneEventsMenu" ) )
+		return
+
+	bool hasInstantiated = false
+	SetLoadingSpinnerVisibility( self, true )
+
+	while ( !hasInstantiated )
+	{
+		if ( GRX_AreOffersReady() )
+		{
+			SetLoadingSpinnerVisibility( self, false )
+			InstantiateStoreEventPanel( self )
+			hasInstantiated = true
+		}
+		else
+			wait( 0.1 )
+	}
+}
+
+void function InstantiateStoreEventPanel( rtk_behavior self )
+{
+	if ( GetActiveMenu() != GetMenu( "StoreOnlyMilestoneEventsMenu" ) )
+		return
+
+	if ( file.activeEvent == null )
+		return
+	ItemFlavor event = expect ItemFlavor( file.activeEvent )
+
+	
+	if ( !CalEvent_IsVisible( event, GetUnixTimestamp() ) )
+	{
+		file.activeEvent = null
+		CloseActiveMenu()
+		return
+	}
+
+	rtk_panel ornull context = self.PropGetPanel( "contentPanel" )
+	if ( context != null )
+	{
+		expect rtk_panel( context )
+		bool getStoreOnlyEvents = self.PropGetBool( "isStoreEventsPanel" )
+		SetStoreOnlyEventsFilter( getStoreOnlyEvents )
+
+		PrivateData p
+		self.Private( p )
+
+		if ( GetActiveMilestoneEvent( GetUnixTimestamp() ) != null )
+		{
+			rtk_panel milestonePanel = RTKPanel_Instantiate( $"ui_rtk/menus/events/milestone/milestone_event_panel.rpak", context, "Milestone Event" )
+			rtk_behavior ornull parentMilestoneBehavior = milestonePanel.FindBehaviorByTypeName( "MilestoneEventPanelController" )
+			if ( parentMilestoneBehavior == null )
+				return
+			p.parentMilestoneBehavior = parentMilestoneBehavior
+			expect rtk_behavior( parentMilestoneBehavior)
+			RTKMilestoneEventPanelController_SetMilestoneEvent( parentMilestoneBehavior, event )
+			SetCollectionEventAboutPageEvent( event )
+		}
+	}
+	PrivateData p
+	self.Private( p )
+
+	p.OnTabChanged = ( void function( string eventId ) : ( self ) {
+		RTKMilestoneEventController_OnTabChanged( self, eventId )
+	} )
+
+	StoreMilestoneMenu_AddOnTabChangedCallback( p.OnTabChanged )
+}
+
+void function SetLoadingSpinnerVisibility( rtk_behavior self, bool visible )
+{
+	if ( GetActiveMenu() != GetMenu( "StoreOnlyMilestoneEventsMenu" ) )
+		return
+
+	if ( self == null || !IsValid( self ) )
+		return
+
+	rtk_panel ornull loadingSpinner = self.PropGetPanel( "loadingSpinner" )
+	if ( loadingSpinner != null )
+	{
+		expect rtk_panel( loadingSpinner )
+		loadingSpinner.SetVisible( visible )
+	}
+}
+
+void function RTKMilestoneEventController_SetInitialEventPage( string eventId )
+{
+	file.activeEvent = MilestoneEvent_GetEventById( eventId )
+}
+
+void function RTKMilestoneEventController_SetActiveMilestoneEvent( rtk_behavior self, string eventId )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull parentMilestoneBehavior = p.parentMilestoneBehavior
+	if ( parentMilestoneBehavior == null )
+		return
+	expect rtk_behavior( parentMilestoneBehavior )
+
+	file.activeEvent = MilestoneEvent_GetEventById( eventId )
+
+	if ( file.activeEvent == null )
+		return
+	ItemFlavor event = expect ItemFlavor( file.activeEvent )
+
+	RTKMilestoneEventPanelController_SetMilestoneEvent( parentMilestoneBehavior, event )
+}
+
+void function RTKMilestoneEventController_OnTabChanged( rtk_behavior self, string eventId )
+{
+	RTKMilestoneEventController_SetActiveMilestoneEvent( self, eventId )
+	SetCollectionEventAboutPageEvent( file.activeEvent )
+}

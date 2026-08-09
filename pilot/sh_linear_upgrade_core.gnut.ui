@@ -1,0 +1,924 @@
+global function LinearUpgradeCore_Init
+global function ShPassiveLinearUpgradeCore_LobbyInit
+global function ShPassiveLinearUpgradeCore_NetvarsInit
+
+global function LinearUpgradeCore_GetUpgradesForCharacter
+global function LinearUpgradeCore_GetUpgradesForPlayer
+global function LinearUpgradeCore_GetSelectedUpgrades
+global function LinearUpgradeCore_IsUpgradeSelectable
+global function LinearUpgradeCore_IsUpgradeSelected
+global function LinearUpgradeCore_ParseUpgradeOverrides
+global function LinearUpgradeCore_DelayedParseUpgradeOverrides
+
+global function LinearUpgradeCore_InitTuningValues
+global function LinearUpgradeCore_SetupEvoLevelSystem
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function LinearUpgradeCore_ShowHudUpgradeSelection
+global function LinearUpgradeCore_ShowUpgradeTreeInventory
+global function LinearUpgradeCore_ShowUpgradesUnitframe
+global function LinearUpgradeCore_IsEnabled
+global function LinearUpgradeCore_ArmorTiedToUpgrades
+global function LinearUpgradeCore_UseLegendUpgrades
+global function LinearUpgradeCore_ShowUpgradeTree_LobbyMenu
+global function LinearUpgradeCore_ShowUpgradeTree_SkillsMenu
+global function LinearUpgradeCore_ShowUpgradeTree_CharacterSelect
+global function LinearUpgradeCore_RegisterUpgradesForCharacter
+
+global function LinearUpgradeCore_GetUpgradeChoiceStructByIndex
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct UpgradeData
+{
+	int level
+	array<UpgradeChoice> earnedUpgrades
+	array<UpgradeChoice> allUpgrades
+}
+
+struct
+{
+	bool performLobbyInit = false 
+	table< ItemFlavor, array< ItemFlavor > > characterToPassiveUpgrades
+	table< ItemFlavor, array<SettingsAssetGUID> > characterToPassiveUpgradeOverrides
+	table< ItemFlavor , UpgradeChoice > passiveFlavorToUpgradeData
+
+
+
+
+
+
+
+
+
+
+
+
+
+} file
+
+struct Tuning
+{
+	bool isEnabled = false
+	bool shouldArmorTierMatchPlayerLevel = false 
+	bool showHudUpgradeSelection = false 	
+	bool showUpgradeTreeInventory = false 	
+	bool showUpgradesUnitframe = false 		
+	bool  armorTiedToUpgrades = false
+	float upgradeSelectionReminderDelay = 60.0
+	bool showUpgradeTreeLobbyMenu = false 			
+	bool showUpgradeTreeSkillsMenu = false 			
+	bool showUpgradeTreeCharacterSelect = false 	
+
+	int maxLevel = 4
+	int defaultXpPerLevel = 250
+}
+Tuning tuning
+
+
+global const int LINEAR_UPGRADE_CORE_NUM_EXPECTED_UPGRADES = 4
+global const int LINEAR_UPGRADE_CORE_MAX_EXPECTED_LEVEL = 4
+global const int LINEAR_UPGRADE_CORE_NUM_EXPECTED_UPGRADES_PER_LEVEL = 2 
+
+const int CAUSTIC_AMOUNT_SLOTS = 4
+
+
+const string FUNCNAME_ClientToServer_LinearUpgradeCore_HandleUpgradeSelection = "Server_LinearUpgradeCore_HandleSelection"
+
+
+const asset TROPHY_ELECTRICITY_FX = $"P_wpn_trophy_loop_2"
+
+
+global const string LINEAR_UPGRADE_CORE_SELECTED_UPGRADES = SELECTED_UPGRADE_SHARED_NETVAR
+
+const string LINEAR_UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER = "450 1350 2000"
+const string LINEAR_UPGRADE_CORE_DEFAULT_XP_THRESHOLDS_THREE_TIER_DUOS = "400 1100 1700"
+
+
+
+
+
+void function LinearUpgradeCore_Init()
+{
+
+
+
+
+	LinearUpgradeCore_InitTuningValues()
+
+	if ( !LinearUpgradeCore_IsEnabled() )
+		return
+
+
+
+
+
+
+	LinearUpgradeCore_SetupEvoLevelSystem()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	thread LinearUpgradeCore_DelayedParseUpgradeOverrides()
+
+
+
+
+
+}
+
+void function LinearUpgradeCore_DelayedParseUpgradeOverrides()
+{
+	WaitFrame()
+	thread LinearUpgradeCore_ParseUpgradeOverrides()
+}
+
+void function LinearUpgradeCore_InitTuningValues()
+{
+
+
+
+
+	tuning.isEnabled							= GetCurrentPlaylistVarBool( "linear_upgrade_core_enabled", tuning.isEnabled )
+	tuning.shouldArmorTierMatchPlayerLevel 	= GetCurrentPlaylistVarBool( "passive_upgrade_core_armor_match_player_level", tuning.shouldArmorTierMatchPlayerLevel )
+	tuning.showHudUpgradeSelection 			= GetCurrentPlaylistVarBool( "passive_upgrade_show_hud_selection", tuning.showHudUpgradeSelection )
+	tuning.showUpgradeTreeInventory 			= GetCurrentPlaylistVarBool( "passive_upgrade_show_upgrade_tree_inventory", tuning.showUpgradeTreeInventory )
+	tuning.showUpgradesUnitframe 				= GetCurrentPlaylistVarBool( "passive_upgrade_show_upgrade_unitframe", tuning.showUpgradesUnitframe )
+	tuning.armorTiedToUpgrades 				= GetCurrentPlaylistVarBool( "passive_upgrade_armor_tied_to_upgrades", tuning.armorTiedToUpgrades )
+	tuning.upgradeSelectionReminderDelay 		= GetCurrentPlaylistVarFloat( "passive_upgrade_core_reminder_hint_delay", tuning.upgradeSelectionReminderDelay )
+	tuning.showUpgradeTreeLobbyMenu 			= GetCurrentPlaylistVarBool( "lobby_characters_linear_tree_enabled", tuning.showUpgradeTreeLobbyMenu ) 
+	tuning.showUpgradeTreeSkillsMenu 			= GetCurrentPlaylistVarBool( "skills_menu_upgrade_tree_enabled", tuning.showUpgradeTreeSkillsMenu )  
+	tuning.showUpgradeTreeCharacterSelect 		= GetCurrentPlaylistVarBool( "character_select_upgrade_tree_enabled", tuning.showUpgradeTreeCharacterSelect )  
+	tuning.maxLevel 							= GetCurrentPlaylistVarInt( "linear_upgrade_core_max_level", tuning.maxLevel )
+}
+
+void function ShPassiveLinearUpgradeCore_NetvarsInit()
+{
+	
+	
+}
+
+
+
+
+void function ShPassiveLinearUpgradeCore_LobbyInit()
+{
+	ShPassiveLinearUpgradeCore_NetvarsInit()
+
+	if ( !file.performLobbyInit )
+		return
+
+	LinearUpgradeCore_InitTuningValues()
+
+	thread ShPassiveLinearUpgradeCore_LobbyInit_DelayedUpgradeOverridesParse()
+}
+
+void function ShPassiveLinearUpgradeCore_LobbyInit_DelayedUpgradeOverridesParse()
+{
+	
+	WaitFrame()
+	LinearUpgradeCore_ParseUpgradeOverrides()
+
+
+
+}
+
+void function LinearUpgradeCore_RegisterUpgradesForCharacter( ItemFlavor character, array<ItemFlavor> upgrades )
+{
+	UpgradeHelper_RegisterUpgradesForCharacter( character, upgrades, file.characterToPassiveUpgrades, file.passiveFlavorToUpgradeData, file.characterToPassiveUpgradeOverrides )
+}
+
+void function LinearUpgradeCore_ParseUpgradeOverrides()
+{
+	int expectedLength = tuning.maxLevel + 1
+
+	UpgradeHelper_ParseUpgradeOverrides( expectedLength, "passive_upgrade_core_overrides",
+	file.characterToPassiveUpgrades, file.characterToPassiveUpgradeOverrides )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function LinearUpgradeCore_ShowHudUpgradeSelection()
+{
+	return tuning.showHudUpgradeSelection
+}
+
+bool function LinearUpgradeCore_ShowUpgradeTreeInventory()
+{
+	return tuning.showUpgradeTreeInventory
+}
+
+bool function LinearUpgradeCore_ShowUpgradesUnitframe()
+{
+	return tuning.showUpgradesUnitframe
+}
+
+bool function LinearUpgradeCore_IsEnabled()
+{
+	return tuning.isEnabled
+}
+
+bool function LinearUpgradeCore_ArmorTiedToUpgrades()
+{
+	return tuning.armorTiedToUpgrades
+}
+
+bool function LinearUpgradeCore_ShowUpgradeTree_LobbyMenu()
+{
+	return tuning.showUpgradeTreeLobbyMenu
+}
+
+bool function LinearUpgradeCore_ShowUpgradeTree_SkillsMenu()
+{
+	return tuning.showUpgradeTreeSkillsMenu
+}
+
+bool function LinearUpgradeCore_ShowUpgradeTree_CharacterSelect()
+{
+	return tuning.showUpgradeTreeCharacterSelect
+}
+
+bool function LinearUpgradeCore_UseLegendUpgrades()
+{
+	return GetCurrentPlaylistVarBool( "linear_upgrade_core_use_legend_upgrades", false ) && LinearUpgradeCore_IsEnabled()
+}
+
+array<int> function LinearUpgradeCore_GetLevelXpThresholds()
+{
+	if ( !LinearUpgradeCore_UseLegendUpgrades() )
+		return [0]
+
+	array<int> result
+	int cumulativeXp = 0
+
+	string playlistStr = GetCurrentPlaylistVarString( "linear_upgrade_core_xp_thresholds", "" )
+
+	if ( playlistStr != "" )
+	{
+		array<int> xpRequirements = ParseStringIntoIntArray( playlistStr )
+		for( int i=0; i < xpRequirements.len(); i++ )
+		{
+			cumulativeXp += xpRequirements[i]
+			result.append( cumulativeXp )
+		}
+	}
+	else
+	{
+		for ( int numberOfLevels = 0; numberOfLevels < tuning.maxLevel; numberOfLevels++ )
+		{
+			cumulativeXp += tuning.defaultXpPerLevel
+			result.append( cumulativeXp )
+		}
+	}
+
+	return result
+}
+
+void function LinearUpgradeCore_SetupEvoLevelSystem()
+{
+
+
+
+
+	EvoLevelSystem system
+
+	system.systemType = eEvoLevelSystemType.LINEAR_UPGRADE_CORE
+
+	system.GetLevelXpThresholdsCallback = LinearUpgradeCore_GetLevelXpThresholds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	EvoLevels_RegisterEvoLevelSystem( system )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+array< UpgradeChoice > function LinearUpgradeCore_GetUpgradesForPlayer( entity player )
+{
+	ItemFlavor characterItemFlavor = LoadoutSlot_GetItemFlavor( ToEHI( player ), Loadout_Character() )
+	return LinearUpgradeCore_GetUpgradesForCharacter( characterItemFlavor )
+}
+
+array< UpgradeChoice > function LinearUpgradeCore_GetUpgradesForCharacter( ItemFlavor characterItemFlavor )
+{
+	array< UpgradeChoice > upgrades =  LinearUpgradeCore_GetDefinedUpgradesForCharacter( characterItemFlavor )
+
+	if( upgrades.len() > 0 )
+		return upgrades
+
+	UpgradeChoice armorChoice
+
+	armorChoice.shortDesc = "#BOT_ROYALE_ARMOR_CHOICE_SHORT_DESCRIPTION"
+	armorChoice.icon = $"rui/hud/loot/loot_armor_1"
+	armorChoice.desc = "#BOT_ROYALE_ARMOR_CHOICE_DESCRIPTION"
+	armorChoice.title = "#BOT_ROYALE_ARMOR_CHOICE_TITLE"
+
+	armorChoice.passiveIndex = ePassives.INVALID
+	return [armorChoice, armorChoice, armorChoice, armorChoice, armorChoice, armorChoice]
+}
+
+array< UpgradeChoice > function LinearUpgradeCore_GetDefinedUpgradesForCharacter( ItemFlavor characterItemFlavor )
+{
+	if( characterItemFlavor in file.characterToPassiveUpgrades )
+	{
+		array< UpgradeChoice > result
+		foreach( ItemFlavor passiveFlavor in file.characterToPassiveUpgrades[characterItemFlavor] )
+		{
+			result.append( file.passiveFlavorToUpgradeData[ passiveFlavor ] )
+		}
+		return result
+	}
+	array< UpgradeChoice > emptyResult
+	return emptyResult
+}
+
+array< string > function LinearUpgradeCore_GetUpgradeNamesForPlayer( entity player )
+{
+	ItemFlavor characterItemFlavor = LoadoutSlot_GetItemFlavor( ToEHI( player ), Loadout_Character() )
+	if( !( characterItemFlavor in file.characterToPassiveUpgrades ) )
+	{
+		return []
+	}
+	array<string> result
+	foreach( upgrade in file.characterToPassiveUpgrades[characterItemFlavor] )
+	{
+		result.append( ItemFlavor_GetHumanReadableRefForPIN_Slow( upgrade ) )
+	}
+	return result
+}
+
+array<UpgradeChoice> function LinearUpgradeCore_GetSelectedUpgrades( entity player )
+{
+	int level = EvoLevels_GetPlayerLevel( player )
+	int selectedUpgradesInt = player.GetPlayerNetInt( LINEAR_UPGRADE_CORE_SELECTED_UPGRADES )
+	array<UpgradeChoice> upgrades = LinearUpgradeCore_GetUpgradesForPlayer( player )
+	array<UpgradeChoice> selectedUpgrades = []
+
+	int amountOfUpgrades = LINEAR_UPGRADE_CORE_NUM_EXPECTED_UPGRADES
+
+	bool isCaustic = false
+
+
+
+
+		ItemFlavor character = LoadoutSlot_GetItemFlavor( ToEHI( player ), Loadout_Character() )
+		string characterRef  = ItemFlavor_GetCharacterRef( character ).tolower()
+		isCaustic = ( characterRef == "character_caustic" )
+
+		amountOfUpgrades = isCaustic ? CAUSTIC_AMOUNT_SLOTS : LINEAR_UPGRADE_CORE_NUM_EXPECTED_UPGRADES
+
+	for ( int i=0; i < amountOfUpgrades; i++ )
+	{
+		if ( selectedUpgradesInt <= level )
+		{
+			selectedUpgrades.append( upgrades[i] )
+		}
+	}
+	return selectedUpgrades
+}
+
+bool function LinearUpgradeCore_IsUpgradeSelectable( entity player, int index, bool checkLevel = true )
+{
+	if ( !LinearUpgradeCore_IsEnabled() )
+		 return false
+
+	
+	int upgradesBitFlag = player.GetPlayerNetInt( LINEAR_UPGRADE_CORE_SELECTED_UPGRADES )
+
+
+
+
+
+
+
+
+
+
+
+	if( checkLevel )
+	{
+		int level = EvoLevels_GetPlayerLevel( player )
+		int levelForUpgrade = index + 1
+		if( level < levelForUpgrade )
+			return false
+	}
+
+
+
+
+
+
+
+	return !LinearUpgradeCore_IsUpgradeSelected( player, index ) 
+}
+
+bool function LinearUpgradeCore_IsUpgradeSelected( entity player, int index )
+{
+	
+	int upgradesBitFlag = player.GetPlayerNetInt( LINEAR_UPGRADE_CORE_SELECTED_UPGRADES )
+	return IsBitFlagSet( upgradesBitFlag, ( 1 << index )  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+UpgradeChoice function LinearUpgradeCore_GetUpgradeChoiceStructByIndex( entity player, int upgradeIndex )
+{
+	array<UpgradeChoice> upgradesList = LinearUpgradeCore_GetUpgradesForPlayer( player )
+	if( upgradeIndex < 0 || upgradeIndex >= upgradesList.len() )
+	{
+		UpgradeChoice invalidUpgrade
+		invalidUpgrade.passiveIndex = ePassives.INVALID
+		return invalidUpgrade
+	}
+	return clone upgradesList[upgradeIndex]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________RUI___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

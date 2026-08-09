@@ -1,0 +1,123 @@
+global function InitArmoryPanel
+
+struct
+{
+	var                       panel
+	array<var>                allButtons
+	table<var, ItemFlavor>    buttonToCategory
+	table<int, Newness_Query> uiCategoryToNewness
+
+	int activeTabIndex = 0
+} file
+
+
+void function InitArmoryPanel( var panel )
+{
+	file.panel = panel
+
+	SetPanelTabTitle( panel, "#TAB_CUSTOMIZE" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, ArmoryPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, ArmoryPanel_OnHide )
+
+	{
+		var childPanel = Hud_GetChild( file.panel, "CharactersPanel" )
+		TabDef tab = AddTab( file.panel, childPanel, "#LEGENDS" )
+		SetTabBaseWidth( tab, 205 )
+	}
+	{
+		var childPanel = Hud_GetChild( file.panel, "ArmoryWeaponsPanel" )
+		TabDef tab = AddTab( file.panel, childPanel, "#LOOT_CAT_MAINWEAPON" )
+		SetTabBaseWidth( tab, 200 )
+	}
+	{
+		var childPanel = Hud_GetChild( file.panel, "ArmoryMorePanel" )
+		TabDef tab = AddTab( file.panel, childPanel, "#MORE" )
+		SetTabBaseWidth( tab, 160 )
+	}
+
+	TabData tabData = GetTabDataForPanel( file.panel )
+	tabData.centerTabs = true
+	SetTabBackground( tabData, Hud_GetChild( file.panel, "TabsBackground" ), eTabBackground.STANDARD )
+	SetTabDefsToSeasonal(tabData)
+}
+
+
+bool function IsButtonFocused()
+{
+	if ( file.allButtons.contains( GetFocus() ) )
+		return true
+
+	return false
+}
+
+
+bool function ButtonNotFocused()
+{
+	return !IsButtonFocused()
+}
+
+
+void function ArmoryPanel_OnShow( var panel )
+{
+	TabData tabData = GetTabDataForPanel( panel )
+
+	DeactivateTab( tabData )
+	SetTabNavigationEnabled( file.panel, false )
+	SetTabNavigationEnabled( file.panel, true )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		ActivateTab( tabData, 0 )
+		thread AnimateInSmallTabBar( tabData )
+	}
+	else
+	{
+		ActivateTab( tabData, file.activeTabIndex )
+	}
+	{
+		var childPanel = Hud_GetChild( file.panel, "CharactersPanel" )
+
+		Newness_Query query
+		query.itemTypeList  = [eItemType.character]
+		query.uiCategory    = eItemTypeUICategory.CHARACTER
+		query.panelOrButton = childPanel
+		query.cb            = OnNewnessQueryChangedUpdatePanelTab
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( query )
+		file.uiCategoryToNewness[ eItemTypeUICategory.CHARACTER ] <- query
+	}
+	{
+		var childPanel = Hud_GetChild( file.panel, "ArmoryWeaponsPanel" )
+
+		Newness_Query query
+		query.itemTypeList  = [eItemType.loot_main_weapon]
+		query.uiCategory    = eItemTypeUICategory.WEAPON_LOADOUT
+		query.panelOrButton = childPanel
+		query.cb            = OnNewnessQueryChangedUpdatePanelTab
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( query )
+		file.uiCategoryToNewness[ eItemTypeUICategory.WEAPON_LOADOUT ] <- query
+	}
+	{
+		var childPanel = Hud_GetChild( file.panel, "ArmoryMorePanel" )
+
+		Newness_Query query
+		query.uiCategory = eItemTypeUICategory.MISC_LOADOUT
+		query.panelOrButton = childPanel
+		query.cb = OnNewnessQueryChangedUpdatePanelTab
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( query )
+		file.uiCategoryToNewness[ eItemTypeUICategory.MISC_LOADOUT ] <- query
+	}
+}
+
+
+void function ArmoryPanel_OnHide( var panel )
+{
+	TabData tabData = GetTabDataForPanel( panel )
+	DeactivateTab( tabData )
+
+	file.activeTabIndex = GetMenuActiveTabIndex( panel )
+
+	Newness_RemoveCallback_OnQueryUpdated( file.uiCategoryToNewness[ eItemTypeUICategory.CHARACTER ] )
+	Newness_RemoveCallback_OnQueryUpdated( file.uiCategoryToNewness[ eItemTypeUICategory.WEAPON_LOADOUT ] )
+	Newness_RemoveCallback_OnQueryUpdated( file.uiCategoryToNewness[ eItemTypeUICategory.MISC_LOADOUT ] )
+}

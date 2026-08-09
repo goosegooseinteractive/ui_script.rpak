@@ -1,0 +1,14 @@
+
+
+
+
+
+global function SquadMuteLegendSelectEnabled
+
+bool function SquadMuteLegendSelectEnabled()
+{
+	if ( GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_SOLOS ) )
+		return false
+
+	return GetCurrentPlaylistVarBool( "squad_mute_legend_select_enable", true )
+}

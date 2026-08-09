@@ -1,0 +1,38 @@
+global function RTKBadge_OnInitialize
+global function RTKBadge_OnDrawBegin
+
+global struct RTKBadge_Properties
+{
+	asset badgeRuiAsset 
+	asset imageAsset 
+	int tier
+}
+
+void function RTKBadge_OnInitialize( rtk_behavior self )
+{
+	self.AddPropertyCallback( "badgeRuiAsset", UpdateBadgeRuiAsset )
+	self.AddPropertyCallback( "imageAsset", UpdateBadgeRuiAsset )
+
+	UpdateBadgeRuiAsset( self )
+}
+
+void function RTKBadge_OnDrawBegin( rtk_behavior self )
+{
+	asset imageAsset = self.PropGetAssetPath( "imageAsset" )
+
+	if ( self.HasRui() )
+	{
+		self.SetRuiArgInt( "tier", self.PropGetInt( "tier" ) )
+		if ( imageAsset != "" ) 
+			self.SetRuiArgImage( "img", imageAsset )
+	}
+}
+
+void function UpdateBadgeRuiAsset( rtk_behavior self )
+{
+	asset badgeRuiAsset = self.PropGetAssetPath( "badgeRuiAsset" )
+	if ( badgeRuiAsset != "" )
+		self.CreateRui( badgeRuiAsset )
+	else if ( self.HasRui() )
+		self.DestroyRui()
+}

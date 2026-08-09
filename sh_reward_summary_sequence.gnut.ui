@@ -1,0 +1,606 @@
+global function RewardSummarySequence_Init
+
+
+
+
+
+
+
+
+
+
+
+global function TryHideLobbyWhileWaitingForEarnedRewards
+global function InitRewardSummarySequenceMenu
+global function RewardSummarySequence_ResetIsHideLobbyWhileWaitingForEarnedRewardsDone
+global function IsWaitingToShowRewardSummarySequenceMenuAfterMatch
+global function OpenRewardSummarySequenceMenu
+global function ClientToUI_NotifyRewardSummarySequenceFinished
+global function ClientToUI_PlayRewardSummarySequenceMusic
+
+
+#if DEV
+global function OpenRewardSummarySequenceTest
+#endif
+
+const bool REWARD_SUMMARY_SEQUENCE_DEBUG = false
+
+global const string REWARD_SUMMARY_SEQUENCE_MUSIC = "Music_LootCeremony_MassPack_Pt1" 
+
+const string TARGET_REF_NAME = "target_loot_ceremony_ref" 
+
+const float BLACK_FADE_TIME = 0.25
+const float BLACK_FADE_TIME_HOLD = 0.25
+
+const float CAMERA_FOV = 35.5
+
+const string REWARD_SUMMARY_SEQUENCE_THREAD_STARTING_SIGNAL_NAME = "reward_summary_sequence_starting"
+const string REWARD_SUMMARY_SEQUENCE_THREAD_STOP_SIGNAL_NAME = "reward_summary_sequence_stop"
+const string STOP_HIDE_LOBBY_WHILE_WAITING_FOR_EARNED_REWARDS_SIGNAL_NAME = "stop_hide_lobby_while_waiting_for_earned_rewards"
+const string STOP_MUSIC_SIGNAL_NAME = "reward_summary_sequence_stop_music"
+
+const string ANIM_EVENT_NAME_SET_CAMERA_FOV = "reward_summary_sequence_set_camera_fov"
+const string ANIM_EVENT_NAME_CREATE_RARITY_FX = "reward_summary_sequence_create_rarity_fx"
+const string ANIM_EVENT_NAME_EMIT_UI_SOUND = "reward_summary_sequence_emit_ui_sound"
+
+
+
+const array<asset> ANIM_EVENT_FX_ASSETS = [
+	$"P_pod_door_glow_cine_CP"
+]
+
+struct FileLevelStruct
+{
+	table signalDummy
+
+
+
+
+
+
+
+
+
+
+
+	bool isHideLobbyWhileWaitingForEarnedRewardsDone = false
+	var menu
+	var blackFlash
+
+	array<RewardItemFlavor> rewards
+
+#if DEV
+	bool isTest = false
+#endif
+
+
+
+	int highestRarity
+
+}
+FileLevelStruct fileLevel
+
+
+void function RewardSummarySequence_ResetIsHideLobbyWhileWaitingForEarnedRewardsDone()
+{
+	fileLevel.isHideLobbyWhileWaitingForEarnedRewardsDone = false
+}
+
+
+void function RewardSummarySequence_Init()
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		AddUICallback_OnLevelInit( RewardSummarySequence_ResetIsHideLobbyWhileWaitingForEarnedRewardsDone )
+
+		RegisterSignal( STOP_HIDE_LOBBY_WHILE_WAITING_FOR_EARNED_REWARDS_SIGNAL_NAME )
+		RegisterSignal( STOP_MUSIC_SIGNAL_NAME )
+
+}
+
+
+void function InitRewardSummarySequenceMenu( var menu )
+{
+	fileLevel.menu = menu
+	fileLevel.blackFlash = Hud_GetChild( fileLevel.menu, "BlackFlash" )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, OnRewardSummarySequenceMenu_Open )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, OnRewardSummarySequenceMenu_Close )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, OnRewardSummarySequenceMenu_NavBack )
+}
+
+
+
+void function HideLobbyWhileWaitingForEarnedRewardsThread()
+{
+	EndSignal( fileLevel.signalDummy, STOP_HIDE_LOBBY_WHILE_WAITING_FOR_EARNED_REWARDS_SIGNAL_NAME )
+
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] HideLobbyWhileWaitingForEarnedRewards" )
+#endif
+
+	var lobbyMenu = GetMenu( "LobbyMenu" )
+	var lobbyBlackFlash = Hud_GetChild( lobbyMenu, "BlackFlash" )
+	Hud_SetAlpha( lobbyBlackFlash, 255 )
+	Hud_Show( lobbyBlackFlash )
+
+	OnThreadEnd(
+		function() : ( lobbyBlackFlash )
+		{
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+				printf( "[RewardSummarySequence] UnhideLobbyWhileWaitingForEarnedRewards" )
+#endif
+			Hud_Hide( lobbyBlackFlash )
+		}
+	)
+
+	float WAIT_DURATION = GetCurrentPlaylistVarFloat( "reward_summary_sequence_hide_lobby_max_duration", 3 )
+	
+	float endTime = ClientTime() + WAIT_DURATION
+	while ( true )
+	{
+		WaitFrame()
+		if ( ClientTime() > endTime )
+		{
+			break
+		}
+	}
+
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] HideLobbyWhileWaitingForEarnedRewards waited too long (no rewards?)" )
+#endif
+}
+
+
+
+void function TryHideLobbyWhileWaitingForEarnedRewards()
+{
+	if ( !GetConVarBool( "mtx_rewardSummarySequenceEnabled" ) )
+	{
+		return
+	}
+
+	if ( fileLevel.isHideLobbyWhileWaitingForEarnedRewardsDone )
+	{
+		
+		return
+	}
+
+	if ( IsWaitingToShowRewardSummarySequenceMenuAfterMatch() )
+	{
+		fileLevel.isHideLobbyWhileWaitingForEarnedRewardsDone = true
+		thread HideLobbyWhileWaitingForEarnedRewardsThread()
+	}
+}
+
+
+
+bool function IsWaitingToShowRewardSummarySequenceMenuAfterMatch()
+{
+	return UISafeGetPersistentVarAsBool( "rewardSummarySequenceWasConnectedToMatch" )
+}
+
+
+
+bool function OpenRewardSummarySequenceMenu( array<RewardItemFlavor> rewards )
+{
+	Assert( rewards.len() > 0 )
+
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] Open with %d Rewards", rewards.len() )
+#endif
+
+	Signal( fileLevel.signalDummy, STOP_HIDE_LOBBY_WHILE_WAITING_FOR_EARNED_REWARDS_SIGNAL_NAME )
+
+	bool showSequence = false
+
+	if ( UISafeGetPersistentVarAsBool( "rewardSummarySequenceWasConnectedToMatch" ) )
+	{
+		showSequence = true
+		Remote_ServerCallFunction( "ClientCallback_ResetRewardSummarySequenceWasConnectedToMatch" )
+	}
+
+	if ( !GetConVarBool( "mtx_rewardSummarySequenceEnabled" ) )
+	{
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+			printf( "[RewardSummarySequence] mtx_reward_summary_sequence_enabled is 0. Skipping!" )
+#endif
+		showSequence = false
+	}
+
+	if ( showSequence )
+	{
+		fileLevel.rewards = rewards
+
+#if DEV
+			fileLevel.isTest = false
+#endif
+
+		fileLevel.highestRarity = RewardItemFlavorArray_GetHighestRarity( rewards )
+
+		if ( GetActiveMenu() != fileLevel.menu )
+		{
+			AdvanceMenu( fileLevel.menu )
+			return true
+		}
+	}
+	else
+	{
+		
+		return OpenRewardSummaryMenu( rewards )
+	}
+
+	return false
+}
+
+
+#if DEV
+void function OpenRewardSummarySequenceTest( int highestRarity = 0, bool autoClose = false )
+{
+	if ( !IsLobby() )
+	{
+		Warning( "OpenRewardSummarySequenceTest only usable in Lobby!" )
+		return
+	}
+
+	fileLevel.isTest = true
+	fileLevel.highestRarity = highestRarity
+
+	if ( GetActiveMenu() != fileLevel.menu )
+		AdvanceMenu( fileLevel.menu )
+
+	if ( autoClose )
+	{
+		thread function() : ()
+		{
+			wait 1.0 
+			OnRewardSummarySequenceMenu_Close()
+		}()
+	}
+}
+#endif
+
+
+void function OnRewardSummarySequenceMenu_Open()
+{
+	string dumpRProfVarName = "mtx_rewardSummarySequenceDumpRProf"
+	if ( HasConVar( dumpRProfVarName ) && GetConVarBool( dumpRProfVarName ) )
+	{
+		int dumpSeconds = 3
+		string dumpFilename = format( "reward_summary_sequence_%d", int( UITime() ) )
+		ClientCommand( format( "rprof_timed_dump %d %s", dumpSeconds, dumpFilename ) )
+	}
+
+	UI_SetPresentationType( ePresentationType.REWARD_SUMMARY_SEQUENCE )
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( fileLevel.menu, "ScreenFrame" ), true )
+	thread FlashScreenBlack_Thread()
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] OnRewardSummarySequenceMenu_Open" )
+#endif
+	RunClientScript( "UIToClient_RewardSummarySequence_Play", fileLevel.highestRarity )
+}
+
+
+
+void function OnRewardSummarySequenceMenu_Close()
+{
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] OnRewardSummarySequenceMenu_Close" )
+#endif
+	RunClientScript( "UIToClient_RewardSummarySequence_Stop" )
+}
+
+
+
+void function OnRewardSummarySequenceMenu_NavBack()
+{
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] OnRewardSummarySequenceMenu_NavBack" )
+#endif
+	RunClientScript( "UIToClient_RewardSummarySequence_Stop" )
+	Signal( fileLevel.signalDummy, STOP_MUSIC_SIGNAL_NAME )
+}
+
+
+
+void function ClientToUI_NotifyRewardSummarySequenceFinished()
+{
+#if REWARD_SUMMARY_SEQUENCE_DEBUG
+		printf( "[RewardSummarySequence] ClientToUI_NotifyRewardSummarySequenceFinished" )
+#endif
+
+	
+	
+	
+	CloseActiveMenuNoDialogFlow()
+
+#if DEV
+	if ( fileLevel.isTest )
+	{
+		OpenRewardSummaryTest()
+	}
+	else
+#endif
+	{
+		OpenRewardSummaryMenu( fileLevel.rewards )
+	}
+}
+
+
+
+void function FlashScreenBlack_Thread()
+{
+	Hud_SetAlpha( fileLevel.blackFlash, 255 )
+	Hud_Show( fileLevel.blackFlash )
+	wait BLACK_FADE_TIME_HOLD
+	Hud_FadeOverTime( fileLevel.blackFlash, 0, BLACK_FADE_TIME, INTERPOLATOR_ACCEL )
+	wait BLACK_FADE_TIME
+	Hud_Hide( fileLevel.blackFlash )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function PlayRewardSummarySequenceMusicThread()
+{
+	EndSignal( fileLevel.signalDummy, STOP_MUSIC_SIGNAL_NAME )
+
+	OnThreadEnd( function() : ()
+	{
+		CancelCustomUIMusic()
+		UIMusicUpdate( true )
+	} )
+
+	PlayCustomUIMusic( REWARD_SUMMARY_SEQUENCE_MUSIC )
+
+	
+	const float MUSIC_DURATION = 5
+	wait MUSIC_DURATION
+}
+
+
+
+void function ClientToUI_PlayRewardSummarySequenceMusic()
+{
+	thread PlayRewardSummarySequenceMusicThread()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

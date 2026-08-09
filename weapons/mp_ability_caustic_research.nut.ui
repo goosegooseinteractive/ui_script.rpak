@@ -1,0 +1,681 @@
+global function MpAbilityCausticResearch_Init
+global function CausticResearch_IsEnabled
+global function CausticResearch_IsUpgradeSelectorActive
+global function CausticResearch_CanPlayerChooseUpgrade
+
+
+
+
+
+
+
+
+
+
+
+
+const string RESEARCH_RUI_STOP					= "caustic_reseasrch_rui_stop"
+const string RESEARCH_UPGRADE_ANNOUNCEMENT_STOP	= "caustic_reseasrch_announcement_stop"
+const string RESEARCH_AMOUNT_NETVAR 			= "researchAmount"
+
+const int NUM_RESEARCH_POINTS 					= 2
+const int CAUSTIC_MAX_UPGRADES_NUMBER 			= 4
+const int ORANGE_COLOR_MAX_UPGRADES_LVL 		= 2
+const int TIME_TO_DISPLAY_NOTIFICATION  		= 5
+const int NO_VALID_UPGRADE						= -1
+
+global enum eCausticResearchUpgradeNotification
+{
+	THROUGH_EVO,
+	THROUGH_FIELD_RESEARCH,
+	UPGRADE_UNLOCKED,
+}
+
+struct
+{
+
+
+
+
+
+
+
+
+
+
+
+
+}file
+
+struct
+{
+	int researchPerLevel		= 100
+	int deathboxResearchAmount 	= 30
+	int consoleResesarchAmount 	= 40
+	float poisonResearchScalar 	= 0.5
+
+	
+	bool widgetShowsNextUpgrade = false
+}tuning
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________INITS___________________________(){}
+#endif
+
+void function MpAbilityCausticResearch_Init()
+{
+	if( !CausticResearch_IsEnabled() )
+		return
+
+	RegisterSignal( RESEARCH_RUI_STOP )
+	RegisterSignal( RESEARCH_UPGRADE_ANNOUNCEMENT_STOP )
+
+	RegisterNetworkedVariable( RESEARCH_AMOUNT_NETVAR, SNDC_PLAYER_EXCLUSIVE, SNVT_UNSIGNED_INT, 0.0 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+void function CausticResearch_SetupTuning()
+{
+	tuning.researchPerLevel			= GetCurrentPlaylistVarInt( "caustic_research_per_level", tuning.researchPerLevel )
+	tuning.consoleResesarchAmount 	= GetCurrentPlaylistVarInt( "caustic_research_console_amount", tuning.consoleResesarchAmount )
+	tuning.deathboxResearchAmount 	= GetCurrentPlaylistVarInt( "caustic_research_deathbox_amount", tuning.deathboxResearchAmount )
+	tuning.poisonResearchScalar 	= GetCurrentPlaylistVarFloat( "caustic_research_poison_scalar", tuning.poisonResearchScalar )
+	tuning.widgetShowsNextUpgrade 	= GetCurrentPlaylistVarBool( "caustic_research_show_next_upgrade", tuning.widgetShowsNextUpgrade )
+}
+
+bool function CausticResearch_IsEnabled()
+{
+	return GetCurrentPlaylistVarBool( "caustic_research_enabled", true )
+}
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________CALLBACKS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________GENERAL___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function CausticResearch_GetNextLevelCap( entity player )
+{
+	int currentResearch = player.GetPlayerNetInt( RESEARCH_AMOUNT_NETVAR )
+	int researchLevel = int( floor(  currentResearch /  tuning.researchPerLevel ) )
+	researchLevel = int( min( researchLevel + 1, NUM_RESEARCH_POINTS) )
+	return researchLevel * tuning.researchPerLevel
+}
+
+int function CausticResearch_GetResearchLevel( entity player )
+{
+	int currentResearch = player.GetPlayerNetInt( RESEARCH_AMOUNT_NETVAR )
+	if( currentResearch < 0.0 )
+		return 0
+
+	return int( floor(  currentResearch / tuning.researchPerLevel ) )
+}
+
+bool function CausticResearch_HaveSameUpgradesAsLevels( entity player )
+{
+	if( !IsValid( player ) )
+		return false
+
+	int researchLevel = CausticResearch_GetResearchLevel( player )
+	int totalLevels = EvoLevels_GetPlayerLevel( player ) + researchLevel
+
+	return totalLevels == UpgradeCore_GetSelectedUpgrades( player ).len()
+}
+
+bool function CausticResearch_HasntUpgradedThroughAnyMeans( int evoLevel, int researchLevel )
+{
+	return researchLevel + evoLevel == 0
+}
+
+bool function CausticResearch_IsUpgradeSelectorActive( entity player )
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	return true
+}
+
+int function CausticResearch_GetNextAutoUnlockUpgradeIndex( entity player )
+{
+	if( CausticResearch_IsUpgradeSelectorActive( player ) )
+		return NO_VALID_UPGRADE
+
+	int researchLevel 	= CausticResearch_GetResearchLevel( player )
+	int evoLevel 		= EvoLevels_GetPlayerLevel( player )
+	if( researchLevel == 0 || evoLevel == 0 )
+		return NO_VALID_UPGRADE
+
+	if ( CausticResearch_HasntUpgradedThroughAnyMeans( evoLevel, researchLevel ) )
+		return NO_VALID_UPGRADE
+
+	if( researchLevel == evoLevel && CausticResearch_HaveSameUpgradesAsLevels( player ) )
+		return NO_VALID_UPGRADE
+
+	array<UpgradeChoice> upgrades = UpgradeCore_GetUpgradesForPlayer( player )
+	for( int index = 0; index < upgrades.len(); index++ )
+	{
+		if ( !UpgradeCore_IsUpgradeSelected( player, index ) )
+		{
+			return index
+		}
+	}
+
+	return NO_VALID_UPGRADE
+}
+
+bool function CausticResearch_CanPlayerChooseUpgrade( entity player, int index )
+{
+	if( !IsValid( player ) )
+		return false
+
+	if( !CausticResearch_IsEnabled() || IsLobby() )
+		return false
+
+
+
+
+
+
+	if( UpgradeCore_IsUpgradeSelected( player, index ) )
+		return false
+
+	bool isFiringRangeMode = GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_FIRING_RANGE )
+	bool isTraining = GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_TRAINING )
+	if( !isFiringRangeMode && !isTraining && GetGameState() < eGameState.Playing )
+		return false
+
+	int upgradeLevel = UpgradeCore_GetLevelForUpgrade( index )
+	int numAvailPointsAtLevel = 0
+	int numRequiredPointsAtLevel = 1
+	int researchLevel = CausticResearch_GetResearchLevel( player )
+	int evoLevel = EvoLevels_GetPlayerLevel( player )
+
+	if( researchLevel >= upgradeLevel )
+	{
+		numAvailPointsAtLevel += 1
+	}
+
+	if( evoLevel >= upgradeLevel )
+	{
+		numAvailPointsAtLevel += 1
+	}
+
+	int partnerIndex = index
+	if ( IsEven( index ) )
+	{
+		partnerIndex += 1
+	}
+	else
+	{
+		partnerIndex -= 1
+	}
+	if( UpgradeCore_IsUpgradeSelected( player, partnerIndex ) )
+	{
+		numRequiredPointsAtLevel += 1
+	}
+	return numAvailPointsAtLevel >= numRequiredPointsAtLevel
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

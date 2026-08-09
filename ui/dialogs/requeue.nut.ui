@@ -1,0 +1,295 @@
+global function InitRequeueDialog
+
+struct {
+	var menu
+	var dialogContent
+	var squadStatus
+	var requeueWithSquadButton
+	var requeueWithPartyButton
+	var holdExitLobbyButton
+	bool registeredKeys = false
+} file
+
+const float EXIT_TO_LOBBY_HOLDTIME = 0.6
+
+void function InitRequeueDialog( var newMenuArg )
+{
+	file.menu = newMenuArg
+	SetDialog( newMenuArg, true )
+
+	file.dialogContent 		 			= Hud_GetChild( file.menu, "DialogContent" )
+	file.squadStatus	 	 			= Hud_GetChild( file.menu, "RTKSquadStatus" )
+	file.requeueWithSquadButton       	= Hud_GetChild( file.menu, "RequeueWithSquadButton" )
+	file.requeueWithPartyButton       	= Hud_GetChild( file.menu, "RequeueWithPartyButton" )
+	file.holdExitLobbyButton 			= Hud_GetChild( file.menu, "HoldExitLobbyButton" )
+
+	AddMenuEventHandler( file.menu, eUIEvent.MENU_OPEN, RequeueDialog_OnOpen )
+	AddMenuEventHandler( file.menu, eUIEvent.MENU_CLOSE, RequeueDialog_OnClose )
+
+	AddButtonEventHandler( file.requeueWithSquadButton, UIE_CLICK, RequeueDialog_OnRequeueWithSquad )
+	AddButtonEventHandler( file.requeueWithPartyButton, UIE_CLICK, RequeueDialog_OnRequeueWithParty )
+	AddButtonEventHandler( file.holdExitLobbyButton, UIE_CLICK, RequeueDialog_OnExitToLobby )
+
+	AddMenuFooterOption( file.menu, LEFT, BUTTON_B, true, "#B_BUTTON_MINIMIZE", "#B_BUTTON_MINIMIZE", null )
+
+	RegisterSignal( "KillExistingRequeueRefreshThreads" )
+	RegisterSignal( "KillExistingRequeueHoldThreads" )
+}
+
+void function RequeueDialog_OnOpen()
+{
+	Reset_HoldExitLobbyButtonPercentage()
+
+	thread RequeueDialog_RefreshContent_Thread()
+
+	if( !file.registeredKeys )
+	{
+		RegisterButtonPressedCallback( BUTTON_DPAD_UP, RequeueDialog_OnRequeueWithParty )
+		RegisterButtonPressedCallback( KEY_1, RequeueDialog_OnRequeueWithParty )
+		RegisterButtonPressedCallback( BUTTON_DPAD_DOWN, RequeueDialog_OnRequeueWithSquad )
+		RegisterButtonPressedCallback( KEY_2, RequeueDialog_OnRequeueWithSquad )
+		RegisterButtonPressedCallback( KEY_SPACE, RequeueDialog_OnExitToLobby )
+		RegisterButtonPressedCallback( BUTTON_X, RequeueDialog_OnExitToLobby )
+
+		file.registeredKeys = true
+	}
+}
+
+void function RequeueDialog_OnClose()
+{
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueRefreshThreads" )
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueHoldThreads" )
+
+	if( file.registeredKeys )
+	{
+		file.registeredKeys = false
+
+		DeregisterButtonPressedCallback( BUTTON_DPAD_UP, RequeueDialog_OnRequeueWithParty )
+		DeregisterButtonPressedCallback( KEY_1, RequeueDialog_OnRequeueWithParty )
+		DeregisterButtonPressedCallback( BUTTON_DPAD_DOWN, RequeueDialog_OnRequeueWithSquad )
+		DeregisterButtonPressedCallback( KEY_2, RequeueDialog_OnRequeueWithSquad )
+		DeregisterButtonPressedCallback( KEY_SPACE, RequeueDialog_OnExitToLobby )
+		DeregisterButtonPressedCallback( BUTTON_X, RequeueDialog_OnExitToLobby )
+	}
+}
+
+bool function RequeueDialogIsOpen()
+{
+	var activeMenu = GetActiveMenu()
+	if ( activeMenu == file.menu )
+		return true
+
+	return false
+}
+
+bool function RequeueDialog_CanRequeue()
+{
+	bool fullPartyConnected = UI_IsFullPartyConnectedForRequeue()
+	bool playlistExpired = !Playlist_IsCurrentlyActive( GetMatchRequeuePlaylist() )
+	bool isRanked = GameModeVariant_IsActiveForPlaylist( GetCurrentPlaylistName(), eGameModeVariants.SURVIVAL_RANKED )
+	bool partyRankTierDifferences = isRanked && !Ranked_PartyMeetsRankedDifferenceRequirements()
+
+		bool rankedEventFinished = isRanked && RankedEvent_IsLastMatchRankedEvent() && RankedEvent_GetRumbleRankedState() == eRankedRumbleState.FINISH
+
+
+	return fullPartyConnected && !playlistExpired && !partyRankTierDifferences && !rankedEventFinished
+}
+
+void function RequeueDialog_RefreshContent_Thread()
+{
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueRefreshThreads" )
+	EndSignal( uiGlobal.signalDummy, "KillExistingRequeueRefreshThreads" )
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+
+	var dialogContentRui = Hud_GetRui( file.dialogContent )
+	var requeueWithSquadButtonRui = Hud_GetRui( file.requeueWithSquadButton )
+	var requeueWithPartyButtonRui = Hud_GetRui( file.requeueWithPartyButton )
+	var exitToLobbyButtonRui = Hud_GetRui( file.holdExitLobbyButton )
+
+	while ( true )
+	{
+		int partySize = GetPartySize()
+		bool canRequeue = RequeueDialog_CanRequeue()
+
+		
+		Hud_SetVisible( file.requeueWithSquadButton, false )
+		Hud_SetVisible( file.requeueWithPartyButton, false )
+
+		
+		string headerText = ""
+		string messageText = ""
+		string exitButtonText = ""
+		string requeueWithSquadButtonText = ""
+		string requeueWithPartyButtonText = ""
+		bool showRequeueWithSquadButton = false
+		bool showRequeueWithPartyButton = false
+
+		bool isOptedInParty = Requeue_AmIOptedInParty()
+		bool isOptedInSquad = Requeue_AmIOptedInSquad()
+		bool isPartyLeader = AmIPartyLeader()
+
+		if ( isOptedInParty )
+		{
+			headerText = "#DIALOG_REQUEUED_TITLE"
+			messageText = "#REQUEUE_WARNING_TEXT_MATCHMAKING"
+			exitButtonText = "#BUTTON_CANCEL_AND_EXIT_TO_LOBBY"
+		}
+		else if ( isOptedInSquad )
+		{
+			headerText = "#DIALOG_REQUEUED_SQUAD_TITLE"
+			messageText = "#REQUEUE_WARNING_TEXT_MATCHMAKING"
+			exitButtonText = "#BUTTON_CANCEL_AND_EXIT_TO_LOBBY"
+		}
+		else
+		{
+			if ( isPartyLeader )
+			{
+				headerText = "#DIALOG_REQUEUE_TITLE_LEAD"
+				messageText = "#REQUEUE_WARNING_TEXT_LEAD"
+				requeueWithSquadButtonText = Localize( "#BUTTON_REQUEUE_WITH_SQUAD" )
+				requeueWithPartyButtonText = ( partySize > 1 ) ? Localize( "#BUTTON_REQUEUE_WITH_PARTY", string( partySize ) ) : Localize( "#BUTTON_REQUEUE_SOLO" )
+				showRequeueWithSquadButton = canRequeue && Requeue_CanOptInSquad( true )
+				showRequeueWithPartyButton = canRequeue
+			}
+			else
+			{
+				headerText = "#DIALOG_REQUEUE_TITLE"
+				messageText = "#REQUEUE_WARNING_TEXT"
+				exitButtonText = "#BUTTON_REQUEUE_HOLD_EXIT_TO_LOBBY"
+			}
+		}
+
+		
+		RuiSetString( dialogContentRui, "headerText", Localize( headerText ) )
+		RuiSetString( dialogContentRui, "messageText", Localize( messageText ) )
+
+		
+		if ( exitButtonText != "" )
+			RuiSetString( exitToLobbyButtonRui, "buttonText", Localize( exitButtonText ) )
+		if ( requeueWithSquadButtonText != "" )
+			RuiSetString( requeueWithSquadButtonRui, "buttonText", requeueWithSquadButtonText )
+		if ( requeueWithPartyButtonText != "" )
+			RuiSetString( requeueWithPartyButtonRui, "buttonText", requeueWithPartyButtonText )
+
+		
+		Hud_SetVisible( file.requeueWithSquadButton, showRequeueWithSquadButton )
+		Hud_SetVisible( file.requeueWithPartyButton, showRequeueWithPartyButton )
+
+		WaitFrame()
+	}
+}
+
+void function RequeueDialog_OnExitToLobby( var btn )
+{
+	thread RequeueDialog_Thread_ExitToLobby( btn )
+}
+
+void function RequeueDialog_OnRequeueWithParty( var btn )
+{
+	if ( !IsFullyConnected() || !AmIPartyLeader() || !RequeueDialogIsOpen() )
+		return
+
+	if ( Requeue_AmIOptedInSquad() )
+		return
+
+	if ( Requeue_SquadOptInEnabled() )
+		RunClientScript( "ClRequeue_OptIn", eRequeueOptInChoice.PARTY )
+	else
+	{
+		bool isRanked = GameModeVariant_IsActiveForPlaylist( GetCurrentPlaylistName(), eGameModeVariants.SURVIVAL_RANKED )
+		if ( !isRanked )
+			StartMatchmakingFromMatch()
+	}
+}
+
+void function RequeueDialog_OnRequeueWithSquad( var btn )
+{
+	if ( !IsFullyConnected() || !AmIPartyLeader() || !RequeueDialogIsOpen() || !Requeue_SquadOptInEnabled() )
+		return
+
+	if ( Requeue_AmIOptedInParty() )
+		return
+
+	RunClientScript( "ClRequeue_OptIn", eRequeueOptInChoice.SQUAD )
+}
+
+void function RequeueDialog_Thread_ExitToLobby( var btn )
+{
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueHoldThreads" )
+	EndSignal( uiGlobal.signalDummy, "KillExistingRequeueHoldThreads" )
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+
+	string HOLD_SOUND = "UI_Menu_ReadyUp_CancelBar_1P"
+
+	OnThreadEnd(
+		function() : ( HOLD_SOUND )
+		{
+			StopUISound( HOLD_SOUND )
+		}
+	)
+
+	float startTime = ClientTime()
+	var rui = Hud_GetRui( file.holdExitLobbyButton )
+
+	EmitUISound( HOLD_SOUND )
+
+
+
+
+
+	while( RequeueDialogIsOpen() )
+	{
+		float currTime = ClientTime()
+		if ( currTime >= startTime + EXIT_TO_LOBBY_HOLDTIME )
+		{
+			break
+		}
+
+		if ( Hud_IsCursorOver( file.holdExitLobbyButton ) ) 
+		{
+
+
+
+
+
+
+
+
+
+
+				if ( !InputIsButtonDown( KEY_SPACE ) && !InputIsButtonDown( BUTTON_X ) && !InputIsButtonDown( MOUSE_LEFT ) && !InputIsButtonDown( BUTTON_A ) )
+				{
+					break
+				}
+		}
+		else if ( !InputIsButtonDown( KEY_SPACE ) && !InputIsButtonDown( BUTTON_X ) )
+		{
+			break
+		}
+
+		float timeElapsed = currTime - startTime
+		float percentage = timeElapsed / EXIT_TO_LOBBY_HOLDTIME
+
+		RuiSetFloat( rui, "holdPercentage", percentage )
+
+		WaitFrame()
+	}
+
+	
+	if ( ClientTime() >= startTime + EXIT_TO_LOBBY_HOLDTIME )
+	{
+		EmitUISound( "UI_Menu_ReadyUp_Cancel_1P" )
+		Requeue_LeaveMatch()
+	}
+
+	Reset_HoldExitLobbyButtonPercentage()
+}
+
+void function Reset_HoldExitLobbyButtonPercentage()
+{
+	var rui = Hud_GetRui( file.holdExitLobbyButton )
+
+	RuiSetFloat( rui, "holdPercentage", 0.0 )
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueRefreshThreads" )
+	Signal( uiGlobal.signalDummy, "KillExistingRequeueHoldThreads" )
+}

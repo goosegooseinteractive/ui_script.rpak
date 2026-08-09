@@ -1,0 +1,362 @@
+global function ShStats_Beginner_LevelInit
+global function StatsRegister_Beginner
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct FileStruct_FileLevel
+{
+
+		table< string, int > botQueueGraduationRequirements
+
+}
+FileStruct_FileLevel& fileLevel
+
+void function ShStats_Beginner_LevelInit()
+{
+	FileStruct_FileLevel newFileLevel
+	fileLevel = newFileLevel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+void function StatsRegister_Beginner()
+{
+
+
+
+
+
+
+		CAREER_STATS.graduated_bot_queue = RegisterExpensiveCalculatedStat_Int( null, "graduated_bot_queue", TRACKERS_NEED, SetupGraduatedBotQueueStat, [], CHALLENGE_GAME_MODE_NON_MODE )
+
+		CAREER_STATS.ftue_damage_done = RegisterAccumulatedStat_Int( null, "ftue_damage_done", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_ring_closings_survived = RegisterAccumulatedStat_Int( null, "ftue_ring_closings_survived", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_placements_top_10 = RegisterAccumulatedStat_Int( null, "ftue_placements_top_10", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_equipped_attachment = RegisterAccumulatedStat_Int( null, "ftue_equipped_attachment", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_health_restored_any_mode = RegisterAccumulatedStat_Int( null, "ftue_health_restored_any_mode", CHALLENGE_GAME_MODE_ANY, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_shield_restored = RegisterAccumulatedStat_Int( null, "ftue_shield_restored", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+		CAREER_STATS.ftue_slide_count = RegisterAccumulatedStat_Int( null, "ftue_slide_count", CHALLENGE_GAME_MODE_ANY, CHALLENGES_CALC_DEPENDS )
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+table< string, int > function GetBotQueueGradStatValues()
+{
+	
+	string botQueueGradOverrides = GetPlaylistVarString( PLAYLIST_NEW_PLAYER_ORIENTATION, "botQueueGraduationOverrides", "" )
+	foreach ( string pair in split( botQueueGradOverrides, WHITESPACE_CHARACTERS ) )
+	{
+		array<string> splitPair = split( pair, ":" )
+		Assert ( splitPair.len() == 2 && splitPair[1].isnumeric(), "Playlist Var \"botQueueGraduationOverrides\" has invalid pair ("+pair+") should be in the format: <StatRef>:<Value>" )
+		fileLevel.botQueueGraduationRequirements[ splitPair[0] ] <- int( splitPair[1] )
+	}
+
+	return fileLevel.botQueueGraduationRequirements
+}
+
+StatCalcFuncInfo function SetupGraduatedBotQueueStat( StatEntry calcEntry, array<StatTemplate> sourceTemplates )
+{
+	StatCalcFuncInfo info
+
+	info.calcFunc_Int = ( int function ( entity player, array<StatEntry> sourceEntries, int when ) : ( calcEntry ) {
+		foreach ( string statRef, int value in GetBotQueueGradStatValues() )
+		{
+			Assert( IsValidStatEntryRef(statRef) )
+			StatEntry statEntry = GetStatEntryByRef( statRef )
+			Assert( statEntry != calcEntry, "Trying to use this stat as a requirement for it's own value ("+statRef+")" )
+			if ( GetStat_Int( player, statEntry, when ) >= value )
+				return 1
+		}
+		return 0
+	} )
+
+	return info
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

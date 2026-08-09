@@ -1,0 +1,17 @@
+
+global function GameMode_AboutDialog_AppendMysteryLegendsTab
+
+void function GameMode_AboutDialog_AppendMysteryLegendsTab(array<featureTutorialTab> tabs)
+{
+	if ( GetPlaylistVarBool( GamemodeUtility_GetPlaylist(), "is_mystery_legends", false ) )
+	{
+		featureTutorialTab tab
+		array< featureTutorialData > tabRules
+		tab.tabName = "#GAMEMODE_MYSTERY_LEGENDS_TAB_NAME"
+		tabRules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#GAMEMODE_MYSTERY_LEGENDS_HEADER_1", "#GAMEMODE_MYSTERY_LEGENDS_BODY_1", $"rui/about_images/about_mysterylegends_1" ) )
+		tabRules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#GAMEMODE_MYSTERY_LEGENDS_HEADER_2", "#GAMEMODE_MYSTERY_LEGENDS_BODY_2", $"rui/about_images/about_mysterylegends_2" ) )
+		tab.rules = tabRules
+		tabs.append( tab )
+	}
+}
+

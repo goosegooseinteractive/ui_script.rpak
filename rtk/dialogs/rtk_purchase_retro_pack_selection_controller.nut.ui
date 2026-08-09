@@ -1,0 +1,471 @@
+global function RTKPurchaseRetroPackSelectionPanel_OnInitialize
+global function RTKPurchaseRetroPackSelectionPanel_OnDestroy
+global function InitPurchaseRetroPackSelectionDialog
+global function OpenPurchaseRetroPackSelectionDialog
+global function OpenPurchaseRetroPackSelectionDialogWithPack
+global function RTKMutator_GetPurchaseDialogCancelButtonTitle
+global function RTKMutator_IsPurchaseDialogCancelButtonInteractable
+
+global struct RTKPurchaseRetroPackSelectionPanel_Properties
+{
+	rtk_behavior cancelButton
+	rtk_behavior purchaseButton
+	rtk_panel packButtonsList
+}
+
+global struct RTKPurchaseRetroPackSelectionButtonModel
+{
+	string originalPrice
+	string price
+	int packQuantity
+	int discount
+}
+
+global struct RTKPurchaseRetroPackSelectionModel
+{
+	string title
+	string header
+	string guaranteedInfo
+	bool isGift
+	bool isPurchaseModal
+	RTKPurchasePackRateSectionInfo& eventItemsSection
+	RTKPurchasePackRateSectionInfo& standardItemsSection
+	RTKPurchasePackPriceSectionInfo& priceSection
+	array<string> infoLines
+	array<string> possibleItems
+	int purchaseButtonState
+	int cancelButtonState
+}
+
+struct DialogData
+{
+	GRXScriptOffer& offer
+	bool isGift
+	bool isPurchaseModal
+	ItemFlavorBag& price
+	int quantity = 1
+}
+
+struct {
+	bool isRestricted
+	var	menu
+	DialogData& dialogSelectedData
+	GRXScriptOffer& singleOffer
+	int purchaseStatus = eScriptGRXOperationStatus.INVALID
+	bool canNavigateBack = true
+} file
+
+
+
+
+
+void function RTKPurchaseRetroPackSelectionPanel_OnInitialize( rtk_behavior self )
+{
+	EmitUISound( "UI_Menu_Focus_Large" )
+	file.isRestricted = GRX_IsOfferRestricted()
+
+	if ( file.isRestricted )
+		return
+
+	file.purchaseStatus = eScriptGRXOperationStatus.INVALID
+	RetroPackPurchaseDialog_CanNavigateBack( true )
+
+	rtk_struct packSelectionPanel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "packSelectionPage", "RTKPurchaseRetroPackSelectionModel" )
+	RTKPurchaseRetroPackSelectionPanel_SetInfoDataModel( packSelectionPanel )
+	RTKPurchaseRetroPackSelectionPanel_SetPackButtonsModel( packSelectionPanel )
+
+	rtk_panel ornull buttonList = self.PropGetPanel( "packButtonsList" )
+	if ( buttonList != null )
+	{
+		expect rtk_panel( buttonList )
+		self.AutoSubscribe( buttonList, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, packSelectionPanel ) {
+			array< rtk_behavior > buttons = newChild.FindBehaviorsByTypeName( "Button" )
+			foreach ( button in buttons )
+			{
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex, packSelectionPanel  ) {
+					if ( newChildIndex == 0 )
+					{
+						if ( IsValid( file.singleOffer ) )
+						{
+							file.dialogSelectedData.offer = file.singleOffer
+							file.dialogSelectedData.price = GetSelectedPriceList()[0]
+						}
+					}
+					UpdatePurchaseAndCancelButtonsData()
+				} )
+			}
+		} )
+	}
+
+	rtk_behavior ornull cancelButton = self.PropGetBehavior( "cancelButton" )
+	if ( cancelButton != null )
+	{
+		expect rtk_behavior( cancelButton )
+		self.AutoSubscribe( cancelButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( ) {
+			RetroPackPurchaseDialog_OnNavigateBack( null )
+		} )
+	}
+
+	rtk_behavior ornull purchaseButton = self.PropGetBehavior( "purchaseButton" )
+	if ( purchaseButton != null )
+	{
+		expect rtk_behavior( purchaseButton )
+		self.AutoSubscribe( purchaseButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : () {
+			if ( !GRX_IsInventoryReady() )
+				return
+
+			if ( file.dialogSelectedData.isGift )
+			{
+				OpenGiftingDialog( file.dialogSelectedData.offer )
+				return
+			}
+
+			int state = GetPurchaseButtonState()
+			if ( state == ePurchaseDialogButtonState.GET_COINS )
+			{
+				OpenVCPopUp( null )
+			}
+			else if( state == ePurchaseDialogButtonState.AVAILABLE )
+			{
+				if ( GRX_QueuedOperationMayDirtyOffers() )
+				{
+					EmitUISound( "menu_deny" )
+					return
+				}
+
+				file.purchaseStatus = eScriptGRXOperationStatus.RUNNING
+				RetroPackPurchaseDialog_CanNavigateBack( false )
+				UpdatePurchaseAndCancelButtonsData()
+				QueuePackPurchaseOperation()
+			}
+		} )
+	}
+
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "packSelectionPage", true ) )
+	AddCallback_OnGRXInventoryStateChanged( UpdatePurchaseAndCancelButtonsData )
+
+	if( !IsRegisteredButtonPressedCallback( BUTTON_B, RetroPackPurchaseDialog_OnNavigateBack ) )
+	{
+		RegisterButtonPressedCallback( BUTTON_B, RetroPackPurchaseDialog_OnNavigateBack )
+	}
+
+	if( !IsRegisteredButtonPressedCallback( KEY_ESCAPE, RetroPackPurchaseDialog_OnNavigateBack ) )
+	{
+		RegisterButtonPressedCallback( KEY_ESCAPE, RetroPackPurchaseDialog_OnNavigateBack )
+	}
+}
+
+void function RTKPurchaseRetroPackSelectionPanel_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "packSelectionPage" )
+	Signal( uiGlobal.signalDummy, "StopRetroPackSelectPackCloseWhenOffersReady" )
+	SetPurchaseDialogStatus( ePurchaseDialogStatus.INACTIVE )
+	RemoveCallback_OnGRXInventoryStateChanged( UpdatePurchaseAndCancelButtonsData )
+
+	RetroPackPurchaseDialog_CanNavigateBack( true )
+	file.purchaseStatus = eScriptGRXOperationStatus.INVALID
+	if( IsRegisteredButtonPressedCallback( BUTTON_B, RetroPackPurchaseDialog_OnNavigateBack ) )
+	{
+		DeregisterButtonPressedCallback( BUTTON_B, RetroPackPurchaseDialog_OnNavigateBack )
+	}
+
+	if( IsRegisteredButtonPressedCallback( KEY_ESCAPE, RetroPackPurchaseDialog_OnNavigateBack ) )
+	{
+		DeregisterButtonPressedCallback( KEY_ESCAPE, RetroPackPurchaseDialog_OnNavigateBack )
+	}
+}
+
+
+
+
+
+void function RTKPurchaseRetroPackSelectionPanel_SetInfoDataModel( rtk_struct packSelectionPanel )
+{
+	if ( file.singleOffer.output.flavors.len() == 0 )
+		return
+
+	ItemFlavor packFlav = file.singleOffer.output.flavors[0]
+
+	RTKPurchaseRetroPackSelectionModel retroPackModel
+	retroPackModel.title = file.singleOffer.titleText
+	retroPackModel.header = GRXPack_GetHeaderText( packFlav )
+	retroPackModel.isGift = file.dialogSelectedData.isGift
+	retroPackModel.isPurchaseModal = file.dialogSelectedData.isPurchaseModal
+
+	retroPackModel.eventItemsSection.title = GRXPack_GetEventItemsRatesSectionHeader( packFlav )
+	retroPackModel.eventItemsSection.color = <0.83, 0.66, 0.15>
+	retroPackModel.eventItemsSection.rows = GRXPack_GetEventItemRatesData( packFlav )
+
+	retroPackModel.standardItemsSection.title = Localize( "#MILESTONE_BUNDLE_EVENT_STANDARD_LABEL" )
+	retroPackModel.standardItemsSection.color = <0.7, 0.7, 0.7>
+	retroPackModel.standardItemsSection.rows = GRXPack_GetStandardItemRatesData( packFlav )
+
+	retroPackModel.priceSection.title = Localize( "#MILESTONE_BUNDLE_EVENT_SINGLE_PACK_LABEL" )
+	retroPackModel.priceSection.color = <0.7, 0.7, 0.7>
+	retroPackModel.priceSection.rows = GRXPack_GetPricePackRangesData( packFlav, 10 )
+
+	retroPackModel.guaranteedInfo = GRXPack_GetGuaranteedPackText( packFlav )
+	retroPackModel.infoLines = GRXPack_GetLegalLines( packFlav )
+
+	retroPackModel.possibleItems = GRXPack_GetStandardLootCategories()
+	array<string> additionalCategories = GRXPack_GetAdditionaltCategories( packFlav )
+	if ( additionalCategories.len() > 0 )
+	{
+		retroPackModel.possibleItems.extend( additionalCategories )
+	}
+
+	RTKStruct_SetValue( packSelectionPanel, retroPackModel )
+}
+
+void function RTKPurchaseRetroPackSelectionPanel_SetPackButtonsModel( rtk_struct packSelectionPanel )
+{
+	Assert( file.singleOffer.prices.len() <= 2 )
+
+	array<RTKPurchaseRetroPackSelectionButtonModel> buttonsDataModel
+	RTKPurchaseRetroPackSelectionButtonModel singlePremium
+
+	if ( !file.dialogSelectedData.isGift )
+	{
+		singlePremium.price = "%$" + ItemFlavor_GetIcon( GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] ) + "% " + FormatAndLocalizeNumber( "1", float( GRXOffer_GetPremiumPriceQuantity( file.singleOffer ) ), true )
+		int originalPrice = GRXOffer_GetOriginalPremiumPriceQuantity( file.singleOffer )
+		int price = GRXOffer_GetPremiumPriceQuantity( file.singleOffer )
+		if ( originalPrice > 0 )
+		{
+			singlePremium.discount = int( (float((originalPrice - price )) / float(originalPrice)) * 100 )
+			singlePremium.originalPrice = "%$" + ItemFlavor_GetIcon( GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] ) + "% " + FormatAndLocalizeNumber( "1", float(originalPrice), true )
+		}
+	}
+	singlePremium.packQuantity = 1
+	buttonsDataModel.append( singlePremium )
+
+	rtk_array packSelectionButtonData = RTKStruct_GetOrCreateScriptArrayOfStructs( packSelectionPanel, "buttonData", "RTKPurchaseRetroPackSelectionButtonModel" )
+	RTKArray_SetValue( packSelectionButtonData, buttonsDataModel )
+
+	if ( IsValid( file.singleOffer ) )
+	{
+		file.dialogSelectedData.offer = file.singleOffer
+	}
+
+	file.dialogSelectedData.price = GetSelectedPriceList()[0]
+	UpdatePurchaseAndCancelButtonsData()
+}
+
+
+
+
+
+void function InitPurchaseRetroPackSelectionDialog( var newMenuArg )
+{
+	var menu = newMenuArg
+	file.menu = menu
+	SetDialog( menu, true )
+	RegisterSignal( "StopRetroPackSelectPackCloseWhenOffersReady" )
+}
+
+
+
+
+
+int function GetPurchaseButtonState()
+{
+	if ( !GRX_IsInventoryReady() )
+		return ePurchaseDialogButtonState.UNAVAILABLE
+
+	if ( file.dialogSelectedData.isGift )
+	{
+		return ePurchaseDialogButtonState.AVAILABLE
+	}
+
+	if ( !GRXOffer_IsEligibleForPurchase( file.dialogSelectedData.offer ) )
+		return ePurchaseDialogButtonState.UNAVAILABLE
+
+	int state = ePurchaseDialogButtonState.UNAVAILABLE
+	if ( GRX_CanAfford( file.dialogSelectedData.price, 1 ) )
+	{
+		state = ePurchaseDialogButtonState.AVAILABLE
+	}
+	else if ( GRX_IsPremiumPrice( file.dialogSelectedData.price ) )
+	{
+		state = ePurchaseDialogButtonState.GET_COINS
+	}
+	else
+	{
+		state = ePurchaseDialogButtonState.INSUFICIENT_FUNDS
+	}
+	return state
+}
+
+int function GetCancelButtonState()
+{
+	int state = ePurchaseDialogButtonState.AVAILABLE
+	if ( file.purchaseStatus == eScriptGRXOperationStatus.DONE_SUCCESS )
+	{
+		state = ePurchaseDialogButtonState.SUCCESS
+	}
+	else if ( file.purchaseStatus == eScriptGRXOperationStatus.RUNNING )
+	{
+		state = ePurchaseDialogButtonState.PROCESSING
+	}
+
+	return state
+}
+
+void function UpdatePurchaseAndCancelButtonsData()
+{
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	rtk_struct packSelectionModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "packSelectionPage", true ) )
+	RTKStruct_SetInt( packSelectionModel, "purchaseButtonState", GetPurchaseButtonState() )
+	RTKStruct_SetInt( packSelectionModel, "cancelButtonState", GetCancelButtonState() )
+}
+
+void function RetroPackPurchaseDialog_OnNavigateBack( var unused )
+{
+	if ( file.canNavigateBack && file.menu == GetActiveMenu() )
+	{
+		UICodeCallback_NavigateBack()
+	}
+}
+
+void function QueuePackPurchaseOperation()
+{
+	int queryGoal = GRX_HTTPQUERYGOAL_PURCHASE_PACK
+	ScriptGRXOperationInfo operation
+	operation.expectedQueryGoal = queryGoal
+	operation.doOperationFunc = (void function( int opId ) : ( queryGoal ) {
+		GRX_PurchaseOffer( opId, queryGoal, file.dialogSelectedData.offer, file.dialogSelectedData.price, file.dialogSelectedData.quantity, null )
+	})
+	operation.onDoneCallback = (void function( int status ) : ()
+	{
+		OnPurchaseOperationFinished( status, file.dialogSelectedData.offer, file.dialogSelectedData.price, file.dialogSelectedData.quantity )
+	})
+	QueueGRXOperation( GetLocalClientPlayer(), operation )
+}
+
+array<ItemFlavorBag> function GetSelectedPriceList()
+{
+	array<ItemFlavorBag> priceList = clone file.dialogSelectedData.offer.prices
+	priceList.sort( int function( ItemFlavorBag a, ItemFlavorBag b ) {
+		if ( GRXCurrency_GetCurrencyIndex( a.flavors[0] ) > GRXCurrency_GetCurrencyIndex( b.flavors[0] ) )
+			return 1
+
+		if ( GRXCurrency_GetCurrencyIndex( a.flavors[0] ) < GRXCurrency_GetCurrencyIndex( b.flavors[0] ) )
+			return -1
+
+		return 0
+	} )
+	return priceList
+}
+
+void function OnPurchaseOperationFinished( int status, GRXScriptOffer offer, ItemFlavorBag price, int quantity )
+{
+	bool wasSuccessful = ( status == eScriptGRXOperationStatus.DONE_SUCCESS )
+	string sound = GRXCurrency_GetPurchaseSound( GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] )
+	if ( wasSuccessful )
+	{
+		file.purchaseStatus = eScriptGRXOperationStatus.DONE_SUCCESS
+		EmitUISound( sound )
+		if ( GetActiveMenu() == file.menu )
+		{
+			thread CloseMenuWhenOffersReady()
+		}
+	}
+	else
+	{
+		file.purchaseStatus = eScriptGRXOperationStatus.INVALID
+		sound = "menu_deny"
+		EmitUISound( sound )
+	}
+	RetroPackPurchaseDialog_CanNavigateBack( true )
+	UpdatePurchaseAndCancelButtonsData()
+}
+
+void function CloseMenuWhenOffersReady()
+{
+	EndSignal( uiGlobal.signalDummy, "StopRetroPackSelectPackCloseWhenOffersReady" )
+	while ( !GRX_AreOffersReady() )
+		WaitFrame()
+
+	wait 0.5
+	CloseActiveMenu()
+}
+
+void function RetroPackPurchaseDialog_CanNavigateBack( bool canNavigateBack )
+{
+	file.canNavigateBack = canNavigateBack
+	Menus_SetNavigateBackDisabled( !canNavigateBack )
+}
+
+
+
+
+
+void function OpenPurchaseRetroPackSelectionDialog( bool isGift, GRXScriptOffer offer )
+{
+
+
+
+
+
+
+
+
+
+	file.singleOffer = offer
+	file.dialogSelectedData.isGift = isGift
+	file.dialogSelectedData.isPurchaseModal = true
+	AdvanceMenu( GetMenu( "PurchaseRetroPackSelectionDialog" ) )
+}
+
+void function OpenPurchaseRetroPackSelectionDialogWithPack( bool isGift, ItemFlavor pack )
+{
+	
+	GRXScriptOffer fakeOffer
+	fakeOffer.titleText = ItemFlavor_GetLongName( pack )
+	fakeOffer.descText = ""
+
+	ItemFlavorBag priceBag
+	priceBag.flavors.append( GRX_CURRENCIES[GRX_CURRENCY_HEIRLOOM] )
+	priceBag.quantities.append( 999999999 )
+	fakeOffer.prices.append( priceBag )
+
+	AddItemToFakeOffer( fakeOffer, pack )
+
+	file.singleOffer = fakeOffer
+	file.dialogSelectedData.isGift = isGift
+	file.dialogSelectedData.isPurchaseModal = false
+	AdvanceMenu( GetMenu( "PurchaseRetroPackSelectionDialog" ) )
+}
+
+
+
+
+string function RTKMutator_GetPurchaseDialogCancelButtonTitle( int state )
+{
+	switch ( state )
+	{
+		case ePurchaseDialogButtonState.AVAILABLE:
+			return Localize( "#B_BUTTON_CLOSE" )
+		case ePurchaseDialogButtonState.SUCCESS:
+			return Localize( "#SUCCESS" )
+		case ePurchaseDialogButtonState.PROCESSING:
+			return Localize( "#PROCESSING" )
+
+	}
+	return Localize( "#UNAVAILABLE" )
+}
+
+bool function RTKMutator_IsPurchaseDialogCancelButtonInteractable( int state )
+{
+	switch ( state )
+	{
+		case ePurchaseDialogButtonState.AVAILABLE:
+			return true
+		case ePurchaseDialogButtonState.PROCESSING:
+		case ePurchaseDialogButtonState.SUCCESS:
+			return false
+	}
+	return true 
+}
+

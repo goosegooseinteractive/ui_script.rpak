@@ -1,0 +1,179 @@
+global function InitRTKRankedRumbleOverview
+global function RTKRankedRumbleOverview_OnInitialize
+global function RTKRankedRumbleOverview_OnDestroy
+
+global struct RTKRankedRumbleOverview_Properties
+{
+	rtk_behavior buttonBehavior
+}
+
+global struct RTKRankedRumbleRewardModel
+{
+	int rewardFlavGUID
+	asset rewardAsset
+	int rewardQuality
+	int rewardAmount
+}
+
+global struct RTKRankedRumbleRewardTier
+{
+	array<RTKRankedRumbleRewardModel> rewards
+	bool isCurrentTier
+	string tier
+	string tierPercent
+}
+
+global struct RTKRankedRumbleOverviewInfo
+{
+	array< RTKRankedRumbleRewardTier > rewardsTier
+	array< RTKCupRulesModel > rulesList
+	array< RTKCupRulesModel > rewardsInfoList
+	bool challengeButtonInteractive
+}
+
+global const int RULES_COUNT = 5
+global const int REWARDS_INFO_COUNT = 3
+
+struct
+{
+
+} file
+
+void function InitRTKRankedRumbleOverview( var panel )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}
+
+void function RTKRankedRumbleOverview_OnInitialize( rtk_behavior self )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleOverviewInfo", "RTKRankedRumbleOverviewInfo" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "rankedRumbleOverviewInfo", true ) )
+
+	SetChallengeButtonBehavior( self )
+
+	if ( Cups_IsInitialized() )
+	{
+		thread InitializeScreen( self )
+	}
+}
+
+void function InitializeScreen( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+	RTKRankedRumbleOverviewInfo overviewInfo = GetOverviewInfo()
+
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleOverviewInfo", "RTKRankedRumbleOverviewInfo" )
+	RTKStruct_SetValue( panelStruct, overviewInfo )
+}
+
+void function RTKRankedRumbleOverview_OnDestroy( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "rankedRumbleOverviewInfo" )
+}
+
+void function SetChallengeButtonBehavior( rtk_behavior self )
+{
+	rtk_behavior ornull buttonBehavior = self.PropGetBehavior( "buttonBehavior" )
+	if ( buttonBehavior != null )
+	{
+		expect rtk_behavior( buttonBehavior )
+		self.AutoSubscribe( buttonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			JumpToChallenges( "ranked" )
+		})
+	}
+}
+
+RTKRankedRumbleOverviewInfo function GetOverviewInfo()
+{
+	RTKRankedRumbleOverviewInfo overviewInfo
+
+	while ( !Cups_GetAllUserCupData() )
+	{
+		WaitFrame()
+	}
+
+	if ( !IsFullyConnected() || !IsPersistenceAvailable() )
+	{
+		return overviewInfo
+	}
+
+	
+	for (int i = 1; i <= RULES_COUNT; i++)
+	{
+		RTKCupRulesModel rule
+		rule.bulletpointText = "#RANKED_RUMBLE_RULE_" + i
+		rule.visible = true
+		overviewInfo.rulesList.append( rule )
+	}
+
+	
+	for (int i = 1; i <= REWARDS_INFO_COUNT; i++)
+	{
+		RTKCupRulesModel rewardInfo
+		rewardInfo.bulletpointText = "#RANKED_RUMBLE_REWARDS_INFO_" + i
+		rewardInfo.visible = true
+		overviewInfo.rewardsInfoList.append( rewardInfo )
+	}
+
+	overviewInfo.challengeButtonInteractive = Ranked_MeetRankedRequirement( GetLocalClientPlayer() )
+
+	CupBakeryAssetData ornull cupData = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+	if ( cupData == null )
+		return overviewInfo
+
+	expect CupBakeryAssetData( cupData )
+
+	foreach( rule in overviewInfo.rulesList )
+	{
+		rule.textArgs = string( cupData.topMatchesCount )
+	}
+
+	
+	foreach ( int index, CupTierData tier in cupData.tiers )
+	{
+		RTKRankedRumbleRewardTier rewardTier
+		rewardTier.tier = Localize ( "#RANKED_RUMBLE_TIER_X_TITLE", index + 1 )
+		rewardTier.isCurrentTier = false
+
+		switch( index )
+		{
+			case 0:
+				rewardTier.tierPercent = Localize( "#RANKED_RUMBLE_TOP_X_CONDITION", "10" )
+				break
+			case 1:
+				rewardTier.tierPercent = Localize( "#RANKED_RUMBLE_TOP_X_CONDITION", "10-30" )
+				break
+			case 2:
+				rewardTier.tierPercent = Localize( "#RANKED_RUMBLE_TOP_X_CONDITION", "30-50" )
+				break
+			case 3:
+				rewardTier.tierPercent = Localize( "#RANKED_RUMBLE_BOTTOM_X_CONDITION", "50" )
+				break
+			default:
+				rewardTier.tierPercent = ""
+				break
+		}
+
+		foreach ( CupTierRewardData rewardData in tier.rewardData )
+		{
+			ItemFlavor rewardFlav = GetItemFlavorByAsset( rewardData.reward )
+			RTKRankedRumbleRewardModel rewardModel
+			rewardModel.rewardFlavGUID = ItemFlavor_GetGUID( rewardFlav )
+			rewardModel.rewardQuality = maxint( ItemFlavor_GetQuality( rewardFlav ), 0)
+			rewardModel.rewardAsset = CustomizeMenu_GetRewardButtonImage( rewardFlav )
+
+			if ( ItemFlavor_GetType( rewardFlav ) == eItemType.voucher && Voucher_GetEffectBattlepassStars( rewardFlav ) > 0 )
+				rewardModel.rewardAmount = rewardData.quantity * Voucher_GetEffectBattlepassStars( rewardFlav )
+			else
+				rewardModel.rewardAmount = rewardData.quantity
+
+			rewardTier.rewards.append( rewardModel )
+		}
+		overviewInfo.rewardsTier.append( rewardTier )
+	}
+
+	return overviewInfo
+}

@@ -1,0 +1,710 @@
+global function Augments_Init
+
+
+
+
+
+
+
+
+
+
+global function Augments_Enabled
+
+
+
+
+
+
+
+
+global function Augments_GetFlyerDeathboxAugmentChance
+global function Augments_GetHotZoneAugmentCount
+global function Augments_GetHotZoneAugmentLootGroup
+
+global function Augments_GetInfAmmoAugReworkEnabled
+
+
+
+
+
+
+
+
+
+
+const asset AUGMENTS_LOOT_MODEL_VFX = $"P_amps_item_base"
+const asset AUGMENTS_LOOT_MODEL_ICON = $"mdl/props/loot_wep_iso_amp/w_loot_wep_iso_amp_icon_01.rmdl"
+
+const string AUGMENTS_GOLD_BIN_AUGMENT_GROUP = "augments_gold_bin"
+const string AUGMENTS_SUPPORT_GROUP = "augments_support"
+const string AUGMENTS_SUPPORT_GROUP_POST_RESET = "augments_support_post_reset"
+const string AUGMENTS_ASSAULT_GROUP = "augments_assault"
+const string AUGMENTS_ASSAULT_GROUP_POST_RESET = "augments_assault_post_reset"
+
+global const string AUGMENT_SLOT_REF = "augment"
+
+
+const table AUGMENTS_TO_SKIN_REF_MAP =
+{
+	["augment_infinite_ammo"] = "Infinite_Ammo",
+	["augment_battery_printer"] = "Bottomless_Batteries",
+	["augment_heal_overflow"] = "Overflow_Healer",
+	["augment_legend_expert"] = "Power_Booster",
+	["augment_armor_overflow"] = "Over_Armor",
+
+
+
+}
+
+
+
+const table AUGMENTS_TO_CP1_COLOR =
+{
+	["augment_infinite_ammo"] = COLOR_PURPLE,
+	["augment_battery_printer"] = COLOR_PURPLE,
+	["augment_heal_overflow"] = COLOR_PURPLE,
+	["augment_legend_expert"] =  COLOR_PURPLE,
+	["augment_armor_overflow"] = COLOR_PURPLE,
+
+
+
+}
+
+
+const table AUGMENTS_TO_CP2_COLOR =
+{
+	["augment_infinite_ammo"] = COLOR_PURPLE,
+	["augment_battery_printer"] = COLOR_PURPLE,
+	["augment_heal_overflow"] = COLOR_PURPLE,
+	["augment_legend_expert"] =  COLOR_PURPLE,
+	["augment_armor_overflow"] = COLOR_PURPLE,
+
+
+
+}
+
+struct AugmentIconInfo
+{
+	entity iconModel
+	int effectID
+}
+
+struct
+{
+
+
+
+
+
+
+
+
+
+
+
+	string mythicBinAugment = ""
+	bool mythicBinHasRandomTeamBasedAugment = true
+	bool mythicBinHasRandomAugment = true
+	int mythicBinMaxAugmentsPerTeam = 1
+	float goldBinAugmentSpawnChance = 1.0
+	float supportAugmentSpawnChance = 0.114
+	float assaultAugmentSpawnChance = 0.2
+	float supportAugmentSpawnChance_PostReset = 1
+	float assaultAugmentSpawnChance_PostReset = 1
+	float augmentBinAssistChance = 0
+	bool augmentsBinAssistOnlyAfterReset = true
+	float flyerDeathboxAugmentSpawnChance = 0.1
+	int augmentsInHotZoneCount = 1
+	string hotZoneAugmentGroup = "augments"
+
+	bool infiniteAmmoAugReworkEnabled = true
+
+
+
+} tuning
+
+struct
+{
+	int augmentsEnabled = eCachedBool.NOT_CACHED
+
+
+
+
+
+
+
+
+
+} file
+
+
+void function Augments_Init()
+{
+	if ( !Augments_Enabled() )
+		return
+
+	RegisterTuningStruct( "tuning", "augments_" )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Augments_Enabled()
+{
+
+		
+		return GetCurrentPlaylistVarBool( "augments_enabled", true ) && GameMode_IsActive( eGameModes.SURVIVAL ) && !GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_TRAINING )
+
+
+	if ( file.augmentsEnabled == eCachedBool.NOT_CACHED )
+	{
+		bool enabled = GetCurrentPlaylistVarBool( "augments_enabled", true ) && GameMode_IsActive( eGameModes.SURVIVAL ) && !GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_TRAINING )
+
+		file.augmentsEnabled = enabled ? eCachedBool.TRUE : eCachedBool.FALSE
+	}
+
+	return bool(file.augmentsEnabled)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+float function Augments_GetFlyerDeathboxAugmentChance()
+{
+	return tuning.flyerDeathboxAugmentSpawnChance
+}
+
+int function Augments_GetHotZoneAugmentCount()
+{
+	return tuning.augmentsInHotZoneCount
+}
+
+string function Augments_GetHotZoneAugmentLootGroup()
+{
+	return tuning.hotZoneAugmentGroup
+}
+
+bool function Augments_GetInfAmmoAugReworkEnabled()
+{
+	return tuning.infiniteAmmoAugReworkEnabled
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

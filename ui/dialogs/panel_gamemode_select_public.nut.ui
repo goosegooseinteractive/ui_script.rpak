@@ -1,0 +1,1196 @@
+global function InitGameModeSelectPublicPanel
+
+global function DismissGamemodeSelectorAndRefresh
+global function GamemodeSelect_GetModeName
+global function GamemodeSelect_UpdateSelectButton
+global function UpdateOpenModeSelectDialog
+global function GamemodeSelect_PlayVideo
+global function GamemodeSelect_SetFeaturedSlot
+global function GameModeSelect_GetPlaylists
+global function GameModeSelect_OnPartyChanged
+
+global function ModeSelectorHighlight
+
+struct
+{
+	var panel
+	var craftingPreview
+	var mixtapePreview
+	var craftingSlideout
+	var disabledCover
+	var gameModeButtonBackground
+	var header
+	var closeButton
+	var backToFTUEButton
+
+	bool hasLTM = false
+
+	bool hasRegular0 = false
+	bool hasRegular2 = false
+	bool hasRegular3 = false
+
+	int   videoChannel = -1
+	asset currentVideoAsset = $""
+	bool showVideo
+	bool craftingOpen = false
+
+	string featuredSlot = ""
+	string featuredSlotString = "#HEADER_NEW_MODE"
+
+	float lastCrossFadeGameTime = -1
+	bool  hasLocalPlayerCompletedTraining = false
+
+	bool  hasLocalPlayerCompletedNewPlayerOrientation = false
+
+
+	array<var> modeSelectButtonList
+	table<var, string> selectButtonPlaylistNameMap
+	var rankedRUIToUpdate = null
+
+	table<string, var > slotToButtonMap
+	table<string, var > slotToColorMap
+	table<string, string> slotToPlaylistNameMap
+
+	string mapPreviewSlotKey = ""
+	string mapPreviewPlaylistName = ""
+
+} file
+
+const int DRAW_NONE = 0
+const int DRAW_IMAGE = 1
+const int DRAW_RANK = 2
+
+const int FEATURED_NONE = 0
+const int FEATURED_ACTIVE = 1
+const int FEATURED_INACTIVE = 2
+
+void function InitGameModeSelectPublicPanel( var panel )
+{
+	file.panel = panel
+
+	RegisterSignal( "GamemodeSelect_EndVideoStopThread" )
+
+	file.closeButton              = Hud_GetChild( panel, "CloseButton" )
+	file.gameModeButtonBackground = Hud_GetChild( panel, "GameModeButtonBg" )
+	file.header                   = Hud_GetChild( panel, "Header" )
+	file.craftingPreview          = Hud_GetChild( panel, "CraftingPreview" )
+	file.mixtapePreview           = Hud_GetChild( panel, "MixtapePreview" )
+	file.disabledCover            = Hud_GetChild( panel, "DisabledCover" )
+	file.backToFTUEButton         = Hud_GetChild( panel, "BackToFTUEModalButton" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnShowModePublicPanel )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnHidePublicPanel )
+
+	file.slotToButtonMap = {
+		training = Hud_GetChild( panel, "GameModeButton0" ),
+		bot_playground = Hud_GetChild( panel, "GameModeButton9" ),
+		firing_range = Hud_GetChild( panel, "GameModeButton1" ),
+		regular_0 = Hud_GetChild( panel, "GameModeButton10" ),
+		regular_1 = Hud_GetChild( panel, "GameModeButton2" ),
+		regular_2 = Hud_GetChild( panel, "GameModeButton3" ),
+		regular_3 = Hud_GetChild( panel, "GameModeButton4" ),
+		ranked = Hud_GetChild( panel, "GameModeButton5" ),
+		mixtape = Hud_GetChild( panel, "GameModeButton6" ),
+		ltm = Hud_GetChild( panel, "GameModeButton7" ),
+		event = Hud_GetChild( panel, "GameModeButton8" )
+	}
+
+	RuiSetString( Hud_GetRui( Hud_GetChild( panel, "SurvivalCategory" ) ), "header", "#GAMEMODE_CATEGORY_SURVIVAL" )
+	RuiSetString( Hud_GetRui( Hud_GetChild( panel, "MixtapeCategory" ) ), "header", "" ) 
+	RuiSetString( Hud_GetRui( Hud_GetChild( panel, "LTMCategory" ) ), "header", "" ) 
+	RuiSetString( Hud_GetRui( Hud_GetChild( panel, "PracticeCategory" ) ), "header", "#GAMEMODE_CATEGORY_PRACTICE" )
+
+	Hud_AddEventHandler( file.closeButton, UIE_CLICK, OnCloseButton_Activate )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_CLOSE", "#B_BUTTON_CLOSE" )
+	AddPanelFooterOption( file.panel, LEFT, BUTTON_A, false, "#A_BUTTON_SELECT_GAMEMODE", "#A_BUTTON_SELECT_GAMEMODE", null, IsModeFocusedAndEnabled )
+	AddPanelFooterOption( file.panel, LEFT, BUTTON_X, false, "#X_BUTTON_ABOUT_GAMEMODE", "#X_BUTTON_ABOUT_GAMEMODE", null, IsModeFocusedAndHasTutorial )
+}
+
+
+
+
+void function OnShowModePublicPanel( var panel )
+{
+	if ( FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+	{
+		string recommendedSlot = FTUEFlow_GameModeSelectRecommendation()
+		if ( recommendedSlot != "" )
+		{
+			GamemodeSelect_SetFeaturedSlot( recommendedSlot, "#MENU_RETICLE_RECOMMENDED" )
+		}
+	}
+
+	SetModeSelectMenuOpen( true )
+	file.hasLocalPlayerCompletedTraining             = HasLocalPlayerCompletedTraining() || IsLocalPlayerExemptFromTraining()
+
+	file.hasLocalPlayerCompletedNewPlayerOrientation = HasLocalPlayerCompletedNewPlayerOrientation() || IsLocalPlayerExemptFromNewPlayerOrientation()
+
+	UpdateOpenModeSelectDialog()
+
+	AddCallbackAndCallNow_UserInfoUpdated( Ranked_OnUserInfoUpdatedInGameModeSelect )
+
+	Hud_AddEventHandler( file.backToFTUEButton, UIE_CLICK, NavigateBackToFTUEModal )
+
+	foreach ( string slotKey, button in file.slotToButtonMap )
+	{
+		Hud_AddEventHandler( button, UIE_CLICK, GamemodeButton_Activate )
+		Hud_AddEventHandler( button, UIE_CLICKRIGHT, GamemodeButton_OnRightClick )
+		Hud_AddEventHandler( button, UIE_GET_FOCUS, GamemodeButton_OnGetFocus )
+		Hud_AddEventHandler( button, UIE_LOSE_FOCUS, GamemodeButton_OnLoseFocus )
+		file.modeSelectButtonList.append( button )
+	}
+	ModeSelectorHighlight()
+	AnimateIn()
+}
+
+void function OnHidePublicPanel( var panel )
+{
+#if DEV
+	printt( "Clearing rui to update in game mode select" )
+#endif
+	
+	var craftingRui = Hud_GetRui( file.craftingPreview )
+	RuiSetWallTimeBad( craftingRui, "animateStartTime" )
+	var mixtapeRui = Hud_GetRui( file.mixtapePreview )
+	RuiSetWallTimeBad( mixtapeRui, "animateStartTime" )
+	Hud_SetVisible(file.mixtapePreview, false)
+
+	file.rankedRUIToUpdate = null
+	RemoveCallback_UserInfoUpdated( Ranked_OnUserInfoUpdatedInGameModeSelect )
+
+	Hud_RemoveEventHandler( file.backToFTUEButton, UIE_CLICK, NavigateBackToFTUEModal )
+
+	foreach ( string slotKey, button in file.slotToButtonMap )
+	{
+		Hud_RemoveEventHandler( button, UIE_CLICK, GamemodeButton_Activate )
+		Hud_RemoveEventHandler( button, UIE_CLICKRIGHT, GamemodeButton_OnRightClick )
+		Hud_RemoveEventHandler( button, UIE_GET_FOCUS, GamemodeButton_OnGetFocus )
+		Hud_RemoveEventHandler( button, UIE_LOSE_FOCUS, GamemodeButton_OnLoseFocus )
+	}
+}
+
+void function ModeSelectorHighlight()
+{
+	string selectedPlaylist = GetGamemodeSelectorPlaylist()
+	foreach ( string slotKey, button in file.slotToButtonMap )
+	{
+		if ( button in file.selectButtonPlaylistNameMap )
+		{
+#if DEV
+				printt("ModeSelectorHighlight", file.selectButtonPlaylistNameMap[button])
+#endif
+			bool shouldShowHighlight = HasGamemodeSelector() && file.selectButtonPlaylistNameMap[button] == selectedPlaylist
+			var rui = Hud_GetRui( button )
+			RuiSetBool( rui, "isNew", shouldShowHighlight )
+		}
+	}
+}
+
+void function DismissGamemodeSelectorAndRefresh()
+{
+	if ( HasGamemodeSelector() )
+	{
+		DismissGamemodeSelector()
+		ModeSelectorHighlight()
+	}
+}
+
+void function ToggleCraftingTooltip( bool turnOn )
+{
+	if ( turnOn && !Hud_IsVisible( file.disabledCover ) )
+	{
+		ToolTipData td
+		td.tooltipStyle = eTooltipStyle.CRAFTING_INFO
+		td.titleText = "#CRAFTING_FLOW"
+		td.descText = "#CRAFTING_FEATURE_DESC"
+
+		Hud_SetToolTipData( file.craftingPreview, td )
+	}
+	else
+	{
+		Hud_ClearToolTipData( file.craftingPreview )
+	}
+}
+
+
+
+
+
+void function GamemodeButton_Activate( var button )
+{
+
+	if ( IsLockedByRoadToRanked( button ) )
+	{
+		JumpToChallenges( "road_to_ranked" )
+		return
+	}
+
+
+	if ( Hud_IsLocked( button ) || !IsPartyLeader() )
+	{
+		EmitUISound( "menu_deny" )
+		return
+	}
+
+	string playlistName = file.selectButtonPlaylistNameMap[button]
+
+	if ( IsPrivateMatchLobby() )
+		PrivateMatch_SetSelectedPlaylist( playlistName )
+	else
+		LobbyPlaylist_SetSelectedPlaylist( playlistName )
+
+	DismissGamemodeSelectorAndRefresh()
+	CloseAllDialogs()
+}
+
+void function GamemodeButton_OnRightClick( var button )
+{
+
+	if ( IsLockedByRoadToRanked( button ) )
+	{
+		UI_OpenFeatureTutorialDialog( ROAD_TO_RANKED_TUTORIAL )
+		return
+	}
+
+
+	string playlistName = file.selectButtonPlaylistNameMap[button]
+	OpenPlaylistTutorialDialog( playlistName )
+}
+
+bool function IsModeFocusedAndEnabled()
+{
+	var focus = GetFocus()
+
+	if ( focus in file.selectButtonPlaylistNameMap )
+		return IsPartyLeader && !Hud_IsLocked( focus )
+
+	return false
+}
+
+bool function IsModeFocusedAndHasTutorial()
+{
+	var focus = GetFocus()
+
+	if ( focus in file.selectButtonPlaylistNameMap )
+	{
+		string playlistName = file.selectButtonPlaylistNameMap[focus]
+		string uiRules  = GetPlaylistVarString( playlistName, "ui_rules", "" )
+
+		return FeatureHasTutorialTabs( uiRules )
+	}
+
+	return false
+}
+
+void function GamemodeButton_OnGetFocus( var button )
+{
+	bool allowCraftingToBeSeen = !AreCraftingDispensersEnabled()
+
+	CrossFadeCraftingMapPreview(button, true, allowCraftingToBeSeen)
+	ToggleCraftingTooltip(false)
+	UpdateFooterOptions()
+}
+
+void function GamemodeButton_OnLoseFocus( var button )
+{
+	bool allowCraftingToBeSeen = !AreCraftingDispensersEnabled()
+
+	CrossFadeCraftingMapPreview(button, false, allowCraftingToBeSeen)
+	ToggleCraftingTooltip(allowCraftingToBeSeen)
+	UpdateFooterOptions()
+}
+
+
+
+
+
+void function UpdateOpenModeSelectDialog()
+{
+	file.showVideo = GetCurrentPlaylistVarBool( "lobby_gamemode_video", false )
+	Hud_SetAboveBlur( GetMenu( "LobbyMenu" ), false )
+
+	if ( file.featuredSlot != "" && !FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+		thread ClearFeaturedSlotAfterDelay()
+
+
+	file.selectButtonPlaylistNameMap.clear()
+	UpdateGameModes()
+	UpdateCrafting()
+
+	string headerText
+	string headerDescText
+	bool useAnimation
+	bool showDisabledCover
+
+
+	if ( file.hasLocalPlayerCompletedNewPlayerOrientation )
+
+
+
+	{
+		headerText     = ""
+		headerDescText = "#GAMEMODE_SELECT_HEADER"
+		useAnimation   = false
+		showDisabledCover = false
+	}
+
+	else if ( file.hasLocalPlayerCompletedTraining )
+	{
+		headerText     = "#PL_WELCOME_TO_APEX"
+		headerDescText = "#GAMEMODE_SELECT_HEADER_COMPLETE_ORIENTATION"
+		useAnimation   = true
+		showDisabledCover = true
+
+		Hud_SetZ( file.disabledCover, 7 )
+	}
+
+	else
+	{
+		headerText     = "#PL_WELCOME_TO_APEX"
+		headerDescText = "#GAMEMODE_SELECT_HEADER_COMPLETE_TRAINING"
+		useAnimation   = true
+		showDisabledCover = true
+
+		Hud_SetZ( file.disabledCover, 10 )
+	}
+
+	HudElem_SetRuiArg( file.header, "header", headerText )
+	HudElem_SetRuiArg( file.header, "description", headerDescText )
+	HudElem_SetRuiArg( file.header, "useAnimation", useAnimation )
+	Hud_SetVisible( file.disabledCover, showDisabledCover )
+	ToggleCraftingTooltip( !showDisabledCover )
+}
+
+void function UpdateGameModes()
+{
+	file.slotToPlaylistNameMap = GameModeSelect_GetPlaylists();
+
+	string mainPlaylist = "defaults"
+
+#if DEV
+	foreach ( string slotKey, string playlistName in file.slotToPlaylistNameMap )
+	{
+		printf( "GameModesDebug: %s(): Slot: %s, Game Mode: %s", FUNC_NAME(), slotKey, playlistName )
+	}
+#endif
+
+	foreach ( string slotKey, button in file.slotToButtonMap )
+	{
+		string playlistName = file.slotToPlaylistNameMap[slotKey]
+		var rui = Hud_GetRui( button )
+		bool isLtm = button == file.slotToButtonMap["ltm"]
+		bool isEvent = button == file.slotToButtonMap["event"]
+		bool isMixtape = button == file.slotToButtonMap["mixtape"]
+		bool isRankedBR = button == file.slotToButtonMap["ranked"]
+		bool isRegular0 = button == file.slotToButtonMap["regular_0"]
+		bool isRegular2 = button == file.slotToButtonMap["regular_2"]
+		bool isRegular3 = button == file.slotToButtonMap["regular_3"]
+
+		if ( playlistName == "" )
+		{
+			Hud_SetEnabled( button, false )
+			if(isLtm)
+			{
+				Hud_Hide( button )
+				Hud_Hide( Hud_GetChild(file.panel,"LTMCategory" ) )
+				file.hasLTM = false
+			}
+			else if(isEvent)
+				Hud_Hide( button )
+			else if( isRegular0 )
+			{
+				file.hasRegular0 = false
+				Hud_Hide( button )
+			}
+			else if( isRegular2 )
+			{
+				file.hasRegular2 = false
+				Hud_Hide( button )
+			}
+			else if( isRegular3 )
+			{
+				file.hasRegular3 = false
+				Hud_Hide( button )
+			}
+
+			RuiSetString( rui, "modeNameText", "")
+			RuiSetImage( rui, "modeImage", $"rui/menu/gamemode/playlist_bg_none" )
+
+			if( isRankedBR )
+			{
+				if ( !Ranked_IsPastRankedSeasonEndDate() )
+				{
+					RuiSetGameTime( rui, "expireTime", RUI_BADGAMETIME )
+
+					ItemFlavor ornull rankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+					bool isFirstSplit = rankedPeriod != null ? Ranked_IsRankedV2FirstSplit( expect ItemFlavor( rankedPeriod ) ) : true
+
+					if ( isFirstSplit ) 
+					{
+						int ornull seasonEndDate = Ranked_GetCurrentRankedPeriodEndTime()
+						if ( seasonEndDate != null )
+						{
+							expect int( seasonEndDate )
+							int remainingDuration = seasonEndDate - GetUnixTimestamp()
+							RuiSetGameTime( rui, "nextRankUpdateTime", ClientTime() + remainingDuration )
+							RuiSetString( rui, "modeLockedReason", "#PLAYLIST_STATE_RANKED_PATCH_REQUIRED_COUNTDOWN" )
+						}
+						else
+						{
+							RuiSetGameTime( rui, "nextRankUpdateTime", RUI_BADGAMETIME )
+							RuiSetString( rui, "modeLockedReason", "#PLAYLIST_STATE_RANKED_PATCH_REQUIRED" )
+						}
+					}
+					else 
+					{
+						RuiSetGameTime( rui, "nextRankUpdateTime", RUI_BADGAMETIME )
+						RuiSetString( rui, "modeLockedReason", "#PLAYLIST_STATE_RANKED_RESTART" )
+					}
+				}
+				else
+				{
+					RuiSetString( rui, "modeLockedReason", "#PLAYLIST_STATE_RANKED_SPLIT_ROLLOVER" )
+					RuiSetGameTime( rui, "expireTime", RUI_BADGAMETIME )
+					RuiSetGameTime( rui, "nextRankUpdateTime", RUI_BADGAMETIME )
+				}
+			}
+			else
+			{
+				RuiSetString( rui, "modeLockedReason", "" )
+			}
+			RuiSetBool( rui, "showLockedIcon", true )
+			RuiSetBool( rui, "isLocked", true )
+		}
+		else
+		{
+			Hud_Show( button )
+			if(isLtm)
+			{
+				Hud_Show( Hud_GetChild(file.panel,"LTMCategory" ) )
+				file.hasLTM = true
+			}
+
+			if( isRegular0 )
+				file.hasRegular0 = true
+
+			if( isRegular2 )
+				file.hasRegular2 = true
+
+			if( isRegular3 )
+				file.hasRegular3 = true
+
+			if( isMixtape )
+				RuiSetString( Hud_GetRui( Hud_GetChild( file.panel, "MixtapeCategory" ) ), "header", GetPlaylistVarString( playlistName, "gamemode_select_category_name", "#GAMEMODE_CATEGORY_MIXTAPE" ) )
+			else if( isLtm )
+				RuiSetString( Hud_GetRui( Hud_GetChild( file.panel, "LTMCategory" ) ), "header", GetPlaylistVarString( playlistName, "gamemode_select_category_name", "#GAMEMODE_CATEGORY_LTM" ) )
+
+			
+			if ( slotKey.find( "regular" ) == 0 )
+			{
+				if ( file.slotToPlaylistNameMap[ slotKey ] != "" )
+					Hud_SetHeight( button, Hud_GetBaseHeight( button ) )
+				else
+					Hud_SetHeight( button, 0 )
+			}
+
+			bool isEnabled = false
+
+			if ( HasEventTakeOverActive() )
+			{
+				if ( button == file.slotToButtonMap["ltm"] )
+					isEnabled = true
+
+				if ( !file.hasLocalPlayerCompletedNewPlayerOrientation && button == file.slotToButtonMap["regular_1"] )
+					isEnabled = true
+
+				if ( !file.hasLocalPlayerCompletedTraining && button == file.slotToButtonMap["training"] )
+					isEnabled = true
+
+				if ( file.hasLocalPlayerCompletedNewPlayerOrientation && file.hasLocalPlayerCompletedTraining && isRankedBR )
+					isEnabled = true
+			}
+			else
+			{
+				if ( file.hasLocalPlayerCompletedNewPlayerOrientation )
+				{
+					
+					isEnabled = true
+				}
+				else if ( file.hasLocalPlayerCompletedTraining )
+				{
+					
+					if ( button == file.slotToButtonMap["training"] || button == file.slotToButtonMap["firing_range"] || button == file.slotToButtonMap["regular_1"] )
+						isEnabled = true
+				}
+				else
+				{
+					
+					if ( button == file.slotToButtonMap["training"] )
+						isEnabled = true
+				}
+			}
+
+
+
+
+
+
+
+			
+			if ( isRankedBR )
+			{
+				if ( Playlist_ShouldLockRankedPlaylistForSplit() || Playlist_ShouldLockRankedPlaylistForPatch( playlistName ) || Ranked_IsPastRankedSeasonEndDate() )
+				{
+					isEnabled = false
+					RuiSetBool( rui, "showLockedIcon", true )
+					RuiSetBool( rui, "isLocked", true )
+				}
+				RuiSetGameTime( rui, "nextRankUpdateTime", RUI_BADGAMETIME )
+			}
+
+			Hud_SetEnabled( button, isEnabled )
+
+			if ( slotKey == "regular_1" )
+				mainPlaylist = playlistName
+
+			GamemodeSelect_UpdateSelectButton( button, playlistName, slotKey, false )
+		}
+
+		
+		if ( isRankedBR )
+		{
+			
+			bool isLadderOnlyRank = Ranked_IsLocalPlayerInLadderOnlyTier()
+			RuiSetBool( rui, "isLadderRank", isLadderOnlyRank )
+		}
+	}
+	
+	var backgroundRui = Hud_GetRui( file.gameModeButtonBackground )
+
+	
+	string playlistName = file.slotToPlaylistNameMap[ "regular_1" ]
+	int mapIdx = playlistName != "" ? GetPlaylistActiveMapRotationIndex( playlistName ) : -1
+	string panelImageKey = GetPlaylistMapVarString( playlistName, mapIdx, "panel_image", "" )
+	string rotationMapName = GetPlaylistMapVarString( playlistName, mapIdx, "map_name", "" )
+
+	asset panelImageAsset = GetImageFromImageMap( panelImageKey )
+	if ( HasEventTakeOverActive() && IsPlaylistLockedForEvent( playlistName ) )
+	{
+		panelImageAsset = GetImageFromImageMap("play_apex_panel_locked")
+	}
+
+	string ornull rotationName = GetPlaylistRotationNameFromPlaylist( playlistName )
+	int remainingTimeSeconds  =rotationName ? GetPlaylistRotationNextTime( expect string (rotationName) ) - GetUnixTimestamp() : 0
+
+	RuiSetImage( backgroundRui, "modeImage", panelImageAsset )
+	RuiSetString( backgroundRui, "modeNameText", GetPlaylistVarString( mainPlaylist, "survival_takeover_name", "#PL_PLAY_APEX" ) ) 
+	RuiSetString( backgroundRui, "mapDisplayName", rotationMapName ) 
+	RuiSetGameTime( backgroundRui, "rotationGroupNextTime", ClientTime() + remainingTimeSeconds ) 
+
+	if ( file.featuredSlot == "" || FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+		RuiSetInt( backgroundRui, "featuredState", FEATURED_NONE )
+	else
+		RuiSetInt( backgroundRui, "featuredState", FEATURED_INACTIVE )
+
+	if(file.mapPreviewSlotKey != "")
+	{
+		file.mapPreviewPlaylistName = file.slotToPlaylistNameMap[ file.mapPreviewSlotKey ]
+		GamemodeSelect_UpdateMixtapePreview(file.mapPreviewPlaylistName, file.mapPreviewSlotKey )
+	}
+}
+
+void function OnCloseButton_Activate( var button )
+{
+	CloseAllDialogs()
+}
+
+void function UpdateCrafting()
+{
+
+		
+		if ( GetCurrentPlaylistVarBool( "crafting_enabled", false ) )
+		{
+			
+			if ( AreCraftingDispensersEnabled() )
+				return
+
+			
+			RunClientScript( "UICallback_PopulateCraftingPanel", file.craftingPreview )
+		}
+
+}
+
+bool function AreCraftingDispensersEnabled()
+{
+	return GetCurrentPlaylistVarBool( "crafting_dispensers_enabled", true )
+}
+
+const float startBuffer = 0.05
+
+void function AnimateIn()
+{
+	
+	SetElementAnimations( file.header, 0.35, 0.07 )
+
+	if ( Hud_IsVisible( file.disabledCover ) )
+		SetElementAnimations( file.disabledCover, 0, 0.07 )
+
+	
+	SetElementAnimations(file.gameModeButtonBackground, 0, 0.07)
+	SetElementAnimations(file.slotToButtonMap["ranked"], 0.07, 0.07)
+	SetElementAnimations(Hud_GetChild(file.panel,"SurvivalCategory" ), 0.07, 0.07)
+	
+	if( file.hasRegular0 )
+		SetElementAnimations(file.slotToButtonMap["regular_0"], 0.11, 0.07)
+
+	SetElementAnimations(file.slotToButtonMap["regular_1"], 0.14, 0.07)
+
+	if( file.hasRegular2 )
+		SetElementAnimations(file.slotToButtonMap["regular_2"], 0.17, 0.07)
+
+	if( file.hasRegular3 )
+		SetElementAnimations(file.slotToButtonMap["regular_3"], 0.20, 0.07)
+	
+	SetElementAnimations(file.slotToButtonMap["mixtape"], 0.14, 0.07)
+
+	SetElementAnimations(Hud_GetChild(file.panel,"MixtapeCategory" ), 0.21, 0.07)
+	if(file.hasLTM)
+	{
+		SetElementAnimations(file.slotToButtonMap["ltm"], 0.28, 0.07)
+		SetElementAnimations(Hud_GetChild(file.panel,"LTMCategory" ), 0.28, 0.07)
+		Hud_SetPinSibling(file.slotToButtonMap["training"], "GameModeButton7")
+
+		
+		Hud_SetNavRight( file.slotToButtonMap["mixtape"], file.slotToButtonMap["ltm"] )
+		Hud_SetNavLeft( file.slotToButtonMap["training"], file.slotToButtonMap["ltm"] )
+		Hud_SetNavLeft( file.slotToButtonMap["bot_playground"], file.slotToButtonMap["ltm"] )
+		Hud_SetNavLeft( file.slotToButtonMap["firing_range"], file.slotToButtonMap["ltm"] )
+
+	}else{
+		Hud_SetPinSibling(file.slotToButtonMap["training"], "GameModeButton6")
+		
+		Hud_SetNavRight( file.slotToButtonMap["mixtape"], file.slotToButtonMap["training"] )
+		Hud_SetNavLeft( file.slotToButtonMap["training"], file.slotToButtonMap["mixtape"] )
+		Hud_SetNavLeft( file.slotToButtonMap["bot_playground"], file.slotToButtonMap["mixtape"] )
+		Hud_SetNavLeft( file.slotToButtonMap["firing_range"], file.slotToButtonMap["mixtape"] )
+	}
+	
+	SetElementAnimations(Hud_GetChild(file.panel,"PracticeCategory" ), 0.35, 0.07)
+	SetElementAnimations(file.slotToButtonMap["training"], 0.35,  0.07)
+	SetElementAnimations(file.slotToButtonMap["bot_playground"], 0.35,  0.07)
+	SetElementAnimations(file.slotToButtonMap["firing_range"], 0.35, 0.07)
+	SetElementAnimations(file.slotToButtonMap["event"], 0.35, 0.07)
+
+	bool animateCraftingRui = !AreCraftingDispensersEnabled()
+
+	if ( animateCraftingRui )
+	{
+		SetElementAnimations(file.craftingPreview, 0.35, 0.07)
+		RuiSetInt( Hud_GetRui(file.craftingPreview), "animationDirection", 1 )
+	}
+	else
+	{
+		Hud_SetVisible( file.craftingPreview, false )
+	}
+
+}
+
+void function SetElementAnimations( var element, float delay, float duration )
+{
+	RuiSetWallTimeWithOffset( Hud_GetRui( element ), "animateStartTime", startBuffer + delay )
+	RuiSetFloat( Hud_GetRui( element ), "animateDuration", duration )
+}
+
+void function CrossFadeCraftingMapPreview(var button, bool showMixtape = false, bool allowCraftingRotationToBeSeen = true)
+{
+	foreach ( string slotKey, slotButton in file.slotToButtonMap )
+	{
+		
+		bool isMixtape = slotButton == button && ( slotKey == "mixtape" )
+		bool isRanked  = slotButton == button && ( slotKey == "ranked" )
+		bool isBotPlayground  = slotButton == button && ( slotKey == "bot_playground" )
+		bool isLtm = slotButton == button && ( slotKey == "ltm" )
+		bool isPub = slotButton == button && ( slotKey == "regular_0" || slotKey == "regular_1" || slotKey == "regular_2" || slotKey == "regular_3")
+
+		if( isMixtape || isRanked || isPub || isLtm || isBotPlayground)
+		{
+			
+			var craftingRui = Hud_GetRui( file.craftingPreview )
+			var mixtapeRui  = Hud_GetRui( file.mixtapePreview )
+
+			string playlistName = file.slotToPlaylistNameMap[slotKey]
+			GamemodeSelect_UpdateMixtapePreview(playlistName, slotKey )
+
+			float delayTime = startBuffer
+
+			Hud_SetVisible(file.craftingPreview, allowCraftingRotationToBeSeen)
+			file.mapPreviewPlaylistName = ""
+			file.mapPreviewSlotKey      = ""
+
+			if(showMixtape)
+			{
+				Hud_SetVisible(file.mixtapePreview, true)
+				file.mapPreviewPlaylistName = playlistName
+				file.mapPreviewSlotKey      = slotKey
+			}
+
+			float startOffset = delayTime
+
+			RuiSetInt( craftingRui, "animationDirection", (showMixtape)? -1: 1 )
+			RuiSetWallTimeWithOffset( craftingRui, "animateStartTime", startOffset )
+			RuiSetFloat( craftingRui, "animateDuration", 0.1 )
+
+			RuiSetInt( mixtapeRui, "animationDirection", (showMixtape)? 1: -1 )
+			RuiSetWallTimeWithOffset( mixtapeRui, "animateStartTime", startOffset )
+			RuiSetFloat( craftingRui, "animateDuration", 0.1 )
+
+			break
+		}
+	}
+}
+
+
+
+
+table<string, string> function GameModeSelect_GetPlaylists()
+{
+	table<string, string> slotToPlaylistNameMap
+	foreach ( slotKey, button  in file.slotToButtonMap )
+		slotToPlaylistNameMap[ slotKey ] <- GetCurrentPlaylistForSchedule( slotKey )
+
+	return slotToPlaylistNameMap
+}
+
+
+
+void function GamemodeSelect_UpdateSelectButton( var button, string playlistName, string slot = "", bool isLobbyButton = false )
+{
+	var rui = Hud_GetRui( button )
+
+	if ( playlistName == "" )
+		Warning( FUNC_NAME() + ": Function called with empty playlistName!" )
+	
+
+	int mapIdx = playlistName != "" ? GetPlaylistActiveMapRotationIndex( playlistName ) : -1
+
+	bool doDebug = (InputIsButtonDown( KEY_LSHIFT ) && InputIsButtonDown( KEY_LCONTROL )) || (InputIsButtonDown( BUTTON_TRIGGER_LEFT_FULL ) && InputIsButtonDown( BUTTON_B ))
+	string modeTitleString = GetPlaylistVarString( playlistName, "title", "" )
+	RuiSetString( rui, "modeNameText", modeTitleString != "" ? modeTitleString : GamemodeSelect_GetModeName( playlistName, mapIdx, "#PLAYLIST_UNAVAILABLE" ) )
+
+	
+	bool isInFlow = NewPlayerMatchMaking_IsInMatchMakingFlow( GetLocalClientPlayer() )
+	bool isContinuousMatchPlayer = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() ) == eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH
+	if ( isInFlow && isContinuousMatchPlayer )
+	{
+		if ( modeTitleString == "#GAME_MODE_UNRANKED" )
+		{
+			RuiSetString( rui, "modeNameText", "#PL_ORIENTATION_MATCH" )
+		}
+	}
+
+	if ( GetConVarBool( "gamemode_select_show_undecorated_playlist" ) )
+	{
+		RuiSetString( rui, "playlistName", GetUndecoratedPlaylistName( playlistName ) )
+	}
+	else
+	{
+		RuiSetString( rui, "playlistName", playlistName )
+	}
+	RuiSetString( rui, "playlistTypeText", "" )
+
+	if ( GetScheduleFromPlaylist( playlistName ) == "mixtape" )
+	{
+		RuiSetString( rui, "playlistTypeText", "#GAMEMODE_CATEGORY_MIXTAPE" )
+	}
+	else if ( GetPlaylistVarString( playlistName, "subtitle", "" ) != "" )
+	{
+		RuiSetString( rui, "playlistTypeText", GetPlaylistVarString( playlistName, "subtitle", "" ) )
+	}
+
+	RuiSetBoolIfExists( rui, "isLobby", isLobbyButton )
+	RuiSetBool( rui, "doDebug", doDebug )
+
+	string descText = GetPlaylistMapVarString( playlistName, mapIdx, "description", "#HUD_UNKNOWN" )
+	RuiSetString( rui, "modeDescText", descText )
+	RuiSetString( rui, "modeLockedReason", "" )
+	RuiSetBool( rui, "alwaysShowDesc", false )
+	RuiSetBool( rui, "isPartyLeader", false )
+	RuiSetBool( rui, "showLockedIcon", true )
+
+	string thumbnailKeyOverride  = GetPlaylistVarString( playlistName, "thumbnail_image", "" )
+	string imageKey = GetPlaylistMapVarString( playlistName, mapIdx, "image", "" )
+	asset imageAsset = GetImageFromImageMap( imageKey )
+	asset thumbnailAsset = GetThumbnailImageFromImageMap( isLobbyButton && thumbnailKeyOverride != "" ? thumbnailKeyOverride : imageKey  )
+	if ( HasEventTakeOverActive() && IsPlaylistLockedForEvent( playlistName ) )
+	{
+		if ( GetScheduleFromPlaylist( playlistName ) == "mixtape" )
+			imageAsset = GetImageFromImageMap( "mixtape_locked" )
+		else
+			imageAsset = GetImageFromImageMap( imageKey + "_event_locked" )
+
+		thumbnailAsset = GetThumbnailImageFromImageMap( "event_locked" )
+		RuiSetBool( rui, "eventLocked", true )
+	}
+	RuiSetImage( Hud_GetRui( button ), "modeImage", imageAsset )
+	RuiSetImage( Hud_GetRui( button ), "thumbnailImage", thumbnailAsset )
+
+	bool isPlaylistAvailable = Lobby_IsPlaylistAvailable( playlistName )
+	Hud_SetLocked( button, !isPlaylistAvailable )
+	int playlistState = LobbyPlaylist_GetPlaylistState( playlistName )
+	string playlistStateString = LobbyPlaylist_GetPlaylistStateString( playlistState )
+
+	RuiSetString( rui, "modeLockedReason", playlistStateString )
+	RuiSetString( rui, "headerLockedText", playlistState == ePlaylistState.RANKED_ACCESS_REQUIRED ? "#RANKED_LOCKED" : "" )
+	RuiSetBool( rui, "isRTRLocked", playlistState == ePlaylistState.RANKED_ACCESS_REQUIRED )
+
+	
+	RuiSetGameTime( rui, "expireTime", RUI_BADGAMETIME )
+
+	bool hideCountDown = GetPlaylistVarBool( playlistName, "force_hide_schedule_block_countdown", false )
+	if (!hideCountDown)
+	{
+		TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( playlistName )
+		if ( playlistTimeRange != null )
+		{
+			int remainingDuration = expect TimestampRange( playlistTimeRange ).endUnixTime - GetUnixTimestamp()
+			
+			if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+			{
+				int ornull seasonEndDate = Ranked_GetCurrentRankedPeriodEndTimeWithRumble()
+				if ( seasonEndDate != null )
+				{
+					expect int( seasonEndDate )
+					remainingDuration = seasonEndDate - GetUnixTimestamp()
+				}
+			}
+
+			RuiSetGameTime( rui, "expireTime", ClientTime() + remainingDuration )
+		}
+	}
+
+	int emblemMode = DRAW_NONE
+	bool isPlaylistRanked = GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED )
+	if ( isPlaylistRanked )
+	{
+		if ( Ranked_IsCurrentSplitResetAcknowledged() )
+		{
+			emblemMode = DRAW_RANK
+		}
+		else
+		{
+			asset emblemImage = GetModeEmblemImage( playlistName )
+			if ( emblemImage != $"" )
+			{
+				emblemMode = DRAW_IMAGE
+				RuiSetImage( rui, "emblemImage", emblemImage )
+			}
+		}
+
+		int rankScore      = 0
+		int ladderPosition = 0
+
+		rankScore = GetPlayerRankScore( GetLocalClientPlayer() )
+		ladderPosition = Ranked_GetLadderPosition( GetLocalClientPlayer() )
+
+		if ( Ranked_ShouldUpdateWithComnunityUserInfo( rankScore, ladderPosition ) ) 
+			file.rankedRUIToUpdate = rui
+
+
+
+
+
+		PopulateRuiWithRankedBadgeDetails( rui, rankScore, ladderPosition )
+
+	}
+	else if (button != file.slotToButtonMap["firing_range"])
+	{
+		asset emblemImage = GetModeEmblemImage( playlistName )
+		if ( emblemImage != $"" )
+		{
+			emblemMode = DRAW_IMAGE
+			RuiSetImage( rui, "emblemImage", emblemImage )
+		}
+	}
+	RuiSetInt( rui, "emblemMode", emblemMode )
+
+	file.selectButtonPlaylistNameMap[button] <- playlistName
+
+	if ( file.featuredSlot == "" || slot == "" )
+	{
+		RuiSetInt( rui, "featuredState", FEATURED_NONE )
+	}
+	else
+	{
+		if ( slot == file.featuredSlot )
+		{
+			RuiSetInt( rui, "featuredState", FEATURED_ACTIVE )
+			RuiSetString( rui, "featuredString", file.featuredSlotString )
+			RuiSetBool ( rui, "featuredIsFTUE", FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+		}
+		else
+		{
+			if ( FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+				RuiSetInt( rui, "featuredState", FEATURED_NONE )
+			else
+				RuiSetInt( rui, "featuredState", FEATURED_INACTIVE )
+		}
+	}
+
+
+		if ( isPlaylistRanked && IsPersistenceAvailable() && GetPersistentVar( "shouldShowUnlockedRankedModeFeatured" ) )
+		{
+			RuiSetInt( rui, "featuredState", FEATURED_ACTIVE )
+			RuiSetString( rui, "featuredString", "#RANKED_UNLOCKED_TITLE" )
+		}
+
+
+	int RotationTimeLeft = ( playlistName != "" )? GetPlaylistActiveMapRotationTimeLeft( playlistName ): 0
+	if( IsPlaylistInActiveRotation( playlistName ) )
+	{
+		string ornull rotationName = GetPlaylistRotationNameFromPlaylist( playlistName )
+		RotationTimeLeft = GetPlaylistRotationNextTime( rotationName ? expect string( rotationName ) : "" ) - GetUnixTimestamp()
+	}
+
+	string mapName =  GetPlaylistMapVarString( playlistName, mapIdx, "map_name", "" )
+	RuiSetString( rui, "mapDisplayName", mapName )
+
+	if( RotationTimeLeft > 0 )
+	{
+		RuiSetGameTime( rui, "rotationGroupNextTime", ClientTime() + RotationTimeLeft - 1) 
+	}
+
+	for ( int i = 1; i <= 2; i++ )
+	{
+		if ( slot == "regular_" + i )
+		{
+			RTKPlayMenuTakeoverModelStruct takeoverStruct
+			if ( RotationTimeLeft > 0
+					&& GetPlaylistVarBool( playlistName, "ui_slot_regular_" + i + "_timer", true )
+					&& GetScheduleFromPlaylist( playlistName ) == "regular_" + i
+					&& GetPlaylistVarBool( playlistName, "show_regular_mode_button_timer", false ) )
+			{
+				TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( playlistName )
+				if ( playlistTimeRange != null )
+				{
+					takeoverStruct.endTime = expect TimestampRange( playlistTimeRange ).endUnixTime
+				}
+				else
+				{
+					takeoverStruct.endTime = RotationTimeLeft + GetUnixTimestamp()
+				}
+			}
+			else
+			{
+				takeoverStruct.endTime = 0
+			}
+
+			rtk_struct playMenuModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "play", "RTKPlayMenuModelStruct" )
+			rtk_struct takeoverSlotModelStruct = RTKStruct_GetOrCreateScriptStruct( playMenuModel, "takeoverSlot" + i, "RTKPlayMenuTakeoverModelStruct" )
+			RTKStruct_SetValue( takeoverSlotModelStruct, takeoverStruct )
+		}
+	}
+
+
+	foreach ( string slotKey, slotButton in file.slotToButtonMap )
+	{
+		if (slotButton == button)
+		{
+			if ( IsPartyLeader() )
+			{
+				ToolTipData dt
+				dt.tooltipStyle = eTooltipStyle.NONE
+				dt.descText     = ""
+				Hud_SetToolTipData( button, dt )
+			}
+			else
+			{
+				ToolTipData dt
+				dt.tooltipStyle = eTooltipStyle.DEFAULT
+				dt.descText     = "#MENU_LOBBY_LOCKED_GAMEMODE_BUTTON"
+				dt.tooltipFlags = dt.tooltipFlags | eToolTipFlag.SOLID
+				Hud_SetToolTipData( button, dt )
+				RuiSetBool( rui, "showLockedIcon", false )
+				RuiSetString( rui, "modeLockedReason", "" )
+				Hud_SetLocked( button, true )
+			}
+			break
+		}
+	}
+}
+
+void function GameModeSelect_OnPartyChanged()
+{
+	UpdateGameModes()
+}
+
+void function GamemodeSelect_UpdateMixtapePreview( string playlistName, string slotKey )
+{
+	int mapsCount = 4
+	var rui = Hud_GetRui( file.mixtapePreview )
+
+	
+	for( int i = 1; i <= mapsCount; i++ )
+	{
+		RuiSetString( rui, "map" + i + "Name", "" )
+		RuiSetString( rui, "map" + i + "Mode", $"" )
+		RuiSetImage( rui, "map" + i + "Image", $"" )
+	}
+	int mapNumber = 0
+	while ( mapNumber < mapsCount )
+	{
+		string nextName = playlistName
+
+		if( mapNumber != 0 )
+			nextName = GetNextPlaylistInRotationForSchedule( slotKey, mapNumber )
+
+		string mapName = GetPlaylistMapVarString( nextName, 0, "map_name", "" )
+		string modeName = GamemodeSelect_GetModeName( nextName, 0, "", mapNumber > 0 ? playlistName : "" )
+		asset thumbnailAsset
+
+		if( slotKey == "regular_0" || slotKey == "regular_1" || slotKey == "regular_2" || slotKey == "regular_3" )
+		{
+			string imageKey  = GetPlaylistMapVarString( nextName, 0, "panel_image", "" )
+			thumbnailAsset = GetThumbnailImageFromImageMap( imageKey )
+		}
+		else
+		{
+			string imageKey  = GetPlaylistMapVarString( nextName, 0, "image", "" )
+			thumbnailAsset = GetThumbnailImageFromImageMap( imageKey )
+		}
+
+		RuiSetString( rui, "map" + ( mapNumber + 1 ) + "Name", mapName )
+		RuiSetString( rui, "map" + ( mapNumber + 1 ) + "Mode", modeName)
+		RuiSetImage( rui, "map" + ( mapNumber + 1 ) + "Image", thumbnailAsset )
+
+		mapNumber++
+	}
+}
+
+string function GamemodeSelect_GetModeName( string playlistName, int index, string defaultName = "", string currentPlaylistRef = "" )
+{
+	string rumblePlaylistName = Cups_GetCupPlaylistDisplayName( playlistName, currentPlaylistRef.len() > 0 ? GetEndTimeForPlaylistInRotation( currentPlaylistRef ) : 0 )
+	if ( rumblePlaylistName.len() > 0 )
+		return rumblePlaylistName
+	return GetPlaylistMapVarString( playlistName, index, "name", defaultName )
+}
+
+
+
+
+
+void function GamemodeSelect_PlayVideo( var button, string playlistName )
+{
+	string videoKey         = GetPlaylistVarString( playlistName, "video", "" )
+	asset desiredVideoAsset = GetBinkFromBinkMap( videoKey )
+
+	if ( desiredVideoAsset != $"" )
+		file.currentVideoAsset = $"" 
+	Signal( uiGlobal.signalDummy, "GamemodeSelect_EndVideoStopThread" )
+	Assert( file.currentVideoAsset == $"" )
+
+	if ( desiredVideoAsset != $"" )
+	{
+		if ( file.videoChannel == -1 )
+			file.videoChannel = ReserveVideoChannel()
+
+		StartVideoOnChannel( file.videoChannel, desiredVideoAsset, true, 0.0 )
+		file.currentVideoAsset = desiredVideoAsset
+	}
+
+	var rui = Hud_GetRui( button )
+	RuiSetBool( rui, "hasVideo", videoKey != "" )
+	RuiSetInt( rui, "channel", file.videoChannel )
+	if ( file.currentVideoAsset != $"" )
+		thread VideoStopThread( button )
+}
+
+void function VideoStopThread( var button )
+{
+	EndSignal( uiGlobal.signalDummy, "GamemodeSelect_EndVideoStopThread" )
+
+	OnThreadEnd( function() : ( button ) {
+		if ( IsValid( button ) )
+		{
+			var rui = Hud_GetRui( button )
+			RuiSetInt( rui, "channel", -1 )
+		}
+		if ( file.currentVideoAsset != $"" )
+		{
+			StopVideoOnChannel( file.videoChannel )
+			file.currentVideoAsset = $""
+		}
+	} )
+
+	while ( GetFocus() == button )
+		WaitFrame()
+
+	wait 0.3
+}
+
+
+
+
+
+void function ClearFeaturedSlotAfterDelay()
+{
+	float startTime = UITime()
+	while ( UITime() - startTime < 3.0 && GetActiveMenu() == file.panel )
+	{
+		WaitFrame()
+	}
+
+	GamemodeSelect_SetFeaturedSlot( "" )
+	if ( GetActiveMenu() == GetParentMenu( file.panel ) )
+		UpdateOpenModeSelectDialog()
+}
+
+void function Ranked_OnUserInfoUpdatedInGameModeSelect( string hardware, string id )
+{
+	if ( !IsFullyConnected() )
+		return
+
+	if ( !IsLobby() )
+		return
+
+	if ( hardware == "" && id == "" )
+		return
+
+	CommunityUserInfo ornull cui = GetUserInfo( hardware, id )
+
+	if ( cui == null )
+		return
+
+	expect CommunityUserInfo( cui )
+
+	if ( cui.hardware == GetPlayerHardware() && cui.uid == GetPlayerUID() ) 
+	{
+		if ( file.rankedRUIToUpdate != null  ) 
+		{
+			PopulateRuiWithRankedBadgeDetails( file.rankedRUIToUpdate, cui.rankScore, cui.rankedLadderPos )
+		}
+	}
+}
+
+void function NavigateBackToFTUEModal( var button )
+{
+	FTUEFlow_OpenCYOAMenu()
+}
+
+
+
+
+void function GamemodeSelect_SetFeaturedSlot( string slot, string modeString = "#HEADER_NEW_MODE" )
+{
+	file.featuredSlot = slot
+	file.featuredSlotString = modeString
+}
+
+
+bool function IsLockedByRoadToRanked( var button )
+{
+	string playlistName = file.selectButtonPlaylistNameMap[button]
+	int playlistState   = LobbyPlaylist_GetPlaylistState( playlistName )
+	return ( button == file.slotToButtonMap["ranked"] && Hud_IsLocked( button ) && playlistState == ePlaylistState.RANKED_ACCESS_REQUIRED && GetConVarBool( RANKED_ENABLE_ROAD_TO_RANKED ) && Ranked_IsOngoingRoadToRankedChallenges( GetLocalClientPlayer() ) )
+}
+                           

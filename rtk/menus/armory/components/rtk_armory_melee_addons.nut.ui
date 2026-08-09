@@ -1,0 +1,194 @@
+global function RTKArmoryMeleeAddons_OnInitialize
+global function RTKArmoryMeleeAddons_OnDestroy
+
+global struct RTKArmoryMeleeAddons_Properties
+{
+	int flavGUID
+	rtk_behavior addonsListBinder
+}
+
+struct PrivateData
+{
+	int guidListenerHandler
+	string modelPath
+}
+
+global struct RTKMeleeAddonsModel
+{
+	array<RTKMeleeCustomizationItemModel> addons
+	bool showAddonLink
+}
+
+const string MODEL_PATH = "armoryMeleeAddons"
+const array<int> themesWithActivationEmote = [
+	eUniversalSetIndex.HOOK_SWORD, 
+	eUniversalSetIndex.POWER_SWORD_RECOLOR_1,
+	eUniversalSetIndex.POWER_SWORD_RECOLOR_2,
+	eUniversalSetIndex.POWER_SWORD_RECOLOR_3,
+	eUniversalSetIndex.SCEPTER_RECOLOR_1,
+	eUniversalSetIndex.SCEPTER_RECOLOR_2,
+	eUniversalSetIndex.SCEPTER_RECOLOR_3,
+]
+
+void function RTKArmoryMeleeAddons_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKMeleeAddonsModel" )
+	p.modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH, true )
+	self.GetPanel().SetBindingRootPath( p.modelPath )
+
+	p.guidListenerHandler = self.AddPropertyCallback( "flavGUID", RTKArmoryMeleeAddons_OnGUIDUpdated )
+	
+	RTKArmoryMeleeAddons_SetButtons( self, panelStruct )
+}
+
+void function RTKArmoryMeleeAddons_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+	self.RemovePropertyCallback( "flavGUID", p.guidListenerHandler )
+}
+
+void function RTKArmoryMeleeAddons_SetButtons( rtk_behavior self, rtk_struct panelStruct )
+{
+	
+	rtk_behavior ornull listBinder = self.PropGetBehavior( "addonsListBinder" )
+	Assert ( listBinder != null, "Did you forget setting up the List Binder reference to the behavior property in RTK file?" )
+	expect rtk_behavior( listBinder )
+
+	self.AutoSubscribe( listBinder, "onUpdatedList", function () : ( self, listBinder, panelStruct ) {
+		rtk_panel panel = listBinder.GetPanel()
+		array<rtk_panel> listItems = panel.GetChildren()
+		
+		
+		
+		rtk_behavior ornull cosmeticEquipScreenBehavior = self.GetPanel().FindBehaviorInParentsByTypeName( "CosmeticEquipScreen" )
+		foreach( int index, item in listItems )
+		{
+			rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+			
+			if ( cosmeticEquipScreenBehavior == null )
+			{
+				button.SetActive( false )
+				continue
+			}
+
+			expect rtk_behavior( cosmeticEquipScreenBehavior )
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, index, cosmeticEquipScreenBehavior ) {
+				int flavGUID = self.PropGetInt( "flavGUID" )
+				ItemFlavor previewMeleeSkin = GetItemFlavorByGUID( flavGUID )
+
+				
+				
+				if ( index == 1 )
+				{
+					int addonIndex = 0
+					int theme = UniversalMelee_GetTheme( previewMeleeSkin )
+					if ( UniversalMelee_IsScepterTheme( theme ) && CosmeticSet_IsRecolor( previewMeleeSkin ) )
+						addonIndex = CosmeticSet_GetRecolorIndex( previewMeleeSkin )
+
+					
+
+					RTKCosmeticEquipScreen_ShowVideoPreview( cosmeticEquipScreenBehavior, UniversalMelee_GetVideo( UniversalMelee_GetAddons( previewMeleeSkin )[ addonIndex ] ) )
+				}
+				else
+				{
+					
+
+					RTKCosmeticEquipScreen_ShowGenericPreview( cosmeticEquipScreenBehavior, previewMeleeSkin )
+				}
+			})
+		}
+	})
+}
+
+void function RTKArmoryMeleeAddons_OnGUIDUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	ItemFlavor ornull itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+	{
+		Assert( false, format( "Attempted to Update RTKArmoryMeleeAddons with a bad GUID %i", flavGUID ) )
+		return
+	}
+
+	expect ItemFlavor( itemFlav )
+	
+	bool hasAddons = UniversalMelee_HasAddons( itemFlav )
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( ToEHI( GetLocalClientPlayer() ), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), itemFlav )
+	bool shouldShow = RTKArmoryMeleeAddons_ShouldShowForItem( itemFlav )
+	self.GetPanel().SetActive( shouldShow )
+	self.GetPanel().SetVisible( shouldShow )
+	if ( !shouldShow )
+		return
+
+	
+	
+	Assert( RTKDataModel_HasDataModel( p.modelPath ), format( "RTK Struct not found on Path %s", p.modelPath ) )
+	RTKArmoryMeleeAddons_SetAddonsData( self, itemFlav )
+}
+
+bool function RTKArmoryMeleeAddons_ShouldShowForItem( ItemFlavor itemFlav )
+{
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( ToEHI( GetLocalClientPlayer() ), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), itemFlav )
+	bool hasAddons = UniversalMelee_IsItemFlavorUniversalMelee( itemFlav ) && themesWithActivationEmote.contains( UniversalMelee_GetTheme( itemFlav ) ) && UniversalMelee_HasAddons( itemFlav )
+	return isUnlocked && hasAddons
+}
+void function RTKArmoryMeleeAddons_SetAddonsData( rtk_behavior self, ItemFlavor itemFlav )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKMeleeAddonsModel" )
+	rtk_array universalMeleeViewSet = RTKStruct_GetArray( panelStruct, "addons" )
+	RTKArray_Clear( universalMeleeViewSet )
+
+	array<ItemFlavor> addonFlavs = []
+	int theme = UniversalMelee_GetTheme( itemFlav )
+	if ( UniversalMelee_IsItemFlavorUniversalMelee( itemFlav ) && themesWithActivationEmote.contains( theme ) )
+	{
+		
+		rtk_struct previewItemStruct = RTKArray_PushNewStruct( universalMeleeViewSet )
+		RTKMeleeCustomizationItemModel previewItemModel = GetUniversalMeleeCustomizationItemModel( self, itemFlav )
+		RTKStruct_SetValue( previewItemStruct, previewItemModel )
+		
+		addonFlavs = UniversalMelee_GetAddons( itemFlav )
+
+		if ( addonFlavs.len() > 0 )
+		{
+			ItemFlavor addonFlav = addonFlavs[ 0 ]
+			if ( UniversalMelee_IsScepterTheme( theme ) )
+			{
+				addonFlav = UniversalMelee_GetAddonFromSameTheme( itemFlav )
+			}
+
+			rtk_struct meleeAddonStruct = RTKArray_PushNewStruct( universalMeleeViewSet )
+			RTKMeleeCustomizationItemModel addonModel = GetUniversalMeleeCustomizationItemModel( self, addonFlav )
+			RTKStruct_SetValue( meleeAddonStruct, addonModel )
+		}
+	}
+	RTKStruct_SetBool( panelStruct, "showAddonLink", !UniversalMelee_IsScepterTheme( theme ) )
+}
+
+RTKMeleeCustomizationItemModel function GetUniversalMeleeCustomizationItemModel( rtk_behavior self, ItemFlavor itemFlav )
+{
+	RTKMeleeCustomizationItemModel meleeItemModel
+
+	meleeItemModel.guid = ItemFlavor_GetGUID( itemFlav )
+	meleeItemModel.name = Localize( ItemFlavor_GetLongName( itemFlav ) )
+	meleeItemModel.description = Localize( ItemFlavor_GetLongDescription( itemFlav ) )
+	meleeItemModel.setTheme = UniversalMelee_GetArtifactTheme( UniversalMelee_GetTheme( itemFlav ) )
+
+	meleeItemModel.icon = ItemFlavor_GetIcon( itemFlav )
+	meleeItemModel.isVisible = IsValidItemFlavorGUID( meleeItemModel.guid )
+	meleeItemModel.locked = !GRX_IsItemOwnedByPlayer( itemFlav )
+	meleeItemModel.state = meleeItemModel.locked ? eMeleeCustomizationItemState.LOCKED : eMeleeCustomizationItemState.SELECTED
+	meleeItemModel.equipped = false
+	meleeItemModel.selected = false
+
+	return meleeItemModel
+}

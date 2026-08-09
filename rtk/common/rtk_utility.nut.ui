@@ -1,0 +1,81 @@
+globalize_all_functions
+
+void function RTKAnim_SetAnimationDuration( rtk_behavior animator, string animName, float duration )
+{
+	RTKAnim_SetAnimationPropertyValue( animator, animName, "duration", duration )
+}
+
+void function RTKAnim_SetAnimationPropertyValue( rtk_behavior animator, string animName, string propertyName, float value )
+{
+	rtk_array anims  = animator.PropGetArray( "tweenAnimations" )
+	int animCount = RTKArray_GetCount( anims )
+
+	for ( int i = 0; i < animCount; i++ )
+	{
+		rtk_struct anim = RTKArray_GetStruct( anims, i )
+		if ( RTKStruct_GetString( anim, "name" ) != animName )
+			continue
+
+		rtk_array tweens = RTKStruct_GetArray( anim, "tweens" )
+		int tweenCount = RTKArray_GetCount( tweens )
+		for ( int j = 0; j < tweenCount; j++ )
+		{
+			RTKStruct_SetFloat( RTKArray_GetStruct( tweens, j ), propertyName, value )
+		}
+	}
+}
+
+bool function RTK_DevAssert( bool assertion, string contextString = "" )
+{
+#if DEV
+		Assert( assertion, contextString )
+#else
+		if ( assertion == false )
+		{
+			printl( "*** WARNING ***" )
+			printl( contextString )
+			printt( "%s", GetStack() )
+			printl( "*** WARNING ***" )
+			return false
+		}
+#endif
+	return true
+}
+
+array< float > function RTKArray_GetFloatArray( rtk_array inArray )
+{
+	array< float > outArray
+
+	int inArrayCount  = RTKArray_GetCount( inArray )
+	outArray.resize( inArrayCount )
+
+	for( int i = 0; i < inArrayCount; i++ )
+	{
+		outArray[i] = RTKArray_GetFloat( inArray, i )
+	}
+
+	return outArray
+}
+
+array< int > function RTKArray_GetIntArray( rtk_array inArray )
+{
+	array< int > outArray
+
+	int inArrayCount  = RTKArray_GetCount( inArray )
+	outArray.resize( inArrayCount )
+
+	for( int i = 0; i < inArrayCount; i++ )
+	{
+		outArray[i] = RTKArray_GetInt( inArray, i )
+	}
+
+	return outArray
+}
+
+int function RTKStruct_GetDataIndex( rtk_struct properties, int defaultIndex )
+{
+	if ( RTKStruct_HasProperty( properties, "dataIndex" ) )
+		return RTKStruct_GetInt( properties, "dataIndex" )
+
+	return defaultIndex
+}

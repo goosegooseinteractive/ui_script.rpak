@@ -1,0 +1,57 @@
+global function StatsRegister_RocketBR
+
+
+
+
+
+
+
+void function StatsRegister_RocketBR()
+{
+	CAREER_STATS.gamemode_rocket_br_dooms = RegisterAccumulatedStat_Int( null, "gamemode_rocket_br_dooms", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.gamemode_rocket_br_damage_done = RegisterAccumulatedStat_Int( null, "gamemode_rocket_br_damage_done", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.gamemode_rocket_br_placements_top_5 = RegisterAccumulatedStat_Int( null, "gamemode_rocket_br_placements_top_5", CHALLENGE_GAME_MODE_BATTLE_ROYALE, CHALLENGES_CALC_DEPENDS )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

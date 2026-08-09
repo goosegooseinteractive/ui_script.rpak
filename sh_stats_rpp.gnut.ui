@@ -1,0 +1,131 @@
+global function RPP_Challenges_Init
+global function StatsRegister_ReturningPlayerPass
+
+
+
+
+
+
+
+
+
+
+
+struct
+{
+
+
+
+} file
+
+
+void function RPP_Challenges_Init()
+{
+
+
+
+
+}
+
+void function StatsRegister_ReturningPlayerPass()
+{
+	CAREER_STATS.botmode_arsenal_used_different_matches = RegisterAccumulatedStat_Int( null, "botmode_arsenal_used_different_matches", CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+
+	
+
+	StatEnumStruct character_SES = GetRegisteredStatEnumStruct( eStatEnumStructRefs.CHARACTER )
+
+	CAREER_STATS.botmode_character_games_played_any_mode = RegisterAccumulatedStat_Int( character_SES, "botmode_games_played_any_mode", CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.botmode_games_played_any_mode = RegisterAccumulatedStat_Int( null, "botmode_games_played_any_mode", CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.botmode_games_played_bot_royale = RegisterAccumulatedStat_Int( null, "botmode_games_played_bot_royale", CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.botmode_damage_done_ordnance   = RegisterAccumulatedStat_Int( null, "botmode_damage_done_ordnance", CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.botmode_loot_bins_opened = RegisterAccumulatedStat_Int( null, "botmode_loot_bins_opened", CHALLENGE_GAME_MODE_BATTLE_ROYALE_PLUS_CASUAL_TRIOS, CHALLENGES_CALC_DEPENDS )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,39 @@
+global function MantleBoostFTUEFlow_SetFTUEFlowStage
+global function MantleBoostFTUEFlow_GetFTUEFFlowStage
+
+
+
+
+global enum MantleBoostFtueStage
+{
+	PRE_MANTLE_BOOST_PLAYER,
+	MANTLE_BOOSTED_PLAYER,
+	MANTLE_BOOST_ONBOARDED_PLAYER,
+	MANTLE_BOOST_FTUE_STAGE_COUNT,
+}
+
+
+
+
+
+
+
+
+int function MantleBoostFTUEFlow_GetFTUEFFlowStage( entity player )
+{
+	return player.GetPersistentVarAsInt( "mantleBoostFTUEFlow" )
+}
+
+void function MantleBoostFTUEFlow_SetFTUEFlowStage( entity player, int stage )
+{
+
+		if ( !IsFullyConnected() )
+			return
+
+		Remote_ServerCallFunction( "UICallback_MantleBoostFTUEFlow_SetFTUEFlowStage", stage )
+
+
+
+
+
+}

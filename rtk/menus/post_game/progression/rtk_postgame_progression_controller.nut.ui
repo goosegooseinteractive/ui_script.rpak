@@ -1,0 +1,2841 @@
+global function InitRTKPostgameProgressionPanel
+global function InitRTKPostgameProgressionPanelLobby
+
+global function RTKPostgameProgression_OnInitialize
+global function RTKPostgameProgression_OnPreDestroy
+global function RTKPostgameProgression_OnDestroy
+global function RTKPostgameProgression_InitMetaData
+global function RTKMutator_PostgameProgressionMasteryWeaponSubtitle
+global function RTKMutator_PostgameProgressionMasteryWeaponIcon
+global function RTKMutator_PostgameProgressionMasteryWeaponLevelText
+global function RTKMutator_PostgameProgressionMasteryAmmoIcon
+global function RTKPostgameProgression_GetAccountXPDataFromTotalXP
+
+enum PostgameProgressionPagination
+{
+	RANKED
+	RANKED_EVENT
+	ACCOUNT
+	WEAPON
+	_COUNT
+}
+
+global struct RTKPostgameProgression_Properties
+{
+	rtk_behavior topPagination
+	rtk_behavior accountPagination
+	rtk_panel contentPanel
+	rtk_behavior rankedButton
+
+		rtk_behavior rankedEventButton
+
+	rtk_behavior accountButton
+	rtk_panel accountProgression
+	rtk_behavior weaponsButton
+	rtk_behavior progressBarAnimator
+	rtk_behavior labelAnimator
+	rtk_behavior accProgressBarAnimator
+}
+
+global struct RTKPostgameProgressionRewardItem_Struct 
+{
+	int guid
+	string name = ""
+	int quality = 0
+	int quantity = 1
+	asset image = $""
+	asset backgroundImage = $""
+	asset eventImage = $""
+	vector frameColor = <1.0, 1.0, 1.0>
+	vector backgroundColor = <1.0, 1.0, 1.0>
+}
+
+global struct RTKPostgameProgressionTile_Struct
+{
+	string displayName = ""
+	string xpEarnedText = ""
+	string xpEarnedExplainationText = ""
+	string xpProgressText = ""
+	asset curBadgeAssetPath = $"ui/gcard_badge_account_t1.rpak"
+	asset nextBadgeAssetPath = $"ui/gcard_badge_account_t1.rpak"
+	int curBadgeTier = 0
+	int nextBadgeTier = 0
+	float xpCurrentPercent = 0.0
+	string rewardText = ""
+	array< RTKPostgameProgressionRewardItem_Struct > rewards
+	string rumblePositionText = ""
+	string rumblePositionExplanationText = ""
+	string rumbleMatchesText = ""
+	string rumbleMatchesExplanationText = ""
+}
+
+global struct RTKPostgameProgressionWeaponTile_Struct
+{
+	string title = ""
+	string weaponsUsedLabel = ""
+	string celebrationsLabel = ""
+}
+
+global struct RTKPostgameProgressionXPSummaryItem_Struct
+{
+	string displayName = ""
+	string value = ""
+}
+
+global struct RTKPostgameProgressionXPBreakdownItem_Struct
+{
+	string displayName = ""
+	string value = ""
+}
+
+global struct RTKPostgameProgressionWeaponMastery_Struct
+{
+	string displayName = ""
+	string value = ""
+}
+
+global struct BonusBreakdownInfo
+{
+	string bonusName 	 = ""
+	string bonusStat 	 = ""
+	int bonusValue 		 = 0
+	bool crossOut		 = false
+	bool isInfo		 	 = false
+
+	string tooltipTitle	 = ""
+	string tooltipBody   = ""
+}
+
+global struct RankedPromoTrial
+{
+	bool active
+	string description
+	int statGoal
+	int statCurrent
+	vector progressBarColor
+}
+
+global struct RankedProgressBarTweenData
+{
+	int minRankScore
+	int maxRankScore
+	int startScore
+	int endScore
+
+	float progressFracStart
+	float progressFracEnd
+
+	bool isDoubleBadge = false
+	bool hasPromoTrialAtEnd = false
+	asset promoTrialCapImage
+
+	RTKRankedBadgeModel& badge1
+	RTKRankedBadgeModel& badge2
+
+	
+	int adjustedMinRankScore
+	int adjustedMaxRankScore
+	int adjustedStartScore
+	int adjustedEndScore
+}
+
+global struct RankedProgressBarData
+{
+	int startScore
+	int endScore
+	int totalRanks
+
+	int currentTweenIndex = 0
+	RankedProgressBarTweenData& currentTween
+	array< RankedProgressBarTweenData > tweens = []
+}
+
+global struct PromoTrialsData
+{
+	bool hasTrial = false
+
+	int trialsAttempts = 0
+	int maxTrialsAttempts = 1
+	int trialsCount = 0
+	array< RankedPromoTrial > trials = []
+	string trialsInfoString = ""
+
+	vector trialsStatusColor = <1, 1, 1>
+	vector trialsStatusBannerColor = <1, 1, 1>
+	float trialsStatusBannerAlpha = 0.0
+	string trialsStatusMessage = ""
+}
+
+global struct RankedEventPlacementInfo
+{
+	int placement
+	string placementFormat = "#RANKED_LP_DISPLAY"
+	int score
+	bool isReplaced
+	int replacedPlacement
+	bool hasNoScore
+	bool showArrow
+}
+
+global struct RankedEventInfo
+{
+	int endTime
+	array<RankedEventPlacementInfo> top10Placements
+	int top10Total
+	bool isStillOnPlacement
+	bool isCrossplayEnabled = true
+	int numMatchesPlayed
+	int topMatchesCount
+	bool shouldHide = false
+	bool isMicroEvent = false
+	string statString
+	RankedEventPlacementInfo& lastPlacement
+	RankedEventPlacementInfo& scoreToBeatPlacement
+}
+
+global struct RankedMatchSummaryExtraInfo
+{
+	int entryCost = 0
+
+
+
+	int totalBonus = 0
+	int baseKillValue = 0
+	int numPlacementMatches = 0
+	int numCompletePlacementMatches = 0
+	bool isPlacement = false
+	array< BonusBreakdownInfo > breakdownBonuses = []
+	array< BonusBreakdownInfo > stats = []
+	array< BonusBreakdownInfo > placementBonuses = []
+	array< BonusBreakdownInfo > headers = []
+
+	RankedProgressBarData& progressData
+
+	string lastPlayedTime = "0m"
+	string lastGameMode = ""
+
+	PromoTrialsData& trialsData
+
+	bool showProtection = false
+	int protectionCurrent = 0
+	int protectionMax = 0
+
+
+	RTKApexCupHistoryModel& cupHistory
+
+	RankedEventInfo& rankedEventInfo
+
+	array< string > disclaimerTexts = []
+
+	string rankedRewardsDisclaimer = ""
+	string crossplayDisclaimer = ""
+}
+
+global struct RankedMatchSummaryScreenData
+{
+	bool isProgressPanelVisible = true
+	bool isRankUpAnimationInProgress = false
+
+	vector themeColor = <1, 1, 1>
+	vector titleTextColor = <1, 1, 1>
+}
+
+global struct RTKPostGameXpRewardsModel
+{
+	asset icon
+	string value
+}
+
+global struct RTKAccountProgressBarsModel
+{
+	float progressFracStart
+	float boostFracStart
+	float progressFracEnd
+	float boostFracEnd
+	float animDuration
+
+	int startXP
+	int	endXP
+	int	maxLevelXP
+	int	totalEarnedXP
+	RTKBadgeModel& currentBadge
+	RTKBadgeModel& nextBadge
+}
+
+global struct RTKPostGameTotalXpModel
+{
+	int baseXP
+	int totalXP
+	int boostsApplied
+}
+
+global struct RTKBadgeDisplayModel
+{
+	RTKBadgeModel& badge
+	string badgeTitle
+	string badgeDescription
+	string badgeType
+}
+
+
+global struct RTKPostgameProgressionControllerPanel_ModelStruct
+{
+	bool enableRanked = false
+	bool showRanked = false
+
+	bool enableRankedEvent = false
+	bool showRankedEvent = false
+	string ladderSubTitle = "#RANKED_RUMBLE_SUBTITLE"
+
+	bool enableAccount = false
+	bool showAccount = false
+	bool enableWeapons = false
+	bool showWeapons = false
+	array< RTKPostgamePass_Struct > passes
+
+
+
+
+
+
+
+}
+
+struct AccountXPData
+{
+	int   accountXP
+	int   startLevelXP
+	int   nextLevelXP
+	int   level
+	int   nextLevel
+	float levelFrac
+}
+
+struct PrivateData
+{
+	bool isFirstTime = false
+	int numRanksEarned = 0
+	int scoreStart = 0
+	int scoreEnd = 0
+	int ladderPosition
+	bool hasLPBarAnimationStarted = false
+	bool callbacksRegistered = false
+	bool rankedAnimationSeen = false
+
+	rtk_struct rankedMatchSummaryModel
+	rtk_struct rankedMatchSummaryScreenDataModel
+	rtk_struct summaryBreakdownModel
+	rtk_struct summaryExtraInfoModel
+	rtk_struct progressModel
+
+	array< RTKAngledProgressBarExtensions_Struct > animationStates
+	array< array< array< RTKBrowseLootPoolItem > > > rewardsForLevels 
+
+
+
+
+}
+
+struct
+{
+	int levelUps
+	int levelUpsBoosted
+	int endLevel
+	int bonusXP = 0
+	int badgeUnlocks
+
+		bool hasRankedEvent = false
+
+} file
+
+const MAX_LEVELUPS_TO_DISPLAY = 5
+
+void function InitRTKPostgameProgressionPanelLobby( var panel )
+{
+	InitDeathScreenPanelFooter( panel, eDeathScreenPanel.PROGRESSION, true )
+}
+
+void function InitRTKPostgameProgressionPanel( var panel )
+{
+	InitDeathScreenPanelFooter( panel, eDeathScreenPanel.PROGRESSION )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, Panel_OnHide )
+}
+
+void function Panel_OnHide( var panel )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgameProgression_DestroyThreads" )
+	StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+	StopUISoundByName( "UI_Menu_MatchSummary_Ranked_XPBar_Increase" )
+
+	
+	var menu = GetActiveMenu()
+	if ( menu != null )
+	{
+		if ( Hud_HasChild( menu, "MovingBoxBG" ) )
+		{
+			Hud_Hide( Hud_GetChild( menu, "MovingBoxBG" ) )
+		}
+		if ( Hud_HasChild( menu, "RewardDisplay" ) )
+		{
+			Hud_Hide( Hud_GetChild( menu, "RewardDisplay" ) )
+		}
+	}
+}
+
+bool function OnNavForward()
+{
+	var menu = GetMenu( "DeathScreenMenu" )
+	if ( menu == null )
+	{
+		return false
+	}
+
+	if ( !Hud_HasChild( menu, "DeathScreenTabSummary" ) )
+	{
+		return false
+	}
+
+	var deathScreenTabSummary = Hud_GetChild( GetMenu( "DeathScreenMenu" ), "DeathScreenTabSummary" )
+
+	if ( !Hud_HasChild( deathScreenTabSummary, "RTKPostgameProgressionPanel" ) )
+	{
+		return false
+	}
+
+	var vguiPanel = Hud_GetChild( deathScreenTabSummary, "RTKPostgameProgressionPanel" )
+
+	rtk_panel ornull rootPanel = Hud_GetRTKPanel( vguiPanel )
+	if ( rootPanel == null )
+	{
+		return false
+	}
+	expect rtk_panel( rootPanel )
+
+	rtk_behavior ornull rtkBehavior = rootPanel.GetBehaviorByIndex( 1 )
+	if ( rtkBehavior == null )
+	{
+		return false
+	}
+	expect rtk_behavior( rtkBehavior )
+
+	rtk_behavior ornull topPagination = rtkBehavior.PropGetBehavior( "topPagination" )
+	if ( topPagination == null )
+	{
+		return false
+	}
+	expect rtk_behavior( topPagination )
+
+	rtk_behavior ornull accountPagination = rtkBehavior.PropGetBehavior( "accountPagination" )
+	if ( accountPagination != null )
+	{
+		expect rtk_behavior( accountPagination )
+		if ( accountPagination.GetPanel().IsVisible() && RTKPagination_GetCurrentPage( accountPagination ) < RTKPagination_GetTotalPages( accountPagination ) - 1 )
+		{
+			RTKPagination_NextPage( accountPagination, "", true )
+			return true
+		}
+	}
+
+	int totalPages = RTKPagination_GetTotalPages( topPagination )
+	int curPage = RTKPagination_GetCurrentPage( topPagination )
+
+	if ( curPage < totalPages - 1 )
+	{
+		StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+		StopUISoundByName( "UI_Menu_MatchSummary_Ranked_XPBar_Increase" )
+		RTKPagination_NextPage( topPagination, "", true )
+		return true
+	}
+
+	return false
+}
+
+void function RTKPostgameProgression_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "RTKPostgameProgression_DestroyThreads" )
+}
+
+void function RTKPostgameProgression_OnInitialize( rtk_behavior self )
+{
+	DeathScreenSetOnNavForwardCallback( eDeathScreenPanel.PROGRESSION, OnNavForward )
+
+	PrivateData p
+	self.Private( p )
+
+	entity localPlayer = GetLocalClientPlayer()
+
+	if ( !IsFullyConnected() || !IsValid( localPlayer ) )
+	{
+		printt("RTKPostgameProgression_OnInitialize failed - ", IsFullyConnected(), IsValid( localPlayer ))
+		return
+	}
+
+	rtk_struct modelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "progression", "RTKPostgameProgressionControllerPanel_ModelStruct", [ "postGame" ] )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "progression", true, [ "postGame" ] ) )
+
+	bool hasRankedInfo = Ranked_ShowRankedSummary()
+
+
+
+
+	RTKStruct_SetBool( modelStruct, "enableRanked", hasRankedInfo )
+	RTKStruct_SetBool( modelStruct, "showRanked", hasRankedInfo )
+
+
+		file.hasRankedEvent = hasRankedInfo && GetConVarBool( RANKED_EVENT_CONVAR ) && RankedEvent_IsLastMatchRankedEvent()
+
+
+
+
+
+
+
+
+
+
+
+		RTKStruct_SetBool( modelStruct, "enableRankedEvent", file.hasRankedEvent )
+		RTKStruct_SetBool( modelStruct, "showRankedEvent", false )
+		RTKStruct_SetString( modelStruct, "ladderSubTitle", Localize( "#RANKED_RUMBLE_SUBTITLE" ) )
+
+
+	RTKStruct_SetBool( modelStruct, "enableAccount", true )
+	RTKStruct_SetBool( modelStruct, "showAccount", !hasRankedInfo )
+	RTKStruct_SetBool( modelStruct, "enableWeapons", Mastery_GetPreviousMatchXPUpdates().len() > 0 ) 
+	RTKStruct_SetBool( modelStruct, "showWeapons", false )
+
+
+
+
+
+
+
+
+
+
+
+	
+	RTKPostgameProgression_BuildRankedData( self )
+	RTKPostgameProgression_BuildRankedBadgeDataModel( self )
+
+	
+	RTKPostgameProgression_BuildAccountData( self )
+
+	
+	rtk_struct postGameWeaponModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "weapons", "", [ "postGame" ] )
+	RTKPostgameProgression_BuildWeaponXPDataModel( self, postGameWeaponModel )
+
+	
+	
+	rtk_behavior ornull topPagination = self.PropGetBehavior( "topPagination" )
+	if ( topPagination != null )
+	{
+		expect rtk_behavior( topPagination )
+
+		self.AutoSubscribe( topPagination, "onScrollPreStart", function () : ( self, topPagination, modelStruct, p ) {
+			bool enableRanked = RTKStruct_GetBool( modelStruct, "enableRanked" )
+			int targetPage = RTKPagination_GetTargetPage( topPagination )
+
+			if ( !enableRanked )
+				targetPage++
+
+
+			bool enableRankedEvent = RTKStruct_GetBool( modelStruct, "enableRankedEvent" )
+			if ( !enableRankedEvent && targetPage > 0 )
+				targetPage++
+
+
+			RTKStruct_SetBool( modelStruct, "showRanked", false )
+
+				RTKStruct_SetBool( modelStruct, "showRankedEvent", false )
+
+			RTKStruct_SetBool( modelStruct, "showAccount", false )
+			RTKStruct_SetBool( modelStruct, "showWeapons", false )
+
+			switch ( targetPage )
+			{
+				case PostgameProgressionPagination.RANKED:
+				{
+					RTKStruct_SetBool( modelStruct, "showRanked", true )
+					break
+				}
+
+					case PostgameProgressionPagination.RANKED_EVENT:
+					{
+						RTKStruct_SetBool( modelStruct, "showRankedEvent", true )
+						break
+					}
+
+				case PostgameProgressionPagination.ACCOUNT:
+				{
+					RTKStruct_SetBool( modelStruct, "showAccount", true )
+					break
+				}
+				case PostgameProgressionPagination.WEAPON:
+				{
+					RTKStruct_SetBool( modelStruct, "showWeapons", true )
+					break
+				}
+			}
+
+			EmitUISound( "UI_Menu_MatchSummary_Appear" )
+		} )
+
+		self.AutoSubscribe( topPagination, "onScrollFinished", function () : ( self, topPagination, modelStruct, p ) {
+			bool enableRanked = RTKStruct_GetBool( modelStruct, "enableRanked" )
+			int currentPage = RTKPagination_GetCurrentPage( topPagination )
+
+			if ( !enableRanked )
+				currentPage++
+
+
+			bool enableRankedEvent = RTKStruct_GetBool( modelStruct, "enableRankedEvent" )
+			if ( !enableRankedEvent && currentPage > 0 )
+				currentPage++
+
+
+			switch ( currentPage )
+			{
+				case PostgameProgressionPagination.ACCOUNT:
+				{
+					if (  p.animationStates.len() > 0 )
+					{
+						rtk_behavior angledProgressBarExtensions = self.PropGetPanel( "accountProgression" ).FindBehaviorInDescendantsByName("AngledProgressBarExtensions")
+						RTKAngledProgressBarExtensions_Animate( angledProgressBarExtensions )
+						p.animationStates.clear()
+					}
+					break
+				}
+				default:
+					break
+			}
+		} )
+
+		
+		array< rtk_behavior > topButtons
+		if ( hasRankedInfo )
+		{
+			topButtons.push( self.PropGetBehavior( "rankedButton" ) )
+		}
+
+			if ( file.hasRankedEvent )
+			{
+				topButtons.push( self.PropGetBehavior( "rankedEventButton" ) )
+			}
+
+		topButtons.push( self.PropGetBehavior( "accountButton" ) )
+		topButtons.push( self.PropGetBehavior( "weaponsButton" ) )
+
+		foreach ( int newChildIndex, button in topButtons )
+		{
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex, topPagination ) {
+				if ( IsControllerModeActive() ) 
+					return
+
+				int currentPage = RTKPagination_GetCurrentPage( topPagination )
+
+				if ( currentPage == newChildIndex )
+					return
+
+				RTKPagination_GoToPage( topPagination, newChildIndex )
+			} )
+		}
+	}
+
+	var menu = GetActiveMenu()
+	if ( menu != null )
+	{
+		if ( Hud_HasChild( menu, "MovingBoxBG" ) )
+		{
+			Hud_Hide( Hud_GetChild( menu, "MovingBoxBG" ) )
+		}
+		if ( Hud_HasChild( menu, "RewardDisplay" ) )
+		{
+			Hud_Hide( Hud_GetChild( menu, "RewardDisplay" ) )
+		}
+	}
+
+	if ( hasRankedInfo )
+		AnimateRankedProgressBar( self )
+
+	if ( !hasRankedInfo && p.animationStates.len() > 0 )
+	{
+		rtk_behavior angledProgressBarExtensions = self.PropGetPanel( "accountProgression" ).FindBehaviorInDescendantsByName("AngledProgressBarExtensions")
+		RTKAngledProgressBarExtensions_Animate( angledProgressBarExtensions )
+	}
+}
+
+void function RTKPostgameProgression_OnPreDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKPostgameProgression_DestroyThreads" )
+	DeathScreenClearOnNavForwardCallback( eDeathScreenPanel.PROGRESSION )
+}
+
+void function RTKPostgameProgression_OnDestroy( rtk_behavior self )
+{
+	StopUISoundByName( "UI_Menu_MatchSummary_XPBar" )
+	StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+	StopUISoundByName( "UI_Menu_MatchSummary_Ranked_XPBar_Increase" )
+
+
+
+
+
+
+
+}
+
+void function RTKPostgameProgression_BuildRankedData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct rankedMatchSummaryModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "ranked", "", [ "postGame" ] )
+	p.rankedMatchSummaryModel = rankedMatchSummaryModel
+
+	entity player = GetLocalClientPlayer()
+
+	RankLadderPointsBreakdown scoreBreakdown
+	LoadLPBreakdownFromPersistance ( scoreBreakdown, player )
+
+	RankedMatchSummaryExtraInfo extraInfo
+
+	extraInfo.disclaimerTexts = [ "", "", "" ]
+
+	extraInfo.entryCost = -1 * scoreBreakdown.entryCost
+
+
+
+
+
+	extraInfo.totalBonus = 0
+
+	int elapsedTime = GetUnixTimestamp() - GetPersistentVarAsInt( "lastGameTime" )
+	extraInfo.lastPlayedTime = GetFormattedIntByType( elapsedTime, eNumericDisplayType.TIME_MINUTES_LONG )
+
+	string lastGameMode = expect string( GetPersistentVar( "lastGameMode" ) )
+	extraInfo.lastGameMode = lastGameMode
+
+	
+
+
+
+
+
+
+	{
+		BonusBreakdownInfo highSkillKillBonus
+		highSkillKillBonus.bonusName	= "#RANKED_SKILL_KILL_BONUS"
+		highSkillKillBonus.bonusStat	= string( scoreBreakdown.highSkillKill )
+		highSkillKillBonus.bonusValue	= scoreBreakdown.highSkillKillBonusValue
+		highSkillKillBonus.tooltipTitle = "#RANKED_SKILL_KILL_BONUS"
+		highSkillKillBonus.tooltipBody  = Localize ( "#RANKED_SKILL_KILL_BONUS_DESC_V2", scoreBreakdown.highSkillKill , scoreBreakdown.highSkillKillBonusValue )
+		highSkillKillBonus.crossOut		= scoreBreakdown.highSkillKill > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.totalBonus		+= scoreBreakdown.highSkillKillBonusValue
+		extraInfo.breakdownBonuses.push(highSkillKillBonus)
+
+		
+		
+		
+		
+		
+		
+		
+		
+
+		BonusBreakdownInfo streakBonus
+		streakBonus.bonusName	= "#RANKED_STREAK_BONUS"
+		streakBonus.bonusValue	= scoreBreakdown.top5StreakBonusValue
+		streakBonus.bonusStat    = Localize ( "#X/Y", string( minint ( scoreBreakdown.top5Streak,  Ranked_GetTop5StreakMax() ) ) , string ( Ranked_GetTop5StreakMax() ) )
+		streakBonus.tooltipTitle = "#RANKED_STREAK_BONUS"
+		streakBonus.tooltipBody  = Localize ( "#RANKED_STREAK_BONUS_DESC" , Ranked_GetTop5StreakBonusValue () ,  scoreBreakdown.top5Streak , scoreBreakdown.top5StreakBonusValue,  Ranked_GetTop5StreakMax()  )
+		streakBonus.crossOut		= Ranked_GetTop5StreakBonusValueFromStreak( scoreBreakdown.top5Streak ) > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.totalBonus		+= scoreBreakdown.top5StreakBonusValue
+		extraInfo.breakdownBonuses.push(streakBonus)
+
+		if (scoreBreakdown.provisionalMatchBonus > 0)
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_PROVISIONAL_BONUS"
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.provisionalMatchBonus
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_PROVISIONAL_BONUS"
+			tempBonusBreakdownInfo.tooltipBody  = "#RANKED_PROVISIONAL_BONUS_DESC"
+			extraInfo.totalBonus				+= scoreBreakdown.provisionalMatchBonus
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if (scoreBreakdown.promotionBonus > 0)
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = file.hasRankedEvent ? "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED" : ""
+			}
+			else
+			{
+				extraInfo.disclaimerTexts[1] = file.hasRankedEvent ? "#RANKED_RUMBLE_NO_SCORING_INCLUDED" : ""
+			}
+			tempBonusBreakdownInfo.bonusName	= extraInfo.disclaimerTexts[1] != "" ? "*" + Localize( "#RANKED_TIER_PROMOTION_BONUS" ) : "#RANKED_TIER_PROMOTION_BONUS"
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.promotionBonus
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_TIER_PROMOTION_BONUS"
+			tempBonusBreakdownInfo.tooltipBody  = Localize ( "#RANKED_TIER_PROMOTION_BONUS_DESC", scoreBreakdown.promotionBonus )
+			extraInfo.totalBonus				+= scoreBreakdown.promotionBonus
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		
+		if ( scoreBreakdown.penaltyPointsForAbandoning > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_ABANDON_PENALTY"
+			tempBonusBreakdownInfo.bonusValue	= -scoreBreakdown.penaltyPointsForAbandoning
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_ABANDON_PENALTY"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_ABANDON_PENALTY_DESC", scoreBreakdown.penaltyPointsForAbandoning )
+			tempBonusBreakdownInfo.crossOut 	= true
+			extraInfo.totalBonus				-= scoreBreakdown.penaltyPointsForAbandoning
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.lossProtectionAdjustment > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = file.hasRankedEvent ? "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED" : ""
+				tempBonusBreakdownInfo.bonusName = extraInfo.disclaimerTexts[1] != "" ? "*" + Localize( "#RANKED_LOSS_FORGIVENESS" ) : "#RANKED_LOSS_FORGIVENESS"
+			}
+			else
+			{
+				tempBonusBreakdownInfo.bonusName = "#RANKED_LOSS_FORGIVENESS"
+			}
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.lossProtectionAdjustment
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_LOSS_FORGIVENESS"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_LOSS_FORGIVENESS_DESC", scoreBreakdown.lossProtectionAdjustment )
+			extraInfo.totalBonus				+= scoreBreakdown.lossProtectionAdjustment
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.demotionPenality > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			if ( GetConVarBool( RANKED_EVENT_LOSS_FORGIVENESS_DISABLED ) )
+			{
+				extraInfo.disclaimerTexts[1] = file.hasRankedEvent ? "#RANKED_RUMBLE_NO_SCORING_LOSS_INCLUDED" : ""
+			}
+			else
+			{
+				extraInfo.disclaimerTexts[1] = file.hasRankedEvent ? "#RANKED_RUMBLE_NO_SCORING_INCLUDED" : ""
+			}
+			tempBonusBreakdownInfo.bonusName	= extraInfo.disclaimerTexts[1] != "" ? "*" + Localize( "#RANKED_TIER_DERANKING" ) : "#RANKED_TIER_DERANKING"
+			tempBonusBreakdownInfo.bonusValue	= -scoreBreakdown.demotionPenality
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_TIER_DERANKING"
+			tempBonusBreakdownInfo.tooltipBody  = Localize( "#RANKED_TIER_DERANKING_DESC", scoreBreakdown.demotionPenality )
+			tempBonusBreakdownInfo.crossOut 	= true
+			extraInfo.totalBonus				-= scoreBreakdown.demotionPenality
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+
+		if ( scoreBreakdown.demotionProtectionAdjustment > 0 )
+		{
+			BonusBreakdownInfo tempBonusBreakdownInfo
+			tempBonusBreakdownInfo.bonusName	= "#RANKED_DEMOTION_PROTECTION"
+			tempBonusBreakdownInfo.bonusValue	= scoreBreakdown.demotionProtectionAdjustment
+			tempBonusBreakdownInfo.tooltipTitle = "#RANKED_DEMOTION_PROTECTION"
+			SharedRankedDivisionData startRank = GetCurrentRankedDivisionFromScore( scoreBreakdown.startingLP )
+			if ( startRank.tier.allowsDemotion )
+			{
+				int tierDemotionPenalty =  GetCurrentPlaylistVarInt ( "ranked_tier_demotion_penality", RANKED_LP_DEMOTION_PENALITY )
+				int playerDemotionProtectionCount = GetDemotionProtectionBuffer ( player )
+				tempBonusBreakdownInfo.tooltipBody  =  Localize( "#RANKED_DEMOTION_PROTECTION_DESC", scoreBreakdown.demotionProtectionAdjustment, playerDemotionProtectionCount, tierDemotionPenalty )
+			}
+			else
+			{
+				tempBonusBreakdownInfo.tooltipBody = Localize( "#RANKED_DEMOTION_PROTECTION_ALWAYS_DESC", Localize( startRank.tier.name ), scoreBreakdown.demotionProtectionAdjustment )
+			}
+			extraInfo.totalBonus				+= scoreBreakdown.demotionProtectionAdjustment
+			extraInfo.breakdownBonuses.push(tempBonusBreakdownInfo)
+		}
+	}
+
+	extraInfo.baseKillValue = scoreBreakdown.killValueModifierByPlacement
+	extraInfo.numPlacementMatches = Ranked_GetNumProvisionalMatchesRequired()
+	extraInfo.numCompletePlacementMatches = Ranked_GetNumProvisionalMatchesCompleted( player )
+	extraInfo.isPlacement = !Ranked_HasCompletedProvisionalMatches( player )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	{
+		
+		int participationPercentage = 0
+		float participationsScaled = float( scoreBreakdown.participationUnique )
+		int killCapPercentage = 0
+		float killCapValue = 0
+		participationPercentage = int( Ranked_GetParticipationMutlipler() * 100 )
+		participationsScaled = scoreBreakdown.participationUnique * Ranked_GetParticipationMutlipler()
+		killCapPercentage = int( Ranked_GetSoftKillCapMod() * 100 )
+		killCapValue = scoreBreakdown.killValueModifierByPlacement - (scoreBreakdown.killValueModifierByPlacement * Ranked_GetSoftKillCapMod())
+
+		BonusBreakdownInfo killsNew
+		killsNew.bonusName = "#SCOREBOARD_KILLS"
+		killsNew.bonusStat = string( scoreBreakdown.killsUnique )
+		killsNew.bonusValue =  scoreBreakdown.wasAbandoned ? 0 : scoreBreakdown.killsUnique * scoreBreakdown.killValueModifierByPlacement
+		killsNew.tooltipTitle = "#SCOREBOARD_KILLS"
+		killsNew.tooltipBody = Localize( "#SCOREBOARD_KILLS_DESC_DETAILED", scoreBreakdown.killsUnique, scoreBreakdown.killValueModifierByPlacement , killsNew.bonusValue )
+		killsNew.crossOut		= scoreBreakdown.killsUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(killsNew)
+
+		BonusBreakdownInfo assistsNew
+		assistsNew.bonusName = "#SCOREBOARD_ASSISTS"
+		assistsNew.bonusStat = string( scoreBreakdown.assistUnique )
+		assistsNew.bonusValue =  scoreBreakdown.wasAbandoned ? 0 : scoreBreakdown.assistUnique * scoreBreakdown.killValueModifierByPlacement
+		assistsNew.tooltipTitle = "#SCOREBOARD_ASSISTS"
+		assistsNew.tooltipBody = Localize( "#SCOREBOARD_ASSISTS_DESC_DETAILED", scoreBreakdown.assistUnique, scoreBreakdown.killValueModifierByPlacement,  assistsNew.bonusValue )
+		assistsNew.crossOut		= scoreBreakdown.assistUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(assistsNew)
+
+		BonusBreakdownInfo participationsNew
+		participationsNew.bonusName = "#SCOREBOARD_PARTICIPATION"
+		participationsNew.bonusStat = Localize( "#RANKED_PARTICIPATION_DISPLAY", string( scoreBreakdown.participationUnique ), string( participationPercentage ), LocalizeAndShortenNumber_Float( participationsScaled, 3, 1 ) )
+		participationsNew.bonusValue = scoreBreakdown.wasAbandoned ? 0 : int( RoundToNearestInt(  participationsScaled * scoreBreakdown.killValueModifierByPlacement ) )
+		participationsNew.tooltipTitle = "#SCOREBOARD_PARTICIPATION"
+		participationsNew.tooltipBody = Localize( "#RANKED_PARTICIPATION_DESC_DETAILED", string( 100 - participationPercentage ), LocalizeAndShortenNumber_Float( participationsScaled, 3, 1 ) , participationsNew.bonusValue ,  scoreBreakdown.killValueModifierByPlacement )
+		participationsNew.crossOut		= scoreBreakdown.participationUnique > 0 && scoreBreakdown.wasAbandoned
+		extraInfo.stats.push(participationsNew)
+
+		BonusBreakdownInfo softCapAdjustment
+		softCapAdjustment.bonusName = "#RANKED_SOFT_CAP_ADJUSTMENT"
+		int totalEarned = scoreBreakdown.wasAbandoned ? 0 : int( RoundToNearestInt(  ( scoreBreakdown.killsUnique +  scoreBreakdown.assistUnique + participationsScaled ) * scoreBreakdown.killValueModifierByPlacement ) )
+		int killCapAdjustment =  scoreBreakdown.killBonus - totalEarned
+		int killCap = Ranked_GetSoftKillCapStartCount()
+		softCapAdjustment.bonusValue = killCapAdjustment
+		softCapAdjustment.tooltipTitle = "#RANKED_SOFT_CAP_ADJUSTMENT"
+		softCapAdjustment.tooltipBody = Localize( "#RANKED_SOFT_CAP_ADJUSTMENT_DESC_OLD", killCap, LocalizeAndShortenNumber_Float( killCapValue, 3, 1 ), string( 100 - killCapPercentage ) )
+		extraInfo.stats.push(softCapAdjustment)
+	}
+
+	
+	BonusBreakdownInfo placementBonus
+	int lastGameRank = GetPersistentVarAsInt( "lastGameRank" )
+	placementBonus.bonusName = "#RANKED_PLACEMENT_BONUS"
+	placementBonus.bonusStat = Localize( "#DEATH_SCREEN_SUMMARY_PLACEMENT", string( lastGameRank ) )
+	placementBonus.bonusValue = scoreBreakdown.placementScore
+	placementBonus.tooltipTitle = "#RANKED_PLACEMENT_BONUS"
+	placementBonus.tooltipBody = Localize ( "#RANKED_PLACEMENT_BONUS_DESC", scoreBreakdown.placementScore )
+	placementBonus.crossOut = Ranked_GetPointsForPlacement( lastGameRank ) > 0 && scoreBreakdown.wasAbandoned
+	extraInfo.placementBonuses.push(placementBonus)
+
+	BonusBreakdownInfo costOfEntry
+	extraInfo.disclaimerTexts[2] = file.hasRankedEvent && extraInfo.entryCost != 0 ? "#RANKED_RUMBLE_NO_ENTRY_COST_INCLUDED" : ""
+	costOfEntry.bonusName = extraInfo.disclaimerTexts[2] != "" ? "*" + Localize( "#RANKED_COST_OF_ENTRY" ) : "#RANKED_COST_OF_ENTRY"
+	
+	costOfEntry.bonusValue = extraInfo.entryCost
+	costOfEntry.tooltipTitle = "#RANKED_COST_OF_ENTRY"
+	costOfEntry.tooltipBody = Localize ( "#RANKED_COST_OF_ENTRY_DESC", extraInfo.entryCost )
+	extraInfo.placementBonuses.push(costOfEntry)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	{
+		BonusBreakdownInfo combat
+		combat.bonusName = "#RANKED_COMBAT_SUBHEADER"
+		combat.bonusValue = scoreBreakdown.killBonus
+		combat.tooltipTitle = "#RANKED_COMBAT_SUBHEADER"
+		combat.tooltipBody = "#RANKED_COMBAT_SUBHEADER_DESC"
+		extraInfo.headers.push(combat)
+
+		BonusBreakdownInfo bonus
+		bonus.bonusName = "#RANKED_BONUS_SUBHEADER"
+		bonus.bonusValue = extraInfo.totalBonus
+		bonus.tooltipTitle = "#RANKED_BONUS_SUBHEADER"
+		bonus.tooltipBody = "#RANKED_BONUS_SUBHEADER_DESC"
+		extraInfo.headers.push(bonus)
+
+		BonusBreakdownInfo placement
+		placement.bonusName = "#RANKED_PLACEMENT_SUBHEADER"
+		placement.bonusValue = scoreBreakdown.placementScore + extraInfo.entryCost
+		placement.tooltipTitle = "#RANKED_PLACEMENT_SUBHEADER"
+		placement.tooltipBody = "#RANKED_PLACEMENT_SUBHEADER_DESC"
+		extraInfo.headers.push(placement)
+	}	
+
+	
+	extraInfo.trialsData.trials.clear()
+
+	int trialState = RankedTrials_GetTrialState( player )
+	extraInfo.trialsData.hasTrial = RankedTrials_PlayerHasAssignedTrial( player )
+
+	if ( extraInfo.trialsData.hasTrial )
+	{
+		
+		ItemFlavor currentTrial = RankedTrials_GetAssignedTrial( player )
+
+		extraInfo.trialsData.trialsAttempts = RankedTrials_GetGamesPlayedInTrialsState( player )
+		extraInfo.trialsData.maxTrialsAttempts = RankedTrials_GetGamesAllowedInTrialsState( player, currentTrial )
+
+		
+		int trialsCount = RankedTrials_GetTrialsCountForTrial( currentTrial )
+		extraInfo.trialsData.trialsCount = trialsCount
+
+		
+		foreach ( int statIdx in eRankedTrialGoalIdx )
+		{
+			RankedPromoTrial trial
+
+			if ( trialsCount > statIdx )
+			{
+				trial.active	  		= true
+				string unlocalizedDesc 	= RankedTrials_GetDescription( currentTrial, statIdx )
+
+				bool usesComboStats 	= statIdx > eRankedTrialGoalIdx.PRIMARY && RankedTrials_SecondaryTrialRequiresSingleMatchPerformance( currentTrial )
+				trial.statGoal 			= usesComboStats ? RankedTrials_GetSecondaryTrialSingleMatchComboCount( currentTrial ) : RankedTrials_GetTrialStatGoalByIndex( currentTrial, statIdx )
+				trial.statCurrent 		= usesComboStats ? RankedTrials_GetSecondaryStatMatchComboStatProgress( player ) : RankedTrials_GetProgressValueForStatByIndex( player, statIdx )
+				trial.description 		= Localize( unlocalizedDesc, trial.statGoal )
+
+				
+				if ( usesComboStats )
+				{
+					int statOne 		= RankedTrials_GetTrialStatGoalByIndex( currentTrial, eRankedTrialGoalIdx.SECONDARY_ONE )
+					int statTwo 		= RankedTrials_GetTrialStatGoalByIndex( currentTrial, eRankedTrialGoalIdx.SECONDARY_TWO )
+					trial.description 	= Localize( unlocalizedDesc, statOne, statTwo )
+				}
+
+				
+				
+				SharedRankedDivisionData ornull nextRank 		= GetNextRankedDivisionFromScore( scoreBreakdown.finalLP )
+				if ( trialState != eRankedTrialState.SUCCESS && nextRank != null )
+				{
+					expect SharedRankedDivisionData( nextRank )
+					vector rankColor 							= GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE, nextRank.tier.index ) / 255
+					trial.progressBarColor 						= rankColor
+				}
+				else
+				{
+					int ladderPosition                   		= Ranked_GetLadderPosition( player  )
+					SharedRankedDivisionData currentRank 		= GetCurrentRankedDivisionFromScoreAndLadderPosition( scoreBreakdown.finalLP, ladderPosition )
+					vector rankColor 							= GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE, currentRank.tier.index ) / 255
+					trial.progressBarColor 						= rankColor
+				}
+			}
+			else
+			{
+				trial.active	  = false
+				trial.description = ""
+				trial.statCurrent = 0
+				trial.statGoal 	  = 1
+				trial.progressBarColor = GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE ) / 255
+			}
+
+			extraInfo.trialsData.trials.push( trial )
+		}
+
+		
+		switch ( trialState )
+		{
+			case eRankedTrialState.INCOMPLETE:
+				int attemptsRemaining = extraInfo.trialsData.maxTrialsAttempts - extraInfo.trialsData.trialsAttempts
+				extraInfo.trialsData.trialsInfoString = Localize( "#RANKED_PROMOTION_ATTEMPTS_REMAINING", attemptsRemaining )
+				extraInfo.trialsData.trialsStatusColor = <0.7, 0.7, 0.7>
+				extraInfo.trialsData.trialsStatusBannerColor =  <0.7, 0.7, 0.7>
+				extraInfo.trialsData.trialsStatusBannerAlpha =  0.0
+				extraInfo.trialsData.trialsStatusMessage = Localize( "#X/Y_STYLED", extraInfo.trialsData.trialsAttempts, extraInfo.trialsData.maxTrialsAttempts )
+				break
+			case eRankedTrialState.SUCCESS:
+				extraInfo.trialsData.trialsInfoString = Localize( "#RANKED_PROMOTION_SUCCESS_DESCRIPTION", scoreBreakdown.promotionBonus )
+				extraInfo.trialsData.trialsStatusColor = <1, 0.86, 0.24>
+				extraInfo.trialsData.trialsStatusBannerColor = <1, 0.86, 0.24>
+				extraInfo.trialsData.trialsStatusBannerAlpha = 0.25
+				extraInfo.trialsData.trialsStatusMessage = Localize( "#RANKED_PROMOTION_SUCCESS" )
+				break
+			case eRankedTrialState.FAILURE:
+				int lpToRetry = 0
+				extraInfo.trialsData.trialsInfoString = ""
+				int currentScore                     		= scoreBreakdown.finalLP
+				SharedRankedDivisionData ornull nextRank 	= GetNextRankedDivisionFromScore( currentScore )
+				if ( nextRank != null )
+				{
+					expect SharedRankedDivisionData( nextRank )
+					lpToRetry = nextRank.scoreMin - currentScore
+					if ( lpToRetry > 0 )
+					{
+						extraInfo.trialsData.trialsInfoString = Localize( "#RANKED_PROMOTION_FAILED_DESCRIPTION", lpToRetry )
+					}
+				}
+				extraInfo.trialsData.trialsStatusColor = <1, 0.18, 0.05>
+				extraInfo.trialsData.trialsStatusBannerColor = <0.5, 0.07, 0.01>
+				extraInfo.trialsData.trialsStatusBannerAlpha = 0.65
+				extraInfo.trialsData.trialsStatusMessage = Localize( "#RANKED_PROMOTION_FAILED" )
+				break
+			case eRankedTrialState.NOT_IN_TRIAL:
+			default:
+				extraInfo.trialsData.trialsInfoString = ""
+				break;
+		}
+	}
+	else
+	{
+		
+		foreach ( int statIdx in eRankedTrialGoalIdx )
+		{
+			RankedPromoTrial trial
+			trial.active = false
+			trial.description = ""
+			trial.statGoal = 1
+			trial.statCurrent = 0
+			extraInfo.trialsData.trials.push( trial )
+		}
+	}
+
+	
+	RankedMatchSummaryScreenData screenData
+
+	
+	screenData.isProgressPanelVisible = true 
+	screenData.isRankUpAnimationInProgress = false
+
+	SeasonStyleData seasonStyle = GetSeasonStyle()
+	screenData.titleTextColor = seasonStyle.titleTextColor
+	screenData.themeColor = seasonStyle.seasonColor
+
+	
+	rtk_struct rankedMatchSummaryScreenDataModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "screen", "RankedMatchSummaryScreenData" )
+	rtk_struct summaryBreakdownModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "breakdown", "RankLadderPointsBreakdown" )
+	rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "extraInfo", "RankedMatchSummaryExtraInfo" )
+
+	bool isProvisional = Ranked_GetNumProvisionalMatchesCompleted( player ) < Ranked_GetNumProvisionalMatchesRequired()
+	SharedRankedDivisionData currentRank = GetCurrentRankedDivisionFromScoreAndLadderPosition( scoreBreakdown.finalLP, Ranked_GetLadderPosition( player ) )
+	int tierFloor = currentRank.tier.scoreMin
+	extraInfo.showProtection = (scoreBreakdown.finalLP - tierFloor) <= abs( extraInfo.entryCost ) && currentRank.tier.allowsDemotion && !isProvisional
+	if ( extraInfo.showProtection )
+	{
+		extraInfo.protectionCurrent = GetDemotionProtectionBuffer ( player )
+		extraInfo.protectionMax = DEMOTION_BUFFER_MAX
+	}
+
+	
+	ItemFlavor ornull activeRankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+	if ( activeRankedPeriod != null )
+	{
+		expect ItemFlavor(activeRankedPeriod)
+		int completedGames = GetStat_Int( player, ResolveStatEntry( CAREER_STATS.rankedperiod_games_completed,  ItemFlavor_GetGUIDString( activeRankedPeriod ) ), eStatGetWhen.CURRENT, eStatFetchMode.FORCE_NO_CACHE )
+
+		if ( completedGames < RANKED_REWARD_MIN_MATCH_COUNT )
+			extraInfo.rankedRewardsDisclaimer = Localize( "#RANKED_REWARDS_PLAYED_MATCHES_DISCLAIMER", completedGames, RANKED_REWARD_MIN_MATCH_COUNT )
+		else
+			extraInfo.rankedRewardsDisclaimer = Localize( "#RANKED_REWARDS_PLAYED_MATCHES_ELEGIBLE" )
+
+		if ( RankedEvent_GetActiveCup( player ) != null && !Cups_IsCrossplay( player ) )
+			extraInfo.crossplayDisclaimer = Localize ( "#RANKED_EVENT_POSTGAME_CROSSPLAY_OFF_DISCLAIMER" )
+	}
+
+	RTKStruct_SetValue( rankedMatchSummaryScreenDataModel, screenData )
+	RTKStruct_SetValue( summaryBreakdownModel, scoreBreakdown )
+	RTKStruct_SetValue( summaryExtraInfoModel, extraInfo )
+
+
+
+			if ( file.hasRankedEvent )
+			{
+				thread RTKPostgameProgression_BuildTop10RankedEvent( self )
+
+
+
+			}
+
+
+}
+
+
+void function RTKPostgameProgression_BuildTop10RankedEvent( rtk_behavior self )
+{
+	EndSignal( uiGlobal.signalDummy, "RTKPostgameProgression_DestroyThreads" )
+
+	rtk_struct rankedMatchSummaryModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "ranked", "", [ "postGame" ] )
+	rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "extraInfo", "RankedMatchSummaryExtraInfo" )
+	rtk_struct rankedEventInfo = RTKStruct_GetOrCreateScriptStruct( summaryExtraInfoModel, "rankedEventInfo", "RankedEventInfo" )
+	rtk_struct cupHistory = RTKStruct_GetOrCreateScriptStruct( summaryExtraInfoModel, "cupHistory", "RTKApexCupHistoryModel" )
+
+	RTKApexCupHistoryModel historyModel = RTKApexCupHistory_GetHistoryData()
+
+	RankedEventPlacementInfo lastPlacement
+	
+	if ( historyModel.outScore != MAX_RANKED_EVENT_SCORE && historyModel.lastMatchIndex == -1 )
+	{
+		lastPlacement.placement = -1
+		lastPlacement.score = historyModel.outScore
+		lastPlacement.isReplaced = false
+	}
+
+	RankedEventPlacementInfo scoreToBeatPlacement
+	if ( historyModel.outScore != MAX_RANKED_EVENT_SCORE && historyModel.lastMatchIndex != -1 ) 
+	{
+		scoreToBeatPlacement.score = historyModel.outScore
+		scoreToBeatPlacement.placement = historyModel.infoList.len()
+		scoreToBeatPlacement.isReplaced = false
+	}
+	else if ( historyModel.outScore != MAX_RANKED_EVENT_SCORE && historyModel.lastMatchIndex == -1 ) 
+	{
+		if ( historyModel.infoList.len() > 0 )
+		{
+			scoreToBeatPlacement.score = historyModel.infoList[historyModel.infoList.len() - 1].score
+			scoreToBeatPlacement.placement = historyModel.infoList.len()
+		}
+		else
+		{
+			scoreToBeatPlacement.hasNoScore = true
+			scoreToBeatPlacement.placement = -1
+		}
+		scoreToBeatPlacement.isReplaced = false
+	}
+	else 
+	{
+		scoreToBeatPlacement.score = -1
+		scoreToBeatPlacement.hasNoScore = true
+		scoreToBeatPlacement.placement = -1
+		scoreToBeatPlacement.isReplaced = false
+	}
+
+
+
+
+
+
+	CupBakeryAssetData ornull cupData = Cups_SafeGetCupBakeryAssetDataFromGUID( historyModel.apexCup )
+	int topMatchesCount = 0
+	int endTime = 0
+	bool shouldHide = cupData == null
+	if ( cupData != null )
+	{
+		expect CupBakeryAssetData( cupData )
+		endTime = Cups_GetFinishUnixTime( cupData )
+		topMatchesCount = cupData.topMatchesCount
+		shouldHide = !Cups_IsVisible( cupData, GetUnixTimestamp() )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	}
+
+	array<RankedEventPlacementInfo> top10Placements = []
+	for ( int i = 0; i < topMatchesCount; i++ )
+	{
+		RankedEventPlacementInfo top10PlacementInfo
+		top10PlacementInfo.placement = historyModel.infoList[ i ].matchNumber
+		top10PlacementInfo.placementFormat = Localize( "#RANKED_LP_DISPLAY" )
+		top10PlacementInfo.score = historyModel.infoList[ i ].score
+		top10PlacementInfo.hasNoScore = historyModel.infoList[ i ].completed == false
+
+		if ( historyModel.lastMatchIndex == i )
+		{
+			lastPlacement.placement = i + 1
+			lastPlacement.score = historyModel.infoList[ i ].score
+			lastPlacement.isReplaced = historyModel.outScore != MAX_RANKED_EVENT_SCORE
+			top10PlacementInfo.isReplaced = historyModel.outScore != MAX_RANKED_EVENT_SCORE
+		}
+
+
+
+
+
+
+
+
+		top10Placements.append( top10PlacementInfo )
+	}
+
+	RankedEventInfo rankedEventInfoModel
+	rankedEventInfoModel.top10Total = historyModel.totalPoints
+	rankedEventInfoModel.lastPlacement = lastPlacement
+	rankedEventInfoModel.scoreToBeatPlacement = scoreToBeatPlacement
+	rankedEventInfoModel.top10Placements = top10Placements
+	rankedEventInfoModel.numMatchesPlayed = historyModel.matchesCompleted
+	rankedEventInfoModel.topMatchesCount = topMatchesCount
+	rankedEventInfoModel.isStillOnPlacement = historyModel.outScore == MAX_RANKED_EVENT_SCORE
+	rankedEventInfoModel.isCrossplayEnabled = Cups_IsCrossplay( GetLocalClientPlayer() )
+	rankedEventInfoModel.endTime = endTime
+	rankedEventInfoModel.shouldHide = shouldHide
+
+
+
+
+
+
+	RTKStruct_SetValue( cupHistory, historyModel )
+	RTKStruct_SetValue( rankedEventInfo, rankedEventInfoModel )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function RTKPostgameProgression_BuildAccountData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	entity player = GetLocalClientPlayer()
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "progression", "RTKPostgameProgressionControllerPanel_ModelStruct" )
+	rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelRootStruct, "passes", "RTKPostgamePass_Struct" )
+	RTKArray_Clear( modelArray )
+	p.animationStates.clear()
+	p.rewardsForLevels.clear()
+
+	int lastSeenXP
+	int lastSeenLevel
+	int currentXP
+	int currentLevel
+	int nextLevel
+	int boostedCurrentXP
+	int boostedCurrentLevel
+	int bonusXP = RTKPostgameProgression_GetBonusTotalAccountXP( player )
+	int newXP
+	int xpToNextLevel
+	bool isMaxLevel 
+
+	AccountXPData previousAccountData
+	AccountXPData currentAccountData
+	AccountXPData currentBoostedAccountData
+
+	bool hasAccountPass = PlayerPass_IsFeatureEnabled( ePassType.ACCOUNT )
+	if ( hasAccountPass )
+	{
+		ItemFlavor currentAccountPass		= GetAccountProgressionPass()
+		lastSeenXP       					= GetPlayerAccountXPPreviousProgress( ToEHI( player ) )
+		currentXP       					= GetPlayerAccountXPProgress( ToEHI( player ) )
+		lastSeenLevel                       = GetAccountLevelForXP( lastSeenXP )
+		currentLevel                        = GetAccountLevelForXP( currentXP )
+		newXP								= currentXP - lastSeenXP
+		isMaxLevel 							= GetPlayerAccountMaxTotalLevelIndex() <= currentLevel
+		nextLevel							= currentLevel + 1 
+
+		previousAccountData       = RTKPostgameProgression_GetAccountXPDataFromTotalXP( lastSeenXP, true, bonusXP )
+		currentAccountData        = RTKPostgameProgression_GetAccountXPDataFromTotalXP( currentXP, false, bonusXP )
+		currentBoostedAccountData = RTKPostgameProgression_GetAccountXPDataFromTotalXP( currentXP, true, bonusXP )
+
+		boostedCurrentXP                    = currentBoostedAccountData.accountXP
+		boostedCurrentLevel                 = currentBoostedAccountData.level
+
+		xpToNextLevel			  = currentBoostedAccountData.nextLevelXP - currentXP
+
+		
+		if ( currentLevel - lastSeenLevel > MAX_LEVELUPS_TO_DISPLAY )
+		{
+			previousAccountData       = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetTotalXPToCompleteAccountLevel( currentLevel - MAX_LEVELUPS_TO_DISPLAY ), true, bonusXP )
+			currentAccountData        = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetPersistentVarAsInt( "xp" ), false, bonusXP )
+			currentBoostedAccountData = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetPersistentVarAsInt( "xp" ), true, bonusXP )
+
+			lastSeenXP       					= previousAccountData.accountXP
+			currentXP       					= currentAccountData.accountXP
+			lastSeenLevel                       = previousAccountData.level
+			currentLevel                        = currentAccountData.level
+			newXP								= currentXP - lastSeenXP
+			isMaxLevel 							= GetPlayerAccountMaxTotalLevelIndex() <= currentLevel
+			nextLevel							= currentLevel + 1 
+
+			boostedCurrentXP                    = currentBoostedAccountData.accountXP
+			boostedCurrentLevel                 = currentBoostedAccountData.level
+
+			xpToNextLevel			  			= currentBoostedAccountData.nextLevelXP - currentXP
+		}
+	}
+	else
+	{
+		previousAccountData       = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetPersistentVarAsInt( "previousXP" ), true, bonusXP )
+		currentAccountData        = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetPersistentVarAsInt( "xp" ), false, bonusXP )
+		currentBoostedAccountData = RTKPostgameProgression_GetAccountXPDataFromTotalXP( GetPersistentVarAsInt( "xp" ), true, bonusXP )
+
+		lastSeenXP       					= previousAccountData.accountXP
+		currentXP       					= currentAccountData.accountXP
+		lastSeenLevel                       = previousAccountData.level
+		currentLevel                        = currentAccountData.level
+		newXP								= currentXP - lastSeenXP
+		isMaxLevel 							= GetPlayerAccountMaxTotalLevelIndex() <= currentLevel
+		nextLevel							= currentLevel + 1 
+
+		boostedCurrentXP                    = currentBoostedAccountData.accountXP
+		boostedCurrentLevel                 = currentBoostedAccountData.level
+
+		xpToNextLevel			  			= currentBoostedAccountData.nextLevelXP - currentXP
+	}
+
+	if ( newXP < 0 )
+	{
+		Assert( false, "This should be impossible, newXP should always be zero or positive. Outside of dev this will appear to skip to the current progress state without showing new progress." )
+		Warning("RTKPostgameProgression_BuildAccountData: newXP was negative. Outside of dev this will appear to skip to the current progress state without showing new progress.")
+		newXP = 0
+		lastSeenXP = currentXP
+		lastSeenLevel = currentLevel
+	}
+
+	rtk_struct postGameXpModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "xpBreakdown", "", [ "postGame" ] )
+	RTKPostgameProgression_BuildPostGameXpBreakdownModel( self, postGameXpModel, previousAccountData, currentAccountData, currentBoostedAccountData, bonusXP, true )
+
+
+
+
+
+
+	RTKPostgamePass_Struct passScriptStruct
+	passScriptStruct.passIndex = 0
+	passScriptStruct.displayName = "#MENU_BADGE_ACCOUNT"
+	passScriptStruct.xpEarnedText = newXP
+	passScriptStruct.xpShortProgressText = Localize( "#DEATH_SCREEN_EXPERIENCE_TO_NEXT_LEVEL", FormatAndLocalizeNumber( "1", float( xpToNextLevel ), true ) )
+	passScriptStruct.xpProgressText = Localize( "#DEATH_SCREEN_EXPERIENCE_TO_NEXT_LEVEL", FormatAndLocalizeNumber( "1", float( xpToNextLevel ), true ) )
+	passScriptStruct.prevBadgeTier = minint( lastSeenLevel, GetPlayerAccountMaxTotalLevelIndex() )
+	passScriptStruct.badgeTier = minint( currentLevel, GetPlayerAccountMaxTotalLevelIndex() )
+	passScriptStruct.badgeAssetPath = GetAccountBadgeRuiAssetAsAsset( lastSeenLevel )
+	passScriptStruct.xpCurrentPercent = min( 1.0, max( 0.0, ( currentBoostedAccountData.levelFrac ) ) )
+	passScriptStruct.xpPreviousPercent = min( 1.0, max( 0.0, ( previousAccountData.levelFrac ) ) )
+	passScriptStruct.xpEarnedExplainationText = Localize( "#DEATH_SCREEN_EXPERIENCE_EARNED" )
+	passScriptStruct.ownershipName = ""
+	passScriptStruct.xpAssetPath = $""
+	passScriptStruct.badgeSubstituteAssetPath = $""
+
+	BoostTable boosts = Boost_GetPreviousAppliedBoosts( GetLocalClientPlayer() )
+	bool hasBoost = Boost_GetBoostEventQuantityFromCategory( eBoostCategory.ACCOUNT_XP, boosts ) > 0
+	passScriptStruct.boostProgressTitle = hasBoost ? Localize( "#DEATH_SCREEN_BOOSTED" ) : ""
+	passScriptStruct.boostProgressText = hasBoost ? PostGame_GetFormatedTooltipDescriptionFromActiveBoosts( boosts, eBoostCategory.ACCOUNT_XP ) : ""
+	passScriptStruct.boostAssetPath = PostGame_GetIconFromActiveBoosts( boosts, eBoostCategory.BP_STARS )
+
+	RTKAngledProgressBarExtensions_Struct animationState
+	animationState.animate = false
+	animationState.prime = false
+	animationState.skipToEnd = false
+	animationState.startValue = float( lastSeenXP )
+	animationState.endValue = float( currentXP )
+	animationState.startValueInt = lastSeenXP
+	animationState.endValueInt = currentXP
+	animationState.minValues = []
+	animationState.maxValues = []
+
+	int xpEarnedStartValue = 0
+	int xpEarnedEndValue = 0
+
+	for (int k = lastSeenLevel; k <= nextLevel; k++)
+	{
+		bool isLastLevel = k == nextLevel - 1
+		bool isFirstLevel = k == lastSeenLevel
+
+		int minXPForLevel = hasAccountPass ? GetTotalPassXPForLevel( GetAccountProgressionPass(), k - 1, ePassType.ACCOUNT ) : GetTotalXPToCompleteAccountLevel( k - 1 )
+		int maxXPForLevel = hasAccountPass ? GetTotalPassXPForLevel( GetAccountProgressionPass(), k, ePassType.ACCOUNT ) : GetTotalXPToCompleteAccountLevel( k )
+
+		animationState.minValues.push( float( minXPForLevel ) )
+		animationState.maxValues.push( float( maxXPForLevel ) )
+
+		int xpAllocatedToThisLevel = minint( maxXPForLevel - lastSeenXP, newXP )
+
+		lastSeenXP += xpAllocatedToThisLevel
+		newXP -= xpAllocatedToThisLevel
+		xpEarnedStartValue += xpAllocatedToThisLevel
+		xpEarnedEndValue += xpAllocatedToThisLevel
+
+		void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) barMoveCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct, xpAllocatedToThisLevel, xpEarnedStartValue, xpEarnedEndValue, isMaxLevel ) {
+			rtk_panel passTilePanel = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+			if ( animationState.startValue < animationState.endValue )
+			{
+				rtk_behavior outlineAnimator = passTilePanel.FindBehaviorInDescendantsByName("OutlineAnimator")
+				if ( outlineAnimator != null )
+				{
+					RTKAnim_SetAnimationPropertyValue( outlineAnimator, "Pulse", "duration", tween.duration )
+					RTKAnimator_PlayAnimation( outlineAnimator, "Pulse" )
+				}
+			}
+
+			if ( isFirstLevel )
+			{
+				RTKAngledProgressBarExtensions_ShowOldProgress( angledProgressBarExtensions, animationState )
+
+				rtk_behavior XPProgressRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "XPProgressRowAnimator" )
+				RTKAnimator_PlayAnimation( XPProgressRowAnimator, "AnimateOut" )
+			}
+			else
+			{
+				RTKAngledProgressBarExtensions_HideOldProgress( angledProgressBarExtensions )
+			}
+
+			rtk_behavior XPEarnedLabelAnimator = passTilePanel.FindBehaviorInDescendantsByName("XPEarnedLabelAnimator")
+			RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "duration", tween.duration )
+			RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "startValue", float( xpEarnedStartValue - xpAllocatedToThisLevel ) )
+			RTKAnim_SetAnimationPropertyValue( XPEarnedLabelAnimator, "AnimateLabel", "endValue", float( xpEarnedEndValue ) )
+			RTKAnimator_PlayAnimation( XPEarnedLabelAnimator, "AnimateLabel" )
+
+			rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "progression", true )
+			if ( modelStruct == null )
+				return
+
+			expect rtk_struct( modelStruct )
+
+			int targetLevel = ( tween.tweenIndex ) / 2
+			rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelStruct, "passes", "RTKPostgamePass_Struct" )
+			rtk_struct passStruct = RTKArray_GetStruct( modelArray, passScriptStruct.passIndex )
+			rtk_array rewardsArray = RTKStruct_GetArray( passStruct, "rewards" )
+
+			Assert( passScriptStruct.passIndex < p.rewardsForLevels.len(), "This should be impossible, there should always be rewards for passes" )
+			if ( passScriptStruct.passIndex >= p.rewardsForLevels.len() )
+			{
+				Warning("RTKPostgameProgression_BuildAccountData: passScriptStruct.passIndex invalid")
+				return
+			}
+
+			if ( targetLevel >= p.rewardsForLevels[ passScriptStruct.passIndex ].len() )
+			{
+				if ( isMaxLevel ) 
+				{
+					p.rewardsForLevels[ passScriptStruct.passIndex ].push( p.rewardsForLevels[ passScriptStruct.passIndex ][ p.rewardsForLevels[ passScriptStruct.passIndex ].len() - 1 ] )
+				}
+				else
+				{
+					Assert( ( targetLevel < p.rewardsForLevels[ passScriptStruct.passIndex ].len() ),"This should be impossible, there should always be rewards for upcoming levels" )
+					Warning("RTKPostgameProgression_BuildAccountData: targetLevel invalid")
+					return
+				}
+			}
+
+			RTKArray_SetValue( rewardsArray, p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ] )
+
+			int rewardCount = p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ].len()
+			if ( rewardCount > 2  )
+			{
+				RTKStruct_SetString( passStruct, "rewardText", "" )
+			} else if ( rewardCount > 1  )
+			{
+				RTKStruct_SetString( passStruct, "rewardText", Localize( "#BATTLEPASS_TRACK_NEXT" ) )
+			}
+			else
+			{
+				RTKStruct_SetString( passStruct, "rewardText", Localize( "#BATTLE_PASS_NEXT_REWARD" ) )
+			}
+
+			rtk_behavior passBadgeAnimator = passTilePanel.FindBehaviorInDescendantsByName("PassBadgeAnimator")
+			RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "duration", 0.0 )
+			RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "startValue", float( k ) )
+			RTKAnim_SetAnimationPropertyValue( passBadgeAnimator, "AnimateTier", "endValue", float( minint( k, GetPlayerAccountMaxTotalLevelIndex() ) ) )
+			RTKAnimator_PlayAnimation( passBadgeAnimator, "AnimateTier" )
+			RTKStruct_SetAssetPath( passStruct, "badgeAssetPath", GetAccountBadgeRuiAssetAsAsset( k ) )
+
+			EmitUISound( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+		})
+		animationState.animationStartedCallbacks.push( barMoveCallback )
+
+		void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) barMovedCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+			rtk_panel passTilePanel            = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+			if ( isLastLevel )
+			{
+				rtk_behavior XPProgressRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "XPProgressRowAnimator" )
+				RTKAnimator_PlayAnimation( XPProgressRowAnimator, "AnimateIn" )
+
+				rtk_behavior boostRowAnimator = passTilePanel.FindBehaviorInDescendantsByName( "BoostRowAnimator" )
+				RTKAnimator_PlayAnimation( boostRowAnimator, "AnimateIn" )
+			}
+			StopUISoundByName( "UI_Menu_MatchSummary_XP_Bar_Tick_Loop" )
+		})
+		animationState.animationFinishedCallbacks.push( barMovedCallback )
+
+		void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) levelupCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+			RTKAngledProgressBarExtensions_HideOldProgress( angledProgressBarExtensions )
+
+			rtk_panel passTilePanel = angledProgressBarExtensions.GetPanel().GetParent().GetParent().GetParent().GetParent()
+
+			rtk_struct ornull modelStruct = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "progression", true )
+			if ( modelStruct == null )
+				return
+
+			expect rtk_struct( modelStruct )
+
+			int targetLevel = ( tween.tweenIndex - 1) / 2
+			rtk_array modelArray = RTKStruct_GetOrCreateScriptArrayOfStructs( modelStruct, "passes", "RTKPostgamePass_Struct" )
+			rtk_struct passStruct = RTKArray_GetStruct( modelArray, passScriptStruct.passIndex )
+			rtk_array rewardsArray = RTKStruct_GetArray( passStruct, "rewards" )
+			for ( int j = 0; j < p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ].len(); j++ )
+			{
+				p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ][j].checked = !p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ][j].locked
+			}
+			RTKArray_SetValue( rewardsArray, p.rewardsForLevels[ passScriptStruct.passIndex ][ targetLevel ] )
+
+			rtk_behavior outlineLevelUpAnimator = passTilePanel.FindBehaviorInDescendantsByName("OutlineLevelUpAnimator")
+			if ( outlineLevelUpAnimator != null )
+			{
+				RTKAnim_SetAnimationPropertyValue( outlineLevelUpAnimator, "Pulse", "duration", tween.duration * 0.5 )
+				RTKAnimator_PlayAnimation( outlineLevelUpAnimator, "Pulse" )
+			}
+
+			EmitUISound( "UI_Menu_MatchSummary_LevelUp" )
+		})
+		animationState.animationStartedCallbacks.push( levelupCallback )
+
+		void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) leveledupCallback = (void function( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) : ( animationState, isFirstLevel, isLastLevel, k, p, passScriptStruct ) {
+			
+		})
+		animationState.animationFinishedCallbacks.push( leveledupCallback )
+	}
+
+	
+	p.animationStates.push( animationState )
+
+	p.rewardsForLevels.push([]) 
+
+	for (int targetLevel = lastSeenLevel; targetLevel <= nextLevel; targetLevel++)
+	{
+		array< RTKBrowseLootPoolItem > rewardsForLevel
+		array<BattlePassReward> rewards
+
+		if ( hasAccountPass )
+		{
+			rewards.extend( GetBattlePassV2Rewards( GetAccountProgressionPass(), minint( targetLevel, GetPlayerAccountMaxTotalLevelIndex() ) + 1, eBattlePassV2RewardTier.FREE, GetLocalClientPlayer() ) )
+		}
+		else
+		{
+			array<RewardData> accountRewardArray = GetRewardsForAccountLevel( targetLevel )
+
+			for( int i = 0; i < accountRewardArray.len(); i++ )
+			{
+				BattlePassReward reward
+				reward.flav = accountRewardArray[i].item
+				reward.quantity = accountRewardArray[i].quantity
+				rewards.push( reward )
+			}
+		}
+
+		if ( rewards.len() > 2  )
+		{
+			rewards = [ rewards[0], rewards[1], rewards[2] ]
+			passScriptStruct.rewardText = "" 
+		} else if ( rewards.len() > 1  )
+		{
+			rewards = [ rewards[0], rewards[1] ]
+			passScriptStruct.rewardText = Localize( "#BATTLEPASS_TRACK_NEXT" )
+		}
+		else
+		{
+			passScriptStruct.rewardText = Localize( "#BATTLE_PASS_NEXT_REWARD" )
+		}
+
+		foreach( int rewardIndex, BattlePassReward bpReward in rewards )
+		{
+			int originalGUID = ItemFlavor_GetGUID( bpReward.flav )
+			int itemType = ItemFlavor_GetType( bpReward.flav )
+			asset prizeImage = ItemFlavor_GetBattlepassIcon( bpReward.flav )
+			if ( bpReward.iconOverride == $"" )
+			{
+				prizeImage = GetGlobalSettingsAsset( ItemFlavor_GetAsset( bpReward.flav ), "icon" )
+			}
+
+			if ( prizeImage == $"" )
+			{
+				prizeImage = CustomizeMenu_GetRewardButtonImage( bpReward.flav )
+			}
+
+			bool canOwn = true 
+			RTKBrowseLootPoolItem itemStruct
+			itemStruct.locked = !canOwn
+			itemStruct.checked = false
+			itemStruct.isFeaturedItem = false
+			itemStruct.image = prizeImage
+			itemStruct.quality = ItemFlavor_GetQuality( bpReward.flav )
+			itemStruct.frameColor = GetBattlepassRarityColor( itemStruct.quality, true )
+			itemStruct.backgroundColor = GetBattlepassRarityColor( itemStruct.quality, false )
+			itemStruct.eventImage = ItemFlavor_GetSourceIcon( bpReward.flav )
+			itemStruct.quantity = bpReward.quantity
+			itemStruct.backgroundImage = itemStruct.quantity <= 1 ? $"ui_image/rui/menu/battlepass/battlepass_new/bp_reward_frame_standard.rpak" : $"ui_image/rui/menu/battlepass/battlepass_new/bp_reward_frame_label.rpak"
+			itemStruct.quantityBackground = false
+
+			rewardsForLevel.push( itemStruct )
+		}
+
+		p.rewardsForLevels[ passScriptStruct.passIndex ].push( rewardsForLevel )
+		passScriptStruct.rewards = rewardsForLevel
+	}
+
+	rtk_struct newModelStruct = RTKArray_PushNewStruct( modelArray )
+	RTKStruct_SetValue( newModelStruct, passScriptStruct )
+
+	if (  p.animationStates.len() > 0 && self.PropGetPanel( "accountProgression" ) != null )
+	{
+		rtk_behavior angledProgressBarExtensions = self.PropGetPanel( "accountProgression" ).FindBehaviorInDescendantsByName("AngledProgressBarExtensions")
+		RTKAngledProgressBarExtensions_PrepareAnimations( angledProgressBarExtensions, p.animationStates[ 0 ] )
+	}
+}
+
+void function RTKPostgameProgression_BuildPostGameXpBreakdownModel( rtk_behavior self, rtk_struct postGameXpModel, AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false )
+{
+	const array<string> POSTMATCH_ACCOUNT_PROGRESSION_LIST_HEADERS = [ "#EOG_XP_HEADER_COMBAT", "#EOG_XP_HEADER_BONUS", "#EOG_XP_HEADER_PLACEMENT" ]
+	UpdateXPEvents()
+	entity player = GetLocalClientPlayer()
+
+	string lastGameMode = expect string( GetPersistentVar( "lastGameMode" ) )
+	string lastGameUIRules = expect string( GetPersistentVar( "lastGameUIRules" ) )
+
+	
+	if ( lastGameUIRules in xpDisplayGroups )
+	{
+		lastGameMode = lastGameUIRules
+	}
+	else if (!( lastGameMode in xpDisplayGroups ))
+	{
+		lastGameMode = SURVIVAL
+	}
+
+	for ( int i = 0; i < xpDisplayGroups[ lastGameMode ].len(); i++ )
+	{
+		rtk_array xpBreakdownModel = RTKStruct_GetOrCreateScriptArrayOfStructs( postGameXpModel, "xpList"+ string( i + 1 ), "BonusBreakdownInfo" )
+		array<BonusBreakdownInfo> xpItems
+
+		int totalXp = 0
+		foreach ( xpType in xpDisplayGroups[ lastGameMode ][ i ] )
+		{
+			int eventValue = GetXPEventValue( player, xpType )
+			if ( XpEventTypeData_DisplayEmpty( xpType ) || eventValue > 0 )
+			{
+				string tooltipDesc = ""
+
+				string xpEventToolTip = XpEventTypeData_GetToolTip( xpType, player )
+				if ( xpEventToolTip != "" )
+					tooltipDesc += xpEventToolTip
+
+
+				BonusBreakdownInfo xpItem
+				xpItem.tooltipTitle  = XpEventTypeData_GetToolTipTitle( xpType )
+
+				array<Boost> boosts = Boost_GetBoostsAffectingXPType( player, xpType )
+				int boostPercentage = 0
+				foreach( Boost boost in boosts )
+				{
+					boostPercentage += int( boost.uiModifierSummaryAmount )
+					tooltipDesc += boost.boostDescriptionShort
+				}
+
+				xpItem.bonusName = GetXPEventNameDisplay( player, xpType )
+				xpItem.bonusValue = eventValue
+
+				if ( boosts.len() > 0 )
+				{
+					if ( xpItem.tooltipTitle == "" )
+					{
+						xpItem.tooltipTitle = "#PROGRESSION_MODIFIERS_BOOST_TAB_TITLE"
+					}
+					else
+					{
+						xpItem.tooltipTitle = xpItem.tooltipTitle + " & " +"#PROGRESSION_MODIFIERS_BOOST_TAB_TITLE"
+					}
+
+				}
+				xpItem.tooltipBody = tooltipDesc
+				xpItems.push( xpItem )
+
+				totalXp += xpItem.bonusValue
+			}
+
+		}
+
+		
+		BonusBreakdownInfo xpHeader
+		if ( i < POSTMATCH_ACCOUNT_PROGRESSION_LIST_HEADERS.len() )
+			xpHeader.bonusName = Localize( POSTMATCH_ACCOUNT_PROGRESSION_LIST_HEADERS[ i ] )
+		xpHeader.bonusValue = totalXp
+		xpItems.insert( 0, xpHeader )
+
+		RTKArray_SetValue( xpBreakdownModel, xpItems )
+	}
+}
+
+void function RTKPostgameProgression_BuildPostGameTotalXpBreakdownModel( rtk_behavior self, rtk_struct postGameXpModel, AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false )
+{
+	entity player                           = GetLocalClientPlayer()
+
+	int previousAccountXP = previousAccountData.accountXP
+	int currentAccountXP = currentBoostedAccountData.accountXP
+
+	int baseXP = (currentAccountXP - bonusXP) - previousAccountXP
+	int totalXP = currentAccountXP - previousAccountXP
+
+	int activeBoosts = Boost_GetBoostEventQuantityFromCategory( eBoostCategory.ACCOUNT_XP, Boost_GetPreviousAppliedBoosts( GetLocalClientPlayer() ) )
+	activeBoosts += Boost_GetActiveLegacyBoostEventQuantity()
+
+	RTKPostGameTotalXpModel totalXpBreakdown
+	totalXpBreakdown.baseXP = baseXP
+	totalXpBreakdown.boostsApplied = activeBoosts
+	totalXpBreakdown.totalXP = totalXP
+	rtk_struct xpTotalModel = RTKStruct_GetOrCreateScriptStruct( postGameXpModel, "totalXPModel", "RTKPostGameTotalXpModel" )
+	RTKStruct_SetValue( xpTotalModel, totalXpBreakdown )
+}
+
+bool function DidPlayerLeveUp( rtk_struct postGameXpModel )
+{
+	rtk_struct accountProgressStruct = RTKStruct_GetOrCreateScriptStruct( postGameXpModel, "accountProgress", "RTKAccountProgressBarsModel" )
+
+	RTKAccountProgressBarsModel accountProgressModel
+	RTKStruct_GetValue( accountProgressStruct, accountProgressModel )
+	return accountProgressModel.endXP == accountProgressModel.maxLevelXP
+}
+
+void function ConfigureXPBarLevelUpData( rtk_struct postGameXpModel, AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false)
+{
+	rtk_struct accountProgress = RTKStruct_GetStruct( postGameXpModel, "accountProgress" )
+	RTKPostgameProgression_BuildPostGameXpRewardsModel( postGameXpModel, file.endLevel - file.levelUpsBoosted, previousAccountData, currentAccountData, currentBoostedAccountData, bonusXP, isFirstTime )
+
+	if ( file.levelUpsBoosted > 1 )
+		SetFullLevelUpAccountProgressData( previousAccountData, currentAccountData, currentBoostedAccountData, bonusXP, isFirstTime )
+	else
+		SetFinalLevelUpAccountProgressData( previousAccountData, currentAccountData, currentBoostedAccountData, bonusXP, isFirstTime )
+
+	file.levelUps--
+	file.levelUpsBoosted--
+}
+
+void function RTKPostgameProgression_BuildPostGameXpRewardsModel( rtk_struct postGameXpModel, int accountLevel, AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false )
+{
+	array<RewardData> accountRewardArray
+
+	ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+
+	if ( PlayerPass_IsFeatureEnabled( ePassType.ACCOUNT ) )
+	{
+		array< BattlePassReward > passRewards = GetBattlePassV2Rewards( GetAccountProgressionPass(), accountLevel, eBattlePassV2RewardTier.FREE, GetLocalClientPlayer() )
+		for( int i = 0; i < passRewards.len(); i++ )
+		{
+			RewardData reward
+			reward.item = passRewards[i].flav
+			reward.quantity = passRewards[i].quantity
+			accountRewardArray.push( reward )
+		}
+	}
+	else
+	{
+		accountRewardArray = GetRewardsForAccountLevel( accountLevel )
+	}
+
+	array<RTKBrowseLootPoolItem> rewards = []
+	for ( int i = 0; i < accountRewardArray.len(); i++ )
+	{
+		RTKBrowseLootPoolItem reward
+
+		asset prizeImage = ItemFlavor_GetBattlepassIcon( accountRewardArray[i].item )
+		if ( prizeImage == $"" )
+		{
+			prizeImage = GetGlobalSettingsAsset( ItemFlavor_GetAsset( accountRewardArray[i].item ), "icon" )
+		}
+		if ( prizeImage == $"" )
+		{
+			prizeImage = CustomizeMenu_GetRewardButtonImage( accountRewardArray[i].item )
+		}
+		if ( prizeImage == $"" )
+		{
+			prizeImage = GetImageForReward( accountRewardArray[i] )
+		}
+
+		reward.image = prizeImage
+		reward.quantity = accountRewardArray[i].quantity
+		reward.checked = false
+		reward.locked = false
+		reward.isFeaturedItem = false
+		reward.quality = ItemFlavor_GetQuality( accountRewardArray[i].item )
+		reward.frameColor = GetBattlepassRarityColor( reward.quality, true )
+		reward.backgroundColor = GetBattlepassRarityColor( reward.quality, false )
+		reward.eventImage = ItemFlavor_GetSourceIcon( accountRewardArray[i].item )
+
+		rewards.append( reward )
+	}
+	rtk_array xpRewardsModel = RTKStruct_GetOrCreateScriptArrayOfStructs( postGameXpModel, "xpRewards", "RTKBrowseLootPoolItem" )
+	RTKArray_SetValue( xpRewardsModel, rewards )
+}
+
+void function RTKPostgameProgression_BuildPostGameProgressBarModel( rtk_behavior self, rtk_struct postGameXpModel, AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false  )
+{
+	file.levelUps = currentAccountData.level - previousAccountData.level
+	file.levelUpsBoosted = currentBoostedAccountData.level - previousAccountData.level
+	file.endLevel = currentBoostedAccountData.level
+	int maxXPForCurrentLevel    = previousAccountData.nextLevelXP - previousAccountData.startLevelXP
+
+	RTKAccountProgressBarsModel accountProgress
+	accountProgress.progressFracStart = previousAccountData.levelFrac
+	accountProgress.boostFracStart = previousAccountData.levelFrac
+
+	if ( isFirstTime )
+	{
+		accountProgress.startXP = previousAccountData.accountXP - previousAccountData.startLevelXP
+		accountProgress.endXP = maxXPForCurrentLevel
+		accountProgress.maxLevelXP = accountProgress.endXP
+		accountProgress.currentBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( previousAccountData.level )
+		accountProgress.currentBadge.tier = previousAccountData.level
+		accountProgress.nextBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( previousAccountData.nextLevel )
+		accountProgress.nextBadge.tier = previousAccountData.nextLevel
+		accountProgress.boostFracEnd = previousAccountData.levelFrac
+		accountProgress.progressFracEnd = previousAccountData.levelFrac
+	}
+	else
+	{
+		accountProgress.startXP = currentBoostedAccountData.accountXP - currentBoostedAccountData.startLevelXP
+		accountProgress.maxLevelXP = currentBoostedAccountData.nextLevelXP - currentBoostedAccountData.startLevelXP
+		accountProgress.currentBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( currentBoostedAccountData.level )
+		accountProgress.currentBadge.tier = currentBoostedAccountData.level
+		accountProgress.nextBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( currentBoostedAccountData.nextLevel )
+		accountProgress.nextBadge.tier = currentBoostedAccountData.nextLevel
+		accountProgress.boostFracEnd = currentBoostedAccountData.levelFrac
+		accountProgress.progressFracEnd = file.levelUpsBoosted > file.levelUps ? 0.0 : currentAccountData.levelFrac
+	}
+
+	accountProgress.totalEarnedXP = currentBoostedAccountData.accountXP - previousAccountData.accountXP
+
+	accountProgress.animDuration = GetBarAnimationDuration()
+
+	rtk_struct accountProgressModel = RTKStruct_GetOrCreateScriptStruct( postGameXpModel, "accountProgress", "RTKAccountProgressBarsModel" )
+	RTKStruct_SetValue( accountProgressModel, accountProgress )
+}
+
+void function SetFullLevelUpAccountProgressData( AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false )
+{
+	int currentLevel = (file.endLevel - file.levelUpsBoosted) + 1
+	int earnedXPForCurrentLevel = GetTotalXPToCompleteAccountLevel( currentLevel - 1 ) - GetTotalXPToCompleteAccountLevel( currentLevel )
+	int xpForLevel   = GetTotalXPToCompleteAccountLevel( currentLevel ) - GetTotalXPToCompleteAccountLevel( currentLevel - 1 )
+
+	RTKAccountProgressBarsModel accountProgress
+	accountProgress.currentBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( currentLevel )
+	accountProgress.currentBadge.tier = currentLevel
+	accountProgress.nextBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( currentLevel + 1 )
+	accountProgress.nextBadge.tier = currentLevel + 1
+	accountProgress.startXP = 0
+	accountProgress.endXP = GetTotalXPToCompleteAccountLevel( currentLevel )
+	accountProgress.maxLevelXP = accountProgress.endXP
+	accountProgress.progressFracStart = 0
+	accountProgress.boostFracStart = 0
+	accountProgress.boostFracEnd = 1
+	accountProgress.progressFracEnd = (file.levelUps > 0 ) ? currentAccountData.levelFrac : 0.0
+	accountProgress.animDuration = GetBarAnimationDuration()
+
+	rtk_struct postGameXpModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "xpBreakdown", true, [ "postGame" ] ) )
+	rtk_struct accountProgressModel = RTKStruct_GetStruct( postGameXpModel, "accountProgress" )
+	RTKStruct_SetValue( accountProgressModel, accountProgress )
+}
+
+void function SetFinalLevelUpAccountProgressData( AccountXPData previousAccountData, AccountXPData currentAccountData, AccountXPData currentBoostedAccountData, int bonusXP, bool isFirstTime = false )
+{
+	RTKAccountProgressBarsModel accountProgress
+	accountProgress.currentBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset( currentBoostedAccountData.level )
+	accountProgress.currentBadge.tier = currentBoostedAccountData.level
+	accountProgress.nextBadge.badgeRuiAsset = GetAccountBadgeRuiAssetAsAsset(  currentBoostedAccountData.nextLevel )
+	accountProgress.nextBadge.tier = currentBoostedAccountData.nextLevel
+
+	accountProgress.startXP = 0
+	accountProgress.endXP = currentBoostedAccountData.accountXP - currentBoostedAccountData.startLevelXP
+	accountProgress.maxLevelXP = GetTotalXPToCompleteAccountLevel( currentBoostedAccountData.level ) - GetTotalXPToCompleteAccountLevel( currentBoostedAccountData.level - 1 )
+
+	accountProgress.progressFracStart = 0
+	accountProgress.boostFracStart = 0
+
+	accountProgress.boostFracEnd = currentBoostedAccountData.levelFrac
+	accountProgress.progressFracEnd = (file.endLevel > currentAccountData.level ) ? 0.0 : currentAccountData.levelFrac
+	accountProgress.animDuration = GetBarAnimationDuration()
+
+	rtk_struct postGameXpModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "xpBreakdown", true, [ "postGame" ] ) )
+	rtk_struct accountProgressModel = RTKStruct_GetStruct( postGameXpModel, "accountProgress" )
+	RTKStruct_SetValue( accountProgressModel, accountProgress )
+}
+
+void function RTKPostgameProgression_BuildRankedBadgeDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct rankedMatchSummaryModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "ranked", "", [ "postGame" ] )
+	rtk_struct summaryExtraInfoModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "extraInfo", "RankedMatchSummaryExtraInfo" )
+	rtk_struct summaryBreakdownModel = RTKStruct_GetOrCreateScriptStruct( rankedMatchSummaryModel, "breakdown", "RankLadderPointsBreakdown" )
+	rtk_struct progressModel = RTKStruct_GetOrCreateScriptStruct( summaryExtraInfoModel, "progressData", "RankedProgressBarData" )
+	p.progressModel = progressModel
+	RankedProgressBarData progressData
+	PromoTrialsData trialsData
+
+	entity player 						 		= GetLocalClientPlayer()
+	bool inProvisionals					 		= !Ranked_HasCompletedProvisionalMatches( player )
+	int currentScore                     		= RTKStruct_GetInt( summaryBreakdownModel, "finalLP" ) 
+	int previousScore 							= RTKStruct_GetInt( summaryBreakdownModel, "startingLP" )
+	int ladderPosition                   		= Ranked_GetLadderPosition( player  )
+	SharedRankedDivisionData currentRank 		= GetCurrentRankedDivisionFromScoreAndLadderPosition( currentScore, ladderPosition )
+	SharedRankedDivisionData ornull nextRank 	= GetNextRankedDivisionFromScore( currentScore )
+	SharedRankedDivisionData previousRank 		= GetCurrentRankedDivisionFromScore( previousScore )
+
+	p.numRanksEarned 							= ( currentRank.index - previousRank.index )
+	p.scoreStart 								= previousScore
+	p.scoreEnd									= currentScore
+	p.ladderPosition							= ladderPosition
+
+	if ( ( p.numRanksEarned > 0 ) && currentRank.isLadderOnlyDivision ) 
+	{
+		if( !(GetNextRankedDivisionFromScore( previousScore ) == null) ) 
+		{
+			p.numRanksEarned = 2 
+			progressData.totalRanks = p.numRanksEarned
+		}
+		else 
+		{
+			progressData.totalRanks = 0
+		}
+	}
+	else
+	{
+		progressData.totalRanks = p.numRanksEarned
+	}
+
+	bool useProvisionalBadgeAsset 				= inProvisionals
+
+	
+	progressData.startScore 					= previousScore
+	progressData.endScore 						= currentScore
+
+	progressData.currentTweenIndex 				= 0
+
+	int currentAnimScore = previousScore
+	for ( int i = 0; i <= abs( p.numRanksEarned ); i++ )
+	{
+		RankedProgressBarTweenData tween
+
+		SharedRankedDivisionData thisDivision 	= GetCurrentRankedDivisionFromScoreAndLadderPosition( currentAnimScore, ladderPosition )
+		SharedRankedDivisionData ornull nextDivision = GetNextRankedDivisionFromScore( currentAnimScore )
+
+
+
+
+		tween.isDoubleBadge 					= !inProvisionals && !thisDivision.isLadderOnlyDivision && nextDivision != null
+		bool hasPromoTrial				 	= RankedTrials_PlayerHasIncompleteTrial( player )
+		tween.isDoubleBadge 				= !inProvisionals && !thisDivision.isLadderOnlyDivision && nextDivision != null && !hasPromoTrial
+		useProvisionalBadgeAsset			= inProvisionals || hasPromoTrial
+
+		if ( nextDivision != null )
+		{
+			expect SharedRankedDivisionData( nextDivision )
+			tween.hasPromoTrialAtEnd = RankedTrials_NextRankHasTrial( thisDivision, nextDivision ) && !RankedTrials_IsKillswitchEnabled()
+			tween.promoTrialCapImage = nextDivision.tier.promotionalMetallicImage
+		}
+
+		tween.badge1.divisionName				= thisDivision.divisionName
+		tween.badge1.rankColor					= GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE, thisDivision.tier.index ) / 255
+		tween.badge1.badgeRuiAsset 				= useProvisionalBadgeAsset ? RANKED_PLACEMENT_BADGE : thisDivision.tier.iconRuiAsset
+		tween.badge1.rankedIcon 				= string( thisDivision.tier.icon )
+
+
+
+
+		tween.badge1.emblemDisplayMode 			= thisDivision.emblemDisplayMode
+
+			if ( RankedEvent_GetActiveCup( player ) != null )
+			{
+				tween.badge1.rankedIconOverlay = string( thisDivision.tier.ladderIcon )
+			}
+
+
+		
+		tween.badge1.isLadderOnlyRank			= thisDivision.isLadderOnlyDivision || thisDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_LADDER_POSITION || thisDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_RP
+
+		switch ( thisDivision.emblemDisplayMode )
+		{
+			case emblemDisplayMode.DISPLAY_DIVISION:
+				tween.badge1.emblemText 		= thisDivision.emblemText
+				break
+			case emblemDisplayMode.DISPLAY_RP:
+				int scoreToShow = ( p.numRanksEarned >= 0 ) ? currentScore : thisDivision.scoreMin
+				string rankScoreShortened       = FormatAndLocalizeNumber( "1", float( scoreToShow ), IsTenThousandOrMore( scoreToShow ) )
+				tween.badge1.emblemText 		= Localize( "#RANKED_POINTS_GENERIC", rankScoreShortened )
+				break
+			case emblemDisplayMode.DISPLAY_LADDER_POSITION:
+				string ladderPosShortened
+				if ( ladderPosition == SHARED_RANKED_INVALID_LADDER_POSITION )
+					ladderPosShortened 			= ""
+				else
+					ladderPosShortened 			= Localize( "#RANKED_LADDER_POSITION_DISPLAY", FormatAndLocalizeNumber( "1", float( ladderPosition ), IsTenThousandOrMore( ladderPosition ) ) )
+				tween.badge1.emblemText 		= ladderPosShortened
+				break;
+			case emblemDisplayMode.NONE:
+			default:
+				tween.badge1.emblemText			= ""
+				break;
+		}
+
+		tween.badge1.ladderPosition 			= ladderPosition
+		tween.badge1.rankScore 					= currentScore
+
+		
+		tween.badge1.badgeLabel					= useProvisionalBadgeAsset ? "" : tween.badge1.emblemText
+
+		bool isPlacementMode 					= inProvisionals
+		bool useDynamicPips						= false
+		isPlacementMode 					= inProvisionals || hasPromoTrial
+		tween.badge1.isPromotional			= hasPromoTrial
+		useDynamicPips 						= !inProvisionals && hasPromoTrial
+		tween.badge1.isPlacementMode 			= isPlacementMode
+
+		tween.badge1.tooltipTitle 				= inProvisionals ? Localize( "#RANKED_PROVISIONAL_TITLE" ) : thisDivision.divisionName
+		tween.badge1.tooltipBody 				= inProvisionals ? Localize( "#RANKED_PROVISIONAL_DESC" ) : ""
+
+		int badge1MatchesCompleted 				= 0
+		int badge1MaxMatches 					= 10
+		if ( inProvisionals )
+		{
+			badge1MatchesCompleted 				= Ranked_GetNumProvisionalMatchesCompleted( player )
+		}
+		else if ( hasPromoTrial )
+		{
+			ItemFlavor currentTrial 			= RankedTrials_GetAssignedTrial( player )
+			badge1MatchesCompleted 				= RankedTrials_GetGamesPlayedInTrialsState( player )
+			badge1MaxMatches 					= RankedTrials_GetGamesAllowedInTrialsState( player, currentTrial )
+		}
+
+		tween.badge1.completedMatches 			= badge1MatchesCompleted
+		tween.badge1.maxMatches 				= badge1MaxMatches
+		tween.badge1.useDynamicPips				= useDynamicPips
+		tween.badge1.startPip 					= 0
+
+		if ( inProvisionals )
+		{
+			for ( int idx = 0; idx < badge1MatchesCompleted; idx++ )
+			{
+				tween.badge1.wonMatches.push( true )
+			}
+		}
+
+		if ( tween.isDoubleBadge )
+		{
+			expect SharedRankedDivisionData( nextDivision )
+			tween.badge2.divisionName			= nextDivision.divisionName
+			tween.badge2.rankColor				= GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE, nextDivision.tier.index ) / 255
+			tween.badge2.badgeRuiAsset 			= inProvisionals ? RANKED_PLACEMENT_BADGE : nextDivision.tier.iconRuiAsset
+			tween.badge2.rankedIcon 			= string( nextDivision.tier.icon )
+
+
+
+
+
+				if ( RankedEvent_GetActiveCup( player ) != null )
+				{
+					tween.badge2.rankedIconOverlay = string( nextDivision.tier.ladderIcon )
+				}
+
+			tween.badge2.emblemDisplayMode 		= nextDivision.emblemDisplayMode
+			
+			tween.badge2.isLadderOnlyRank		= nextDivision.isLadderOnlyDivision || nextDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_LADDER_POSITION || nextDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_RP
+			tween.badge2.emblemText 			= ""
+
+			switch ( nextDivision.emblemDisplayMode )
+			{
+				case emblemDisplayMode.DISPLAY_DIVISION:
+					tween.badge2.emblemText = nextDivision.emblemText
+					break
+
+				case emblemDisplayMode.DISPLAY_RP:
+					string rankScoreShortened = FormatAndLocalizeNumber( "1", float( nextDivision.scoreMin ), IsTenThousandOrMore( nextDivision.scoreMin ) )
+					tween.badge2.emblemText = Localize( "#RANKED_POINTS_GENERIC", rankScoreShortened )
+					break
+
+				case emblemDisplayMode.DISPLAY_LADDER_POSITION:
+					string ladderPosShortened
+					if ( ladderPosition == SHARED_RANKED_INVALID_LADDER_POSITION )
+						ladderPosShortened = ""
+					else
+						ladderPosShortened = Localize( "#RANKED_LADDER_POSITION_DISPLAY", FormatAndLocalizeNumber( "1", float( ladderPosition ), IsTenThousandOrMore( ladderPosition ) ) )
+					tween.badge2.emblemText = ladderPosShortened
+					break;
+
+				case emblemDisplayMode.NONE:
+				default:
+					tween.badge2.emblemText = ""
+					break;
+			}
+
+			
+			tween.badge2.badgeLabel				= useProvisionalBadgeAsset ? "" : tween.badge2.emblemText
+			tween.badge2.ladderPosition 		= ladderPosition
+			tween.badge2.rankScore 				= currentScore
+			tween.badge2.isPlacementMode 		= inProvisionals
+			int badge2matchesCompleted 			= Ranked_GetNumProvisionalMatchesCompleted( player )
+			tween.badge2.completedMatches 		= badge2matchesCompleted
+			tween.badge2.useDynamicPips			= false
+			tween.badge2.startPip 				= 0
+		}
+
+		if ( nextDivision != null)
+		{
+			expect SharedRankedDivisionData( nextDivision )
+			tween.minRankScore = thisDivision.scoreMin
+			tween.maxRankScore = nextDivision.scoreMin
+
+			tween.startScore = currentAnimScore
+
+			if ( currentScore > previousScore )
+				tween.endScore = minint( currentScore, nextDivision.scoreMin )
+			else
+				tween.endScore = maxint( currentScore, thisDivision.scoreMin )
+
+			tween.progressFracStart = float( tween.startScore - tween.minRankScore ) / float( tween.maxRankScore - tween.minRankScore )
+			tween.progressFracEnd = float( tween.endScore - tween.minRankScore ) / float( tween.maxRankScore - tween.minRankScore )
+
+			
+			tween.adjustedMinRankScore = 0
+			tween.adjustedMaxRankScore = tween.maxRankScore - tween.minRankScore
+			tween.adjustedStartScore = tween.startScore - tween.minRankScore
+			tween.adjustedEndScore = tween.endScore - tween.minRankScore
+		}
+		else
+		{
+			tween.minRankScore = thisDivision.scoreMin
+			tween.endScore = ( p.numRanksEarned < 0 ) ? thisDivision.scoreMin : currentScore
+
+			tween.adjustedMinRankScore = 0
+			tween.adjustedEndScore = tween.endScore - tween.minRankScore
+			tween.progressFracStart = 1
+			tween.progressFracEnd = 0
+		}
+
+		
+		
+		currentAnimScore = ( p.numRanksEarned > 0 ) ? tween.endScore : tween.endScore - 1
+
+		
+		progressData.tweens.push( tween )
+	}
+
+	progressData.currentTween 					= progressData.tweens[0]
+
+	RTKStruct_SetValue( progressModel, progressData )
+}
+
+void function RTKPostgameProgression_BuildWeaponXPDataModel(  rtk_behavior self, rtk_struct postGameWeaponModel  )
+{
+	array< PostGameMasteryXpChangesModel > weaponXpChanges = []
+
+	table<ItemFlavor, MasteryWeapon_MatchXPPerWeapon> matchXPResult = Mastery_GetPreviousMatchXPUpdates()
+	foreach ( weapon, matchXP in matchXPResult )
+	{
+		PostGameMasteryXpChangesModel weaponXp
+
+		weaponXp.guid         = ItemFlavor_GetGUID( weapon )
+		weaponXp.id           = WeaponItemFlavor_GetClassname( weapon )
+		weaponXp.name         = ItemFlavor_GetShortName( weapon )
+		weaponXp.lastXP       = matchXP.lastXP
+		weaponXp.lastLevel    = Mastery_CalculateLevelFromXP( matchXP.lastXP )
+		weaponXp.currentXP    = matchXP.currentXP
+		weaponXp.currentLevel = Mastery_CalculateLevelFromXP( matchXP.currentXP )
+		weaponXp.currentLevelReqXP = Mastery_GetTotalXPToCompleteWeaponLevel( weaponXp.currentLevel ) - Mastery_GetTotalXPToCompleteWeaponLevel( weaponXp.currentLevel - 1 )
+		weaponXp.currentProgPerc = float( weaponXp.currentXP - Mastery_GetTotalXPToCompleteWeaponLevel( weaponXp.currentLevel - 1 ) ) / float( maxint(1, weaponXp.currentLevelReqXP ) )
+		weaponXp.xpChange     = weaponXp.currentXP - weaponXp.lastXP
+		weaponXp.leveledUp 	  = weaponXp.lastLevel < weaponXp.currentLevel
+		weaponXp.boosted	  = matchXP.lastBonusXP > 0
+
+		array< MasteryXpChangesActionsModel > xpChangesActions = []
+		int actionXPIndex = 0
+
+		foreach ( actionType, actionXP in matchXP.actionXPMap )
+		{
+			MasteryXpChangesActionsModel xpChangesAction
+			xpChangesAction.index = actionXPIndex
+			xpChangesAction.action = actionXP.actionText
+			xpChangesAction.xp = actionXP.xpValue
+			actionXPIndex++
+
+			xpChangesActions.push( xpChangesAction )
+		}
+
+		float totalBonusPercentage = 0.0
+		if( weaponXp.boosted )
+		{
+			MasteryXpChangesActionsModel xpChangesAction
+			xpChangesAction.index = actionXPIndex
+			xpChangesAction.action = "#PROGRESSION_MODIFIERS_MASTERY_WEAPON_TOOLTIP_TITLE"
+			int baseXP = weaponXp.xpChange - matchXP.lastBonusXP
+			float modifiedPercent = baseXP == 0 ? 0.0 : float ( weaponXp.xpChange ) / float( baseXP )
+			int bonusPercentage = int ( ( modifiedPercent - 1 ) * 100 )
+			totalBonusPercentage += modifiedPercent
+			string categoryName = Localize( ItemFlavor_GetLongName( WeaponItemFlavor_GetCategory( weapon ) ) )
+			xpChangesAction.actionDescription = Localize( "#PROGRESSION_MODIFIERS_MASTERY_WEAPON_TOOLTIP_DESC", bonusPercentage, categoryName )
+			xpChangesAction.xp = matchXP.lastBonusXP
+			xpChangesActions.push( xpChangesAction )
+		}
+		weaponXp.boostedProgPerc = weaponXp.currentProgPerc + totalBonusPercentage
+
+		weaponXp.actions = xpChangesActions
+		weaponXpChanges.push( weaponXp )
+	}
+
+	weaponXpChanges.sort( RTKPostgameProgression_SortXpChanges )
+
+	int index = 0
+	int totalXP = 0
+	int numCelebrations = 0
+	foreach( PostGameMasteryXpChangesModel weaponXp in weaponXpChanges )
+	{
+		weaponXp.index = index
+		totalXP += weaponXp.xpChange
+		if ( weaponXp.leveledUp )
+			numCelebrations++
+		index++
+	}
+
+	rtk_array xpChangesModel = RTKStruct_GetOrCreateScriptArrayOfStructs( postGameWeaponModel, "xpChanges", "PostGameMasteryXpChangesModel" )
+	RTKArray_SetValue( xpChangesModel, weaponXpChanges )
+
+	rtk_struct overviewStruct = RTKStruct_GetOrCreateScriptStruct(postGameWeaponModel, "overview", "PostGameWeaponMasteryModel")
+	RTKStruct_SetBool( overviewStruct, "hasXpChanges", weaponXpChanges.len() > 0 )
+	RTKStruct_SetInt( overviewStruct, "numWeaponsUsed", index )
+	RTKStruct_SetInt( overviewStruct, "totalXP", totalXP )
+	RTKStruct_SetInt( overviewStruct, "numCelebrations", numCelebrations )
+}
+
+int function RTKPostgameProgression_SortXpChanges( PostGameMasteryXpChangesModel a, PostGameMasteryXpChangesModel b )
+{
+	if ( a.leveledUp && !b.leveledUp )
+		return -1
+	if ( b.leveledUp && !a.leveledUp )
+		return 1
+
+	if ( a.xpChange < b.xpChange )
+		return 1
+	if ( b.xpChange < a.xpChange )
+		return -1
+
+	return 0
+}
+
+AccountXPData function RTKPostgameProgression_GetAccountXPDataFromTotalXP( int XP, bool isBoosted, int bonusXP )
+{
+	AccountXPData accountData
+	accountData.accountXP = XP
+	if ( !isBoosted )
+		accountData.accountXP -= bonusXP
+	accountData.level        = GetAccountLevelForXP( accountData.accountXP )
+	accountData.startLevelXP = GetTotalXPToCompleteAccountLevel( accountData.level  - 1 )
+	accountData.nextLevelXP  = GetTotalXPToCompleteAccountLevel( accountData.level )
+	accountData.nextLevel    = accountData.level + 1
+	accountData.levelFrac    = GraphCapped( accountData.accountXP, accountData.startLevelXP, accountData.nextLevelXP, 0.0, 1.0 )
+	return accountData
+}
+
+int function RTKPostgameProgression_GetBonusTotalAccountXP( entity player )
+{
+	string lastGameMode = expect string( GetPersistentVar( "lastGameMode" ) )
+	if (!( lastGameMode in xpDisplayGroups ))
+		lastGameMode = SURVIVAL
+
+	array<int> xpTypes = clone xpDisplayGroups[lastGameMode][0]
+	xpTypes.extend( clone xpDisplayGroups[lastGameMode][1] )
+
+	return Boost_GetBonusPostGameTotalAccountXP( player, xpTypes )
+}
+
+string function RTKMutator_PostgameProgressionMasteryWeaponSubtitle( bool hasLeveledUp, int currentLevel )
+{
+	if ( hasLeveledUp )
+		return Localize( "#MASTERY_LEVELED_UP_LVL", currentLevel )
+
+	
+
+	return Localize( "#MASTERY_NEW_PROGRESS" )
+}
+
+asset function RTKMutator_PostgameProgressionMasteryWeaponIcon( int guid )
+{
+	if ( IsValidItemFlavorGUID( guid ) )
+	{
+		return WeaponItemFlavor_GetHudIcon( GetItemFlavorByGUID( guid ) )
+	}
+
+	return $""
+}
+
+string function RTKMutator_PostgameProgressionMasteryWeaponLevelText( int currentLevel, int currentLevelReqXP, int currentLevelXP )
+{
+	
+	return Localize( "#MASTERY_WXP_TO_NEXT_LEVEL", Mastery_GetTotalXPToCompleteWeaponLevel( currentLevel ) - currentLevelXP, currentLevel + 1 )
+}
+
+asset function RTKMutator_PostgameProgressionMasteryAmmoIcon( int guid )
+{
+	asset ammoIcon = $""
+
+
+	if ( IsValidItemFlavorGUID( guid ) )
+	{
+		ItemFlavor weapon = GetItemFlavorByGUID( guid )
+		bool isCrateWeapon = WeaponItemFlavor_GetStatsCategory( weapon ) == WEAPON_STAT_CATEGORY_CRATE_WEAPON
+
+
+		if ( WeaponItemFlavor_HasTakeover( weapon ) )
+		{
+			LootData data = SURVIVAL_Loot_GetLootDataByRef( WeaponItemFlavor_GetTakeoverClassname( weapon ) )
+			if ( SURVIVAL_Loot_IsRefValid( data.ammoType) )
+			{
+				ammoIcon = RTKMutator_GetAmmoIcon( eAmmoPoolType[ data.ammoType ], false )
+			}
+			else
+			{
+				ammoIcon = RTKMutator_GetAmmoIcon( 0, false )
+			}
+		}
+		else
+
+		{
+			array<int> ammoTypes = WeaponItemFlavor_GetAmmoTypes( weapon )
+			if ( ammoTypes.len() > 0 )
+			{
+				ammoIcon = RTKMutator_GetAmmoIcon( ammoTypes[0], isCrateWeapon )
+			}
+			else
+			{
+				ammoIcon = RTKMutator_GetAmmoIcon( 0, isCrateWeapon )
+			}
+		}
+	}
+
+	return ammoIcon
+}
+
+void function AnimateRankedProgressBar( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	
+	if ( p.hasLPBarAnimationStarted )
+		return
+
+	p.hasLPBarAnimationStarted = true
+
+	entity player 			= GetLocalClientPlayer()
+	bool inProvisionals 	= !Ranked_HasCompletedProvisionalMatches( player )
+	bool hasPromoTrial	= RankedTrials_PlayerHasIncompleteTrial( player )
+	bool animateProgressBar  = true 
+
+	
+	
+
+	rtk_behavior ornull labelAnimator = self.PropGetBehavior( "labelAnimator" )
+	if ( labelAnimator != null )
+	{
+		expect rtk_behavior( labelAnimator )
+		RTKAnimator_PlayAnimation( labelAnimator, "AnimateLabel" )
+	}
+
+	
+	rtk_behavior ornull barAnimator = self.PropGetBehavior( "progressBarAnimator" )
+	bool isProvisionalGraduation = false
+	if ( barAnimator == null )
+	{
+		Assert( false )
+		return
+	}
+
+	expect rtk_behavior( barAnimator )
+
+	
+	if ( animateProgressBar )
+	{
+		
+		RTKStruct_SetInt( p.progressModel, "currentTweenIndex", 0 )
+
+		
+		RTKRankedMatchSummary_UpdateTweenDataModel( self )
+
+		
+		self.AutoSubscribe( barAnimator, "onAnimationFinished", function ( rtk_behavior barAnimator, string animName ) : ( self, inProvisionals, p ) {
+			
+			StopUISoundByName( "UI_Menu_MatchSummary_Ranked_XPBar_Increase" )
+			if ( !RTKAnimator_IsPlaying( barAnimator ) )
+			{
+				if ( RTKRankedMatchSummary_UpdateTweenDataModel( self, true ) )
+				{
+					RTKAnimator_PlayAnimation( barAnimator, "AnimateBar" )
+
+					rtk_behavior ornull labelAnimator = self.PropGetBehavior( "labelAnimator" )
+					if ( labelAnimator != null )
+					{
+						expect rtk_behavior( labelAnimator )
+						RTKAnimator_PlayAnimation( labelAnimator, "AnimateLabel" )
+					}
+				}
+				else
+				{
+					PrivateData p
+					self.Private( p )
+
+					bool hasProgressedOutOfProvisional = Ranked_GetXProgMergedPersistenceData( GetLocalClientPlayer(), RANKED_PROVISIONAL_MATCH_HAS_PROGRESSED_OUT_PERSISTENCE_VAR_NAME ) != 0
+					bool isProvisionalGraduation = ( !inProvisionals && !hasProgressedOutOfProvisional && !GetConVarBool( RANKED_PROVISIONAL_MATCH_CONVAR_KILL_SWITCH ) )
+
+					if ( p.numRanksEarned > 0 || isProvisionalGraduation )
+					{
+						thread StartRankUpAnimation( self, isProvisionalGraduation )
+					}
+					else if ( p.numRanksEarned < 0 )
+					{
+						PlayLobbyCharacterDialogue( "glad_rankDown"  )
+					}
+				}
+			}
+		} )
+
+		self.AutoSubscribe( barAnimator, "onAnimationStarted", function ( rtk_behavior animator, string animName ) : ( p ) {
+			int startScore = RTKStruct_GetInt( p.progressModel, "startScore" )
+			int endScore = RTKStruct_GetInt( p.progressModel, "endScore" )
+			if ( startScore != endScore )
+			{
+				EmitUISound( "UI_Menu_MatchSummary_Ranked_XPBar_Increase" )
+			}
+		} )
+
+		
+		RTKAnimator_PlayAnimation( barAnimator, "AnimateBar" )
+	}
+	else 
+	{
+		rtk_array tweens = RTKStruct_GetArray( p.progressModel, "tweens" )
+		int tweensCount = RTKArray_GetCount( tweens )
+		RTKStruct_SetInt( p.progressModel, "currentTweenIndex", tweensCount - 1 )
+		RTKRankedMatchSummary_UpdateTweenDataModel( self )
+	}
+}
+
+void function StartRankUpAnimation( rtk_behavior self, bool isProvisionalGraduation = false )
+{
+	EndSignal( uiGlobal.signalDummy, "RTKPostgameProgression_DestroyThreads" )
+
+	PrivateData p
+	self.Private( p )
+
+	
+	wait 0.1
+
+	
+	wait 0.1
+	RankUpAnimation( GetTopNonDialogMenu(), p.numRanksEarned, p.scoreStart, p.ladderPosition, p.scoreEnd, isProvisionalGraduation )
+	wait 0.1
+}
+
+bool function RTKRankedMatchSummary_UpdateTweenDataModel( rtk_behavior self, bool incrementTween = false )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	int currentTweenIndex = RTKStruct_GetInt( p.progressModel, "currentTweenIndex" )
+
+	if ( incrementTween )
+		currentTweenIndex++
+
+	rtk_array tweens = RTKStruct_GetArray( p.progressModel, "tweens" )
+	int tweensCount = RTKArray_GetCount( tweens )
+
+	if ( currentTweenIndex < tweensCount )
+	{
+		rtk_struct tween = RTKArray_GetStruct( tweens, currentTweenIndex )
+		RTKStruct_SetStruct( p.progressModel, "currentTween", tween )
+		RTKStruct_SetInt( p.progressModel, "currentTweenIndex", currentTweenIndex )
+		return true
+	}
+
+	return false
+}
+
+string function GetStringRewardForItemFlavor( ItemFlavor flav, int qty )
+{
+	if ( ItemFlavor_GetGRXMode( flav ) == eItemFlavorGRXMode.PACK )
+		return qty > 1 ? string( qty ) + " " + Localize( "#PACKS" ) :  Localize( "#PACK" )
+	else
+		return FormatAndLocalizeNumber( "1", float( qty ), ItemFlavor_IsCurrency( flav ) || IsTenThousandOrMore( qty ) )
+	unreachable
+}
+
+table<ItemFlavor, int> function GetRewardToQuantityTable()
+{
+	table<ItemFlavor, int> rewardToQuantity
+	for ( int i = file.levelUpsBoosted - 1; i >= 0; i-- )
+	{
+		array<RewardData> accountRewardArray = GetRewardsForAccountLevel( file.endLevel - i )
+		for ( int j = 0; j < accountRewardArray.len(); j++ )
+		{
+			if ( !(accountRewardArray[j].item in rewardToQuantity) )
+				rewardToQuantity[accountRewardArray[j].item] <- accountRewardArray[j].quantity
+			else
+				rewardToQuantity[accountRewardArray[j].item] += accountRewardArray[j].quantity
+		}
+	}
+	return rewardToQuantity
+}
+
+float function GetBarAnimationDuration()
+{
+	return 0.4 + max(0, 1.6 + min((-0.2 * file.levelUpsBoosted), 0.0)) 
+}

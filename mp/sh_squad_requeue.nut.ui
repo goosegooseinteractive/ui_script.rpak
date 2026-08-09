@@ -1,0 +1,1337 @@
+global function Requeue_SquadOptInEnabled
+global function Requeue_IsPlayerAboveSoloRequiredTier
+
+
+global function Requeue_CanOptInSquad
+global function Requeue_AmIOptedInSquad
+global function Requeue_AmIOptedInParty
+global function Requeue_GetData
+global function Requeue_GetRemainingSeconds
+global function Requeue_IsSquadOptInTimeOut
+global function Requeue_ClearData
+global function Requeue_IsFullPartyConnected
+global function Requeue_SetSquadRequeueFinalized
+global function Requeue_GetSquadRequeueFinalized
+global function Requeue_GetUpcomingMapName
+global function Requeue_GetUpcomingMode
+global function Requeue_SetSinglePartySquadState
+global function Requeue_SetNoMorePlayersCanRequeueWithSquadState
+global function Requeue_IsAnyoneOptedInSquad
+global function Requeue_AllPlayersOptedIn
+global function Requeue_GetMatchmakingStatus
+global function Requeue_SetIsUnavailable
+global function Requeue_IsUnavailable
+
+
+
+global function UI_Requeue_Init
+global function Requeue_SetUIData
+global function Requeue_SetUIFullPartyStatus
+global function Requeue_ConfirmLeaveMatch
+global function Requeue_LeaveMatch
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global enum eRequeueOptInChoice
+{
+	NONE,
+	SQUAD,
+	PARTY,
+}
+
+struct RequeueOptInPlayerEntry
+{
+	EHI optInPlayer
+	EHI partyLeaderPlayer
+}
+
+const string SQUAD_REQUEUE_OPT_IN_TIME_LIMIT_CONVAR = "matchSquadRequeue_timeLimit"
+const string PARTY_CREATE_IMMEDIATELY_CONVAR = "party_createPartyImmediately"
+
+
+global struct RequeueData
+{
+	int optInChoice = eRequeueOptInChoice.NONE
+	float optInStartTime = -1.0
+	array<int> squadState
+}
+
+global enum eKickPartyMemberSource
+{
+	SQUAD_OPT_IN,
+	START_MATCHMAKE,
+}
+
+struct
+{
+
+
+
+
+
+
+
+
+
+
+		bool isFullPartyConnected
+
+
+	bool isSinglePartySquad
+	bool noMorePlayersCanRequeueWithSquad
+	bool squadRequeueFinalized
+	RequeueData data
+	bool isUnavailable
+} file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Requeue_SquadOptInEnabled()
+{
+	return GetConVarBool( "matchSquadRequeue_enabled" ) && GetCurrentPlaylistVarBool( "matchSquadRequeue_enabled", true )
+}
+
+RequeueOptInPlayerEntry function BuildSquadRequeueOptInPlayerEntry( entity player, entity leader )
+{
+	RequeueOptInPlayerEntry newPlayerEntry
+	newPlayerEntry.optInPlayer = ToEHI( player )
+	newPlayerEntry.partyLeaderPlayer = ToEHI( leader )
+	return newPlayerEntry
+}
+
+bool function Requeue_IsPlayerAboveSoloRequiredTier( entity player )
+{
+	int threshold = Ranked_GetSoloQueueRankScoreThreshold( GetCurrentPlaylistName() )
+	if ( threshold < 0 )
+		return false
+
+	Assert( !IsLobby(), "Can't use this for lobby because GetPlayerRankScore() doesn't work for client script in lobby." )
+
+	int rankScore
+
+
+
+
+
+
+		rankScore = GetPlayerRankScore( player )
+
+
+	return rankScore >= threshold
+}
+
+int function FindInRequeueOptInPlayerEntry( entity player, array<RequeueOptInPlayerEntry> entries, bool findLeader = false )
+{
+	return FindInRequeueOptInPlayerEntryEHI( ToEHI( player ), entries, findLeader )
+}
+
+int function FindInRequeueOptInPlayerEntryEHI( EHI playerEHI, array<RequeueOptInPlayerEntry> entries, bool findLeader = false )
+{
+	for ( int i = 0; i < entries.len(); i++ )
+	{
+		if ( !findLeader && playerEHI == entries[i].optInPlayer )
+			return i
+		else if ( findLeader && playerEHI == entries[i].partyLeaderPlayer )
+			return i
+	}
+	return -1
+}
+
+
+bool function Requeue_CanOptInSquad( bool checkLeader )
+{
+	if ( !Requeue_SquadOptInEnabled() || Requeue_IsSquadOptInTimeOut() )
+		return false
+
+	if ( Requeue_IsPlayerAboveSoloRequiredTier( GetLocalClientPlayer() ) )
+		return false
+
+	if ( checkLeader && ( !AmIPartyLeader() || !IsChatRuleSatisfied() ) )
+		return false
+
+	if ( file.isSinglePartySquad )
+		return false
+
+	if ( file.noMorePlayersCanRequeueWithSquad )
+		return false
+
+	return true
+}
+
+RequeueData function Requeue_GetData()
+{
+
+
+
+
+
+
+		RunClientScript( "Requeue_GetData" )
+
+	return file.data
+}
+
+int function Requeue_GetRemainingSeconds()
+{
+	if ( IsMyPartyMatchmaking() )
+		return 0
+
+	if ( Requeue_GetSquadRequeueFinalized() )
+		return 0
+
+	float optInStartTime = Requeue_GetData().optInStartTime
+	float timeLimit = GetConVarFloat( SQUAD_REQUEUE_OPT_IN_TIME_LIMIT_CONVAR )
+	if ( optInStartTime <= 0 )
+		return int( timeLimit )
+	return int( min( timeLimit, max( 0, timeLimit - ( ClientTime() - optInStartTime ) ) ) )
+}
+
+bool function Requeue_IsSquadOptInTimeOut()
+{
+	return Requeue_GetRemainingSeconds() <= 0
+}
+
+void function Requeue_ClearData()
+{
+	file.data.optInChoice = eRequeueOptInChoice.NONE
+	file.data.optInStartTime = -1.0
+	file.data.squadState.clear()
+}
+
+bool function Requeue_IsFullPartyConnected()
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	if ( !CanRunClientScript() )
+	{
+		Warning( "Warning! Can't run client script" )
+		return false
+	}
+	RunClientScript( "Requeue_IsFullPartyConnected" )
+	return file.isFullPartyConnected
+
+}
+
+void function Requeue_SetSquadRequeueFinalized( bool on )
+{
+	file.squadRequeueFinalized = on
+
+
+
+}
+
+void function Requeue_SetIsUnavailable( bool status )
+{
+	file.isUnavailable = status
+
+
+
+}
+
+bool function Requeue_IsUnavailable()
+{
+	return file.isUnavailable
+}
+
+bool function Requeue_GetSquadRequeueFinalized()
+{
+	return file.squadRequeueFinalized
+}
+
+string function Requeue_GetUpcomingMapName()
+{
+	string currentPlaylist = GetCurrentPlaylistForSchedule( GetCurrentPlaylistScheduleName() )
+	return Localize( GetPlaylistVarString( currentPlaylist, "map_name", "" ) )
+}
+
+string function Requeue_GetUpcomingMode()
+{
+
+		bool isRanked = GameModeVariant_IsActiveForPlaylist( GetCurrentPlaylistName(), eGameModeVariants.SURVIVAL_RANKED )
+		bool rankedEventFinished = isRanked && RankedEvent_IsLastMatchRankedEvent() && RankedEvent_GetRumbleRankedState() == eRankedRumbleState.FINISH
+		if ( rankedEventFinished )
+			return ""
+		if ( GetConVarBool( "cups_enabled" ) )
+		{
+			LastCupMatchPlayedData ornull cupsLastMatchData = Cups_GetLatestMatchSummaryData( GetLocalClientPlayer() )
+			if ( cupsLastMatchData != null )
+			{
+				expect LastCupMatchPlayedData( cupsLastMatchData )
+				CupBakeryAssetData ornull cupData = Cups_SafeGetCupBakeryAssetDataFromGUID( cupsLastMatchData.cupID )
+				if ( cupData != null )
+				{
+					expect CupBakeryAssetData( cupData )
+					string currentPlaylist = GetCurrentPlaylistForSchedule( GetCurrentPlaylistScheduleName() )
+					if ( Cups_IsCupGameMode( cupData, currentPlaylist ) )
+					{
+						string cupName = ""
+
+							if ( RankedEvent_IsCupRankedEvent( cupData ) )
+								cupName = "#RANKED_RUMBLE_SUBTITLE"
+							else
+
+								cupName = GameModeVariant_GetName( GameModeVariant_GetByDevName( cupData.gameMode ) )
+						return format( "%s %d/%d", Localize( cupName ), min( cupsLastMatchData.matchNum, cupData.topMatchesCount ), cupData.topMatchesCount )
+					}
+				}
+			}
+		}
+
+	string currentPlaylist = GetCurrentPlaylistForSchedule( GetCurrentPlaylistScheduleName() )
+	return Localize( GetPlaylistVarString( currentPlaylist, "title", "" ) )
+}
+
+void function Requeue_SetSinglePartySquadState( bool on )
+{
+	file.isSinglePartySquad = on
+
+
+
+}
+
+void function Requeue_SetNoMorePlayersCanRequeueWithSquadState( bool noMorePlayersCanRequeueWithSquad )
+{
+	file.noMorePlayersCanRequeueWithSquad = noMorePlayersCanRequeueWithSquad
+
+
+
+}
+
+bool function Requeue_IsAnyoneOptedInSquad()
+{
+	foreach ( state in file.data.squadState )
+	{
+		if ( state == eRequeueOptInChoice.SQUAD )
+			return true
+	}
+	return false
+}
+
+bool function Requeue_AmIOptedInSquad()
+{
+	return file.data.optInChoice == eRequeueOptInChoice.SQUAD
+}
+
+bool function Requeue_AmIOptedInParty()
+{
+	if ( !IsFullyConnected() || !Requeue_SquadOptInEnabled() )
+		return IsMyPartyMatchmaking()
+	return file.data.optInChoice == eRequeueOptInChoice.PARTY
+}
+
+bool function Requeue_AllPlayersOptedIn()
+{
+	foreach ( state in file.data.squadState )
+	{
+		if ( state == eRequeueOptInChoice.NONE )
+			return false
+	}
+	return true
+}
+
+string function Requeue_GetMatchmakingStatus()
+{
+
+
+
+
+
+
+
+
+
+
+
+
+		bool isFullPartyConnected = UI_IsFullPartyConnectedForRequeue()
+
+
+	bool isPartyMatchmaking = IsMyPartyMatchmaking()
+	bool isPlaylistExpired = !Playlist_IsCurrentlyActive( GetMatchRequeuePlaylist() )
+	bool isRanked = GameModeVariant_IsActiveForPlaylist( GetCurrentPlaylistName(), eGameModeVariants.SURVIVAL_RANKED )
+	bool hasPartyRankTierDifferences = isRanked && !Ranked_PartyMeetsRankedDifferenceRequirements()
+
+		bool isRankedEventFinished = isRanked && RankedEvent_IsLastMatchRankedEvent() && RankedEvent_GetRumbleRankedState() == eRankedRumbleState.FINISH
+
+
+	string matchmakingStatus = Localize( GetMyMatchmakingStatus() )
+	if ( !isFullPartyConnected )
+		matchmakingStatus = Localize( "#REQUEUE_UNAVAILALE_PARTY_NOT_CONNECTED" )
+	else if ( isPlaylistExpired )
+		matchmakingStatus = Localize( "#REQUEUE_UNAVAILALE_PLAYLIST_EXPIRED" )
+	else if ( hasPartyRankTierDifferences )
+		matchmakingStatus = Localize( "#REQUEUE_UNAVAILALE_RANK_TIER_DIFFERENCES" )
+	else if ( !isPartyMatchmaking && Requeue_AmIOptedInSquad() )
+		matchmakingStatus = Localize( "#DIALOG_REQUEUED_WITH_SQUAD_WAITING" )
+
+	else if ( isRankedEventFinished )
+		matchmakingStatus = Localize( "#REQUEUE_UNAVAILALE_RANKED_EVENT_END" )
+
+
+	return matchmakingStatus
+}
+
+
+
+void function UI_Requeue_Init()
+{
+	Requeue_ClearData()
+}
+
+void function Requeue_SetUIFullPartyStatus( bool on )
+{
+	file.isFullPartyConnected = on
+}
+
+void function Requeue_SetUIData( int optInChoice, int squadSize, int squadState, float optInStartTime )
+{
+	file.data.optInChoice = optInChoice
+	file.data.optInStartTime = optInStartTime
+	file.data.squadState = DecodeSquadState( squadState, squadSize )
+}
+
+array<int> function DecodeSquadState( int squadState, int squadSize )
+{
+	array<int> squadStateArr = []
+	for ( int i = 0; i < squadSize * 2; i += 2 )
+	{
+		bool isOptInSquad = bool ( (squadState >> i) & 1 )
+		bool isOptInParty = bool ( (squadState >> i + 1) & 1 )
+		int output = eRequeueOptInChoice.NONE
+		if ( isOptInSquad )
+			output = eRequeueOptInChoice.SQUAD
+		else if ( isOptInParty )
+			output = eRequeueOptInChoice.PARTY
+		squadStateArr.append( output )
+	}
+	return squadStateArr
+}
+
+void function Requeue_ConfirmLeaveMatch()
+{
+	thread Requeue_ConfirmLeaveMatch_Thread()
+}
+
+void function Requeue_ConfirmLeaveMatch_Thread()
+{
+	if ( !IsFullyConnected() )
+		return
+
+	CloseAllDialogs()
+	wait 0.1
+	LeaveMatchWithConnectingStatusOrFallbackDialog()
+}
+
+void function Requeue_LeaveMatch()
+{
+	if ( Requeue_SquadOptInEnabled() && !Requeue_IsUnavailable() && ( file.data.optInChoice != eRequeueOptInChoice.NONE || Requeue_GetSquadRequeueFinalized() ) )
+	{
+		Requeue_OpenDialog(
+			"#LEAVE_MATCH",
+			"#REQUEUE_LEAVE_MATCH_TAKEN_OUT_OF_QUEUE",
+			"#YES",
+			"#CANCEL",
+			void function() {
+				if ( !IsFullyConnected() )
+					return
+
+				Requeue_ClearData()
+				if ( CanRunClientScript() )
+				{
+					RunClientScript( "Requeue_ClearData" )
+				}
+				Requeue_ConfirmLeaveMatch()
+			}
+		)
+	}
+	else
+	{
+		Requeue_ConfirmLeaveMatch()
+	}
+}
+
+void function Requeue_OpenDialog( string title, string msg, string confirmBtnTxt, string denyBtnTxt, void functionref() confirmFunc )
+{
+	DialogData dialogData
+	dialogData.header = Localize( title )
+	dialogData.message = Localize( msg )
+	dialogData.darkenBackground = true
+	dialogData.noChoiceWithNavigateBack = true
+	dialogData.noChoice = true
+	dialogData.useFullMessageHeight = true
+
+	AddDialogButton( dialogData, confirmBtnTxt, confirmFunc )
+	AddDialogButton( dialogData, denyBtnTxt  )
+
+	OpenDialog( dialogData )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,91 @@
+
+global function RTKArmoryDeathbox_OnInitialize
+global function RTKArmoryDeathbox_OnDestroy
+
+global struct RTKArmoryDeathbox_Properties
+{
+	int flavGUID
+	rtk_behavior buttonBehavior
+}
+
+struct PrivateData
+{
+	int guidListenerHandler
+	string modelPath
+}
+
+const string MODEL_PATH = "armoryDeathbox"
+
+void function RTKArmoryDeathbox_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKMeleeCustomizationItemModel" )
+	p.modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH, true )
+	self.GetPanel().SetBindingRootPath( p.modelPath )
+
+	p.guidListenerHandler = self.AddPropertyCallback( "flavGUID", RTKArmoryDeathbox_OnGUIDUpdated )
+	
+	RTKArmoryDeathbox_SetButton( self )
+}
+
+void function RTKArmoryDeathbox_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+	self.RemovePropertyCallback( "flavGUID", p.guidListenerHandler )
+}
+
+void function RTKArmoryDeathbox_SetButton( rtk_behavior self )
+{
+	rtk_behavior ornull button = self.PropGetBehavior( "buttonBehavior" )
+	Assert ( button != null, "Did you forget setting up the behavior reference to the behavior property in RTK file?" )
+	expect rtk_behavior( button )
+
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		int flavGUID = self.PropGetInt( "flavGUID" )
+		Assert( IsValidItemFlavorGUID( flavGUID ), format( "Attempted to press Armory Artifact Component button with a bad GUID %i", flavGUID ) )
+		OpenArtifactCustomizationMenu( GetItemFlavorByGUID( flavGUID ) )
+	} )
+}
+
+void function RTKArmoryDeathbox_OnGUIDUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	ItemFlavor ornull itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+	{
+		Assert( false, format( "Attempted to Update RTKArmoryDeathbox with a bad GUID %i", flavGUID ) )
+		return
+	}
+
+	expect ItemFlavor( itemFlav )
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( ToEHI( GetLocalClientPlayer() ), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), itemFlav )
+	bool shouldShow = isUnlocked && !Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav )
+	self.GetPanel().SetActive( shouldShow )
+	self.GetPanel().SetVisible( shouldShow )
+	if ( !shouldShow )
+		return
+
+	
+	Assert( RTKDataModel_HasDataModel( p.modelPath ), format( "RTK Struct not found on Path %s", p.modelPath ) )
+
+	rtk_struct itemData = RTKDataModel_GetStruct( p.modelPath )
+	RTKStruct_SetValue( itemData, RTKArmoryDeathbox_GetEquippedDeathboxData( itemFlav ) )
+}
+
+RTKMeleeCustomizationItemModel function RTKArmoryDeathbox_GetEquippedDeathboxData( ItemFlavor itemFlav )
+{
+	RTKMeleeCustomizationItemModel equippedComponentsModel
+	equippedComponentsModel = GetMeleeCustomizationItemModel( Deathbox_GetEquipped( GetTopLevelCustomizeContext(), itemFlav ), eArtifactComponentType.DEATHBOX )
+	equippedComponentsModel.state = eMeleeCustomizationItemState.SELECTED
+	equippedComponentsModel.equipped = false
+	equippedComponentsModel.selected = false
+	return equippedComponentsModel
+}

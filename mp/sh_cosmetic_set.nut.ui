@@ -1,0 +1,781 @@
+global function ShCosmeticSet_Init
+global function CosmeticSet_GetCosmeticSetItems
+global function CosmeticSet_GetCosmeticSetBundles
+global function CosmeticSet_GetCosmeticSetBundleItems
+global function CosmeticSet_GetBaseItems
+global function CosmeticSet_IsBaseItem
+global function CosmeticSet_AreBaseItemsOwned
+global function CosmeticSet_GetLinkedItems
+global function CosmeticSet_IsLinkedItem
+global function CosmeticSet_GetLastSetItems
+global function CosmeticSet_HasAllPreviousItems
+global function CosmeticSet_GetFirstUnownedSetItem
+global function CosmeticSet_GetPreviousSetItems
+global function CosmeticSet_GetRecolors
+global function CosmeticSet_GetRecolorBundles
+global function CosmeticSet_IsOneOfManyOwnershipOfASetItem
+global function CosmeticSet_IsRecolor
+global function CosmeticSet_GetItemsOfType
+global function CosmeticSet_GetSetItemIndex
+global function CosmeticSet_GetRecolorIndex
+global function CosmeticSet_GetOfferLocation
+global function CosmeticSet_GetStoreTileVideo
+global function CosmeticSet_DoesItemTypeSupportCosmeticSets
+global function CosmeticSet_DoesItemHaveDropdownCategory
+global function CosmeticSet_IsRewardForActiveMilestoneEvent
+global function CosmeticSet_IsRewardForActiveStoreOnlyMilestoneEvent
+global function CosmeticSet_GetActiveMilestoneEventFromReward
+global function CosmeticSet_GetActiveStoreOnlyMilestoneEventFromReward
+global function CosmeticSet_IsRewardForActiveCollectionEvent
+global function CosmeticSet_GetActiveCollectionEventFromReward
+global function CosmeticSet_IsRewardForAnyActiveEvent
+global function CosmeticSet_GetStoreImage
+global function ItemFlavor_GetCosmeticSetFlavor
+
+global function CosmeticSet_IsRewardForMilestoneEventWithWishlistEnabled
+
+
+#if DEV
+global function DEV_CosmeticSet_PrintCosmeticSet
+const bool DEV_PRINT_COSMETIC_SET = false
+#endif
+
+global struct CosmeticSetItem
+{
+	ItemFlavor& flavor
+	bool isLinked
+}
+
+global struct CosmeticSet
+{
+	array<CosmeticSetItem> items
+	bool isBaseItem
+	bool isRequired
+	bool isRecolor
+	ItemFlavor ornull addon
+}
+
+global struct CosmeticSetData
+{
+	array< CosmeticSet > sets
+}
+
+struct FileStruct_LifetimeLevel
+{
+	table<ItemFlavor, CosmeticSetData> itemFlavorCosmeticSetMap
+}
+
+FileStruct_LifetimeLevel& fileLevel
+
+const array<int> itemTypesWithSets =
+[
+	eItemType.weapon_skin
+	eItemType.character_skin
+	eItemType.character_execution
+	eItemType.skydive_trail
+	eItemType.melee_skin
+]
+
+void function ShCosmeticSet_Init()
+{
+	FileStruct_LifetimeLevel newFileLevel
+	fileLevel = newFileLevel
+
+	AddCallback_RegisterRootItemFlavors( void function() {
+		foreach ( asset cosmeticSetAsset in GetBaseItemFlavorsFromArray( "cosmeticSets" ) )
+		{
+			RegisterItemFlavorFromSettingsAsset( cosmeticSetAsset )
+		}
+	} )
+
+	AddCallback_OnItemFlavorRegistered( eItemType.cosmetic_set, CosmeticSet_OnCosmetSetItemFlavorRegistered )
+	AddCallbackOrMaybeCallNow_OnAllItemFlavorsRegistered( CosmeticSet_PopulateExistingCosmeticSets )
+}
+
+void function CosmeticSet_OnCosmetSetItemFlavorRegistered( ItemFlavor cosmeticSet )
+{
+	Assert( ItemFlavor_GetType( cosmeticSet ) == eItemType.cosmetic_set )
+
+	CosmeticSetData cosmeticSetData
+
+	fileLevel.itemFlavorCosmeticSetMap[ cosmeticSet ] <- cosmeticSetData
+}
+
+void function CosmeticSet_PopulateExistingCosmeticSets()
+{
+	foreach ( ItemFlavor cosmeticSet, CosmeticSetData cosmeticSetData in fileLevel.itemFlavorCosmeticSetMap )
+	{
+		var setsSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( cosmeticSet ) ), "sets" )
+		foreach ( var setBlock in IterateSettingsArray( setsSettingsArray ) )
+		{
+			CosmeticSet cosmeticSetModel
+
+			var items = GetSettingsBlockArray( setBlock, "flavors" )
+			foreach ( var itemBlock in IterateSettingsArray( items ) )
+			{
+				asset cosmeticAsset = GetSettingsBlockAsset( itemBlock, "flavor" )
+				if ( IsValidItemFlavorSettingsAsset( cosmeticAsset ) )
+				{
+					CosmeticSetItem item
+					item.flavor = GetItemFlavorByAsset( cosmeticAsset )
+					item.isLinked = GetSettingsBlockBool( itemBlock, "isLinked" )
+
+					cosmeticSetModel.items.append( item )
+				}
+			}
+
+			cosmeticSetModel.isBaseItem = GetSettingsBlockBool( setBlock, "isBaseItem" )
+			cosmeticSetModel.isRequired = GetSettingsBlockBool( setBlock, "isRequired" )
+			cosmeticSetModel.isRecolor = GetSettingsBlockBool( setBlock, "isRecolor" )
+
+			cosmeticSetData.sets.append( cosmeticSetModel )
+		}
+
+#if DEV
+			if ( DEV_PRINT_COSMETIC_SET )
+			{
+				DEV_CosmeticSet_PrintCosmeticSet( cosmeticSet )
+			}
+#endif
+	}
+}
+
+array< ItemFlavor > function CosmeticSet_GetCosmeticSetItems( ItemFlavor item, bool includeRecolors = false )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s doesn't have a cosmetic set attached to it. Can't get the cosmetic set from this asset.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return []
+	}
+
+	expect ItemFlavor( cosmeticSetFlav )
+
+	array< ItemFlavor > items = []
+	foreach ( CosmeticSet set in fileLevel.itemFlavorCosmeticSetMap[ cosmeticSetFlav ].sets )
+	{
+		if ( !set.isRecolor || includeRecolors )
+		{
+			foreach ( CosmeticSetItem cosmeticItem in set.items )
+			{
+				items.append( cosmeticItem.flavor )
+			}
+		}
+	}
+
+	return items
+}
+
+array< CosmeticSet > function CosmeticSet_GetCosmeticSetBundles( ItemFlavor item, bool includeRecolors = false )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s doesn't have a cosmetic set attached to it. Can't get the cosmetic set from this asset.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return []
+	}
+
+	expect ItemFlavor( cosmeticSetFlav )
+
+	array< CosmeticSet > items = []
+	foreach ( CosmeticSet set in fileLevel.itemFlavorCosmeticSetMap[ cosmeticSetFlav ].sets )
+	{
+		if ( !set.isRecolor || includeRecolors )
+		{
+			items.append( set )
+		}
+	}
+
+	return items
+}
+
+array< ItemFlavor > function CosmeticSet_GetCosmeticSetBundleItems( CosmeticSet set )
+{
+	array< ItemFlavor > items = []
+	foreach ( CosmeticSetItem cosmeticItem in set.items )
+	{
+		items.append( cosmeticItem.flavor )
+	}
+
+	return items
+}
+
+array< ItemFlavor > function CosmeticSet_GetBaseItems( ItemFlavor item )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s doesn't have a cosmetic set attached to it. Can't get the cosmetic set from this asset.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return []
+	}
+
+	expect ItemFlavor( cosmeticSetFlav )
+
+	array< ItemFlavor > baseItems = []
+	foreach ( CosmeticSet set in fileLevel.itemFlavorCosmeticSetMap[ cosmeticSetFlav ].sets )
+	{
+		if ( set.isBaseItem && !set.isRecolor )
+		{
+			foreach ( CosmeticSetItem cosmeticItem in set.items )
+			{
+				baseItems.append( cosmeticItem.flavor )
+			}
+		}
+	}
+
+	return baseItems
+}
+
+bool function CosmeticSet_IsBaseItem( ItemFlavor item )
+{
+	return CosmeticSet_GetBaseItems( item ).contains( item )
+}
+
+bool function CosmeticSet_AreBaseItemsOwned( ItemFlavor item )
+{
+	array< ItemFlavor > baseItems = CosmeticSet_GetBaseItems( item )
+
+	if ( baseItems.len() == 0 )
+		return false
+
+	int baseItemsOwned = 0
+	foreach ( baseItem in baseItems )
+	{
+		if ( GRX_IsItemOwnedByPlayer( baseItem ) )
+		{
+			baseItemsOwned++
+		}
+	}
+
+	return baseItems.len() == baseItemsOwned
+}
+
+array< ItemFlavor > function CosmeticSet_GetLinkedItems( ItemFlavor item )
+{
+	int bundleIndex = CosmeticSet_GetSetItemIndex( item, true )
+
+	if ( bundleIndex == -1 )
+	{
+
+			Warning( "%s() -- ItemFlavor %s is not in any set index.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return []
+	}
+
+	array< CosmeticSet > setItems = CosmeticSet_GetCosmeticSetBundles( item, true )
+
+	array< ItemFlavor > linkedItems = []
+	foreach ( CosmeticSetItem cosmeticItem in setItems[ bundleIndex ].items )
+	{
+		if ( cosmeticItem.isLinked )
+		{
+			linkedItems.append( cosmeticItem.flavor )
+		}
+	}
+
+	return linkedItems
+}
+
+bool function CosmeticSet_IsLinkedItem( ItemFlavor item )
+{
+	foreach ( int index, CosmeticSet set in CosmeticSet_GetCosmeticSetBundles( item, true ) )
+	{
+		foreach ( CosmeticSetItem cosmeticItem in set.items )
+		{
+			if ( cosmeticItem.flavor == item && cosmeticItem.isLinked )
+				return true
+		}
+	}
+
+	return false
+}
+
+array< ItemFlavor > function CosmeticSet_GetLastSetItems( ItemFlavor item )
+{
+	array< CosmeticSet > setItems = CosmeticSet_GetCosmeticSetBundles( item )
+
+	return CosmeticSet_GetCosmeticSetBundleItems( setItems[ setItems.len() - 1 ] )
+}
+
+bool function CosmeticSet_HasAllPreviousItems( ItemFlavor item )
+{
+	array< CosmeticSet > setItems = CosmeticSet_GetCosmeticSetBundles( item )
+
+	if ( CosmeticSet_IsBaseItem( item ) )
+		return true
+
+	bool hasAllPreviousItems = true
+	int itemIndex = 0
+
+	if ( CosmeticSet_IsRecolor( item ) )
+	{
+		itemIndex = setItems.len()
+	}
+	else
+	{
+		
+		for ( int i = 1; i < setItems.len(); i++ )
+		{
+			array< ItemFlavor > indexSetItems = CosmeticSet_GetCosmeticSetBundleItems( setItems[ i ] )
+
+			if ( indexSetItems.contains( item ) )
+			{
+				itemIndex = i
+				break
+			}
+		}
+	}
+
+	for ( int i = 1; i <= itemIndex; i++ )
+	{
+		array< ItemFlavor > previousSetItems = CosmeticSet_GetCosmeticSetBundleItems( setItems[ i - 1 ] )
+
+		if ( setItems[ i - 1 ].isRequired )
+		{
+			foreach ( previousSetItem in previousSetItems )
+			{
+				if ( !GRX_IsItemOwnedByPlayer( previousSetItem ) )
+				{
+					hasAllPreviousItems = false
+					break
+				}
+			}
+		}
+	}
+
+	return hasAllPreviousItems
+}
+
+ItemFlavor ornull function CosmeticSet_GetFirstUnownedSetItem( ItemFlavor item )
+{
+	array< CosmeticSet > setItems = CosmeticSet_GetCosmeticSetBundles( item )
+
+	int itemIndex = 0
+	if ( CosmeticSet_IsRecolor( item ) )
+	{
+		itemIndex = setItems.len() - 1
+	}
+	else
+	{
+		
+		for ( int i = 1; i < setItems.len(); i++ )
+		{
+			array< ItemFlavor > indexSetItems = CosmeticSet_GetCosmeticSetBundleItems( setItems[ i ] )
+
+			if ( indexSetItems.contains( item ) )
+			{
+				itemIndex = i
+				break
+			}
+		}
+	}
+
+	for ( int i = 0; i <= itemIndex; i++ )
+	{
+		
+		ItemFlavor setItem = CosmeticSet_GetCosmeticSetBundleItems( setItems[ i ] )[ 0 ]
+
+		if ( CosmeticSet_IsBaseItem( setItem ) )
+			continue
+
+		if ( !GRX_IsItemOwnedByPlayer( setItem ) )
+			return setItem
+	}
+
+	return null
+}
+
+array< ItemFlavor > function CosmeticSet_GetPreviousSetItems( ItemFlavor item )
+{
+	array< CosmeticSet > setItems = CosmeticSet_GetCosmeticSetBundles( item )
+
+	if ( CosmeticSet_IsRecolor( item ) )
+		return CosmeticSet_GetCosmeticSetBundleItems( setItems[ setItems.len() - 1 ] )
+
+	int itemIndex = 0
+	for ( int i = 0; i < setItems.len(); i++ )
+	{
+		array< ItemFlavor > indexSetItems = CosmeticSet_GetCosmeticSetBundleItems( setItems[ i ] )
+
+		if ( indexSetItems.contains( item ) )
+		{
+			itemIndex = i
+			break
+		}
+	}
+
+	if ( itemIndex > 0 )
+		return CosmeticSet_GetCosmeticSetBundleItems( setItems[ itemIndex - 1 ] )
+
+	return []
+}
+
+array< ItemFlavor > function CosmeticSet_GetRecolors( ItemFlavor item )
+{
+	int bundleIndex = CosmeticSet_GetRecolorIndex( item )
+
+	if ( bundleIndex == -1 )
+		return []
+
+	array< ItemFlavor > recolors = []
+	foreach ( CosmeticSetItem cosmeticItem in CosmeticSet_GetRecolorBundles( item )[ bundleIndex ].items )
+	{
+		recolors.append( cosmeticItem.flavor )
+	}
+
+	return recolors
+}
+
+array< CosmeticSet > function CosmeticSet_GetRecolorBundles( ItemFlavor item )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s doesn't have a cosmetic set attached to it. Can't get the cosmetic set from this asset.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return []
+	}
+
+	expect ItemFlavor( cosmeticSetFlav )
+
+	array< CosmeticSet > recolors = []
+	foreach ( CosmeticSet set in fileLevel.itemFlavorCosmeticSetMap[ cosmeticSetFlav ].sets )
+	{
+		if ( set.isRecolor == true )
+		{
+			recolors.append( set )
+		}
+	}
+
+	return recolors
+}
+
+bool function CosmeticSet_IsRecolor( ItemFlavor item )
+{
+	return CosmeticSet_GetRecolors( item ).contains( item )
+}
+
+bool function CosmeticSet_IsOneOfManyOwnershipOfASetItem( ItemFlavor item )
+{
+	array< ItemFlavor > ownershipItems = ItemFlavor_GetGRXMultipleOwnershipRequirementsList( item )
+	array< ItemFlavor > setItems = CosmeticSet_IsRecolor( item ) ? CosmeticSet_GetRecolors( item ) : CosmeticSet_GetCosmeticSetItems( item )
+
+
+	foreach ( setItem in setItems )
+	{
+		foreach ( ownershipItem in ownershipItems )
+		{
+			if ( setItems.contains( ownershipItem ) )
+				return true
+		}
+	}
+
+
+	return false
+}
+
+array< ItemFlavor > function CosmeticSet_GetItemsOfType( ItemFlavor item, int itemType )
+{
+	ItemFlavor ornull parentFlavor = ItemFlavor_GetParentFlavor( item )
+
+	if ( parentFlavor == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s, GUID %i has no parent flavor! That will result in not being able to return all items.", FUNC_NAME(), ItemFlavor_GetLongName( item ), item.guid )
+
+		return []
+	}
+
+	expect ItemFlavor( parentFlavor )
+
+	array< ItemFlavor > items = []
+	foreach ( setItem in CosmeticSet_GetCosmeticSetItems( item, true ) )
+	{
+		if ( ItemFlavor_GetType( setItem ) != itemType )
+			continue
+
+		ItemFlavor ornull setItemParentFlavor = ItemFlavor_GetParentFlavor( setItem )
+
+		if ( setItemParentFlavor == null )
+		{
+
+				Warning( "%s() -- ItemFlavor %s, GUID %i has no parent flavor! That will result in not being able to return all items.", FUNC_NAME(), ItemFlavor_GetLongName( setItem ), setItem.guid )
+
+			continue
+		}
+
+		expect ItemFlavor( setItemParentFlavor )
+
+		if ( setItemParentFlavor == parentFlavor )
+		{
+			items.append( setItem )
+		}
+	}
+
+	return items
+}
+
+int function CosmeticSet_GetSetItemIndex( ItemFlavor item, bool includeRecolors = false )
+{
+	foreach ( int index, CosmeticSet set in CosmeticSet_GetCosmeticSetBundles( item, includeRecolors ) )
+	{
+		foreach ( CosmeticSetItem cosmeticItem in set.items )
+		{
+			if ( cosmeticItem.flavor == item )
+			{
+				return index
+			}
+		}
+	}
+
+	return -1
+}
+
+int function CosmeticSet_GetRecolorIndex( ItemFlavor item )
+{
+	foreach ( int index, CosmeticSet set in CosmeticSet_GetRecolorBundles( item ) )
+	{
+		foreach ( CosmeticSetItem cosmeticItem in set.items )
+		{
+			if ( cosmeticItem.flavor == item )
+			{
+				return index
+			}
+		}
+	}
+
+	return -1
+}
+
+ItemFlavor ornull function ItemFlavor_GetCosmeticSetFlavor( ItemFlavor item )
+{
+	asset cosmeticSetAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( item ), "cosmeticSet" )
+	if ( cosmeticSetAsset == $"" )
+		return null
+
+	if ( IsValidItemFlavorSettingsAsset( cosmeticSetAsset ) )
+		return GetItemFlavorByAsset( cosmeticSetAsset )
+
+	return null
+}
+
+string function CosmeticSet_GetOfferLocation( ItemFlavor item )
+{
+	Assert( ItemFlavor_GetType( item ) == eItemType.cosmetic_set )
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( item ), "grxOfferLocation" )
+}
+
+asset function CosmeticSet_GetStoreTileVideo( ItemFlavor item )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+	{
+
+			Warning( "%s() -- ItemFlavor %s doesn't have a cosmetic set attached to it. Can't get the cosmetic set from this asset.", FUNC_NAME(), ItemFlavor_GetLongName( item ) )
+
+		return $""
+	}
+
+	expect ItemFlavor( cosmeticSetFlav )
+
+	return GetGlobalSettingsStringAsAsset( ItemFlavor_GetAsset( cosmeticSetFlav ), "video" )
+}
+
+bool function CosmeticSet_DoesItemTypeSupportCosmeticSets( int itemType )
+{
+	return itemTypesWithSets.contains( itemType )
+}
+
+bool function CosmeticSet_DoesItemHaveDropdownCategory( ItemFlavor item )
+{
+	ItemFlavor ornull cosmeticSetFlav = ItemFlavor_GetCosmeticSetFlavor( item )
+
+	if ( cosmeticSetFlav == null )
+		return false
+
+	int type = ItemFlavor_GetType( item )
+	array<ItemFlavor> typeItems = CosmeticSet_GetItemsOfType( item, type )
+	foreach ( typeItem in typeItems )
+	{
+		if ( typeItem == item )
+			continue
+
+		if ( type == eItemType.weapon_skin )
+		{
+			if ( WeaponSkin_GetWeaponFlavor( typeItem ) == WeaponSkin_GetWeaponFlavor( item ) )
+				return true
+		}
+		else
+		{
+			return true
+		}
+	}
+
+	return false
+}
+
+bool function CosmeticSet_IsRewardForActiveMilestoneEvent( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return false
+
+	array< ItemFlavor > activeMilestoneEvents = GetAllActiveMilestoneEvents( GetUnixTimestamp() )
+	foreach ( activeMilestoneEvent in activeMilestoneEvents )
+	{
+		array< ItemFlavor > rewards = MilestoneEvent_GetMythicEventItems( activeMilestoneEvent )
+		if ( rewards.contains( item ) )
+			return true
+	}
+
+	return false
+}
+
+bool function CosmeticSet_IsRewardForActiveStoreOnlyMilestoneEvent( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return false
+
+	array< ItemFlavor > activeStoreOnlyMilestoneEvents = GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() )
+	foreach ( ItemFlavor activeStoreOnlyMilestoneEvent in activeStoreOnlyMilestoneEvents )
+	{
+		array< ItemFlavor > rewards = MilestoneEvent_GetRewards( activeStoreOnlyMilestoneEvent )
+		if ( rewards.contains( item ) )
+			return true
+	}
+
+	return false
+}
+
+ItemFlavor ornull function CosmeticSet_GetActiveMilestoneEventFromReward( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return null
+
+	array< ItemFlavor > activeMilestoneEvents = GetAllActiveMilestoneEvents( GetUnixTimestamp() )
+	foreach ( activeMilestoneEvent in activeMilestoneEvents )
+	{
+		array< ItemFlavor > rewards = MilestoneEvent_GetMythicEventItems( activeMilestoneEvent )
+		if ( rewards.contains( item ) )
+			return activeMilestoneEvent
+	}
+
+	return null
+}
+
+ItemFlavor ornull function CosmeticSet_GetActiveStoreOnlyMilestoneEventFromReward( ItemFlavor item )
+{	
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return null
+
+	array< ItemFlavor > activeStoreOnlyMilestoneEvents = GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() )
+	foreach ( ItemFlavor activeStoreOnlyMilestoneEvent in activeStoreOnlyMilestoneEvents )
+	{
+		array< ItemFlavor > rewards = MilestoneEvent_GetRewards( activeStoreOnlyMilestoneEvent )
+		if ( rewards.contains( item ) )
+			return activeStoreOnlyMilestoneEvent
+	}
+
+	return null
+}
+
+
+bool function CosmeticSet_IsRewardForMilestoneEventWithWishlistEnabled( ItemFlavor item )
+{
+	ItemFlavor ornull event = CosmeticSet_GetActiveMilestoneEventFromReward( item )
+	if ( event != null )
+	{
+		expect ItemFlavor( event )
+		return MilestoneEvent_IsWishlistEnabled( event )
+	}
+
+	return false
+}
+
+
+bool function CosmeticSet_IsRewardForActiveCollectionEvent( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return false
+
+	ItemFlavor ornull activeCollectionEvent = GetActiveCollectionEvent( GetUnixTimestamp() )
+	if ( activeCollectionEvent != null )
+	{
+		expect ItemFlavor( activeCollectionEvent )
+		ItemFlavor reward = HeirloomEvent_GetPrimaryCompletionRewardItem( activeCollectionEvent )
+		if ( reward == item )
+			return true
+	}
+
+	return false
+}
+
+ItemFlavor ornull function CosmeticSet_GetActiveCollectionEventFromReward( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return null
+
+	ItemFlavor ornull activeCollectionEvent = GetActiveCollectionEvent( GetUnixTimestamp() )
+	if ( activeCollectionEvent != null )
+	{
+		expect ItemFlavor( activeCollectionEvent )
+		ItemFlavor reward = HeirloomEvent_GetPrimaryCompletionRewardItem( activeCollectionEvent )
+		if ( reward == item )
+			return activeCollectionEvent
+	}
+
+	return null
+}
+
+bool function CosmeticSet_IsRewardForAnyActiveEvent( ItemFlavor item )
+{
+	if ( ItemFlavor_GetGRXMode( item ) == eItemFlavorGRXMode.NONE )
+		return false
+
+	
+	if ( CosmeticSet_IsRewardForActiveMilestoneEvent( item ) )
+		return true
+
+	
+	if ( CosmeticSet_IsRewardForActiveStoreOnlyMilestoneEvent( item ) )
+		return true
+
+	
+	if ( CosmeticSet_IsRewardForActiveCollectionEvent( item ) )
+		return true
+
+	return false
+}
+
+asset function CosmeticSet_GetStoreImage( ItemFlavor flavor )
+{
+	Assert( ItemFlavor_GetType( flavor ) == eItemType.cosmetic_set )
+	return GetGlobalSettingsAsset( ItemFlavor_GetAsset( flavor ), "storeImage" )
+}
+
+#if DEV
+void function DEV_CosmeticSet_PrintCosmeticSet( ItemFlavor cosmeticSetFlav )
+{
+	Assert( ItemFlavor_GetType( cosmeticSetFlav ) == eItemType.cosmetic_set )
+
+	printt( "----------- ", FUNC_NAME(), cosmeticSetFlav.guid )
+	foreach ( int i, CosmeticSet set in fileLevel.itemFlavorCosmeticSetMap[ cosmeticSetFlav ].sets )
+	{
+		foreach ( CosmeticSetItem cosmeticItem in set.items )
+		{
+			printf( "%s() -- Index %d --- ItemFlavor [ %s ] --- isLinked: %s, isBaseItem: %s, isRecolor: %s", FUNC_NAME(), i, ItemFlavor_GetLongName( cosmeticItem.flavor ), string( cosmeticItem.isLinked ), string( set.isBaseItem ), string( set.isRecolor ) )
+		}
+	}
+}
+#endif

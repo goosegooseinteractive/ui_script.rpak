@@ -1,0 +1,744 @@
+global function ShWeapons_LevelInit
+
+global function RegisterWeaponForUse
+global function WeaponItemFlavor_GetClassname
+global function WeaponItemFlavor_GetResolvedClassname
+global function WeaponItemFlavor_GetChildClassNames
+global function WeaponItemFlavor_GetCategory
+
+
+global function WeaponItemFlavor_GetLongName
+
+
+
+global function WeaponItemFlavor_HasTakeover
+global function WeaponItemFlavor_GetTakeoverClassname
+global function WeaponItemFlavor_GetTakeoverLongName
+global function WeaponItemFlavor_GetTakeoverIcon
+
+global function WeaponItemFlavor_GetStatsCategory
+global function WeaponItemFlavor_GetAmmoTypes
+global function WeaponItemFlavor_GetArmoryScale
+global function WeaponItemFlavor_GetArmoryOffset
+global function WeaponItemFlavor_GetArmoryVectorScale
+global function WeaponItemFlavor_GetOverviewOffset
+global function WeaponItemFlavor_GetStoreInspectOffset
+global function WeaponItemFlavor_GetOverviewVectorScale
+global function WeaponItemFlavor_GetStoreInspectAngleOffset
+global function WeaponItemFlavor_GetStoreInspectVectorScale
+global function WeaponItemFlavor_GetItemPresentationWideVectorScale
+global function WeaponItemFlavor_GetItemPresentationTallVectorScale
+global function WeaponItemFlavor_GetLootCeremonyScale
+global function WeaponItemFlavor_GetBattlePassScale
+global function WeaponItemFlavor_GetItemInspectScale
+global function WeaponItemFlavor_GetHudIcon
+global function WeaponItemFlavor_GetMenuCustomLightData
+global function WeaponCategoryFlavor_GetStatsKey
+global function WeaponCategoryFlavor_GetMenuZoomOffset
+global function WeaponCategoryFlavor_GetCategoryWeapon
+global function GetWeaponItemFlavorByClass
+global function GetAllWeaponItemFlavors
+global function GetAllWeaponCategories
+global function GetWeaponsInCategory
+global function GetAllWeaponsInCategory
+global function GetAllMeleeWeapons
+global function MainWeapon_GetIsShippingWeapon
+global function MainWeapon_GetLoadoutOverviewOffset
+global function MainWeapon_GetLoadoutOverviewRotation
+global function MainWeapon_GetLoadoutSkinsOffset
+
+global function GetAkimboWeaponIcon
+global function GetEmptyAkimboWeaponIcon
+global function CanWeaponAkimbo
+global function WeaponItemFlavor_GetEnergizedDescription
+global function WeaponItemFlavor_IsEnergizedAffectingStats
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global const string WEAPON_STAT_CATEGORY_CRATE_WEAPON = "crate_unique"
+global const string WEAPON_STAT_CATEGORY_ORDNANCE = "ordnance"
+
+
+
+
+
+
+struct FileStruct_LifetimeLevel
+{
+	table<string, ItemFlavor> weaponClassnameItemFlavorMap
+}
+FileStruct_LifetimeLevel& fileLevel
+
+
+
+
+
+
+
+void function ShWeapons_LevelInit()
+{
+	FileStruct_LifetimeLevel newFileLevel
+	fileLevel = newFileLevel
+
+
+
+
+
+
+
+
+
+	AddCallback_RegisterRootItemFlavors( void function() {
+		foreach ( asset weaponAsset in GetBaseItemFlavorsFromArray( "weapons" ) )
+			RegisterItemFlavorFromSettingsAsset( weaponAsset )
+
+		foreach ( asset categoryAsset in GetBaseItemFlavorsFromArray( "weaponCategories" ) )
+			RegisterItemFlavorFromSettingsAsset( categoryAsset )
+	} )
+	AddCallback_OnItemFlavorRegistered( eItemType.loot_main_weapon, OnItemFlavorRegistered_WeaponItemFlavor )
+}
+
+
+
+
+void function OnItemFlavorRegistered_WeaponItemFlavor( ItemFlavor weaponFlavor )
+{
+	string classname = WeaponItemFlavor_GetClassname( weaponFlavor )
+	fileLevel.weaponClassnameItemFlavorMap[classname] <- weaponFlavor
+
+	RegisterWeaponForUse( classname )
+
+	foreach ( string childClassname in WeaponItemFlavor_GetChildClassNames( weaponFlavor ) )
+	{
+		fileLevel.weaponClassnameItemFlavorMap[childClassname] <- weaponFlavor
+		RegisterWeaponForUse( childClassname )
+	}
+}
+
+
+
+void function RegisterWeaponForUse( string weaponClassname )
+{
+
+
+
+
+}
+
+
+
+
+
+
+
+string function WeaponItemFlavor_GetClassname( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( weapon ), "entityClassname" )
+}
+
+string function WeaponItemFlavor_GetResolvedClassname( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+
+		if ( WeaponItemFlavor_HasTakeover( weapon ) )
+		{
+			string takeoverClassname = WeaponItemFlavor_GetTakeoverClassname( weapon )
+			if ( takeoverClassname != "" )
+				return takeoverClassname
+		}
+
+
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( weapon ), "entityClassname" )
+}
+
+array<string> function WeaponItemFlavor_GetChildClassNames( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	array<string> childNames;
+	var childSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "childClassnames" )
+
+	foreach ( var childBlock in IterateSettingsArray( childSettingsArray ) )
+	{
+		string childClassname = GetSettingsBlockString( childBlock, "childClassname" )
+
+		if ( childClassname != "" )
+		{
+			childNames.append( childClassname )
+		}
+	}
+
+	return childNames
+}
+
+ItemFlavor ornull function GetWeaponItemFlavorByClass( string classname )
+{
+	if ( classname in fileLevel.weaponClassnameItemFlavorMap )
+		return fileLevel.weaponClassnameItemFlavorMap[classname]
+
+	return null
+}
+
+
+ItemFlavor function WeaponItemFlavor_GetCategory( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetItemFlavorByAsset( GetGlobalSettingsAsset( ItemFlavor_GetAsset( weapon ), "category" ) )
+}
+
+
+string function WeaponItemFlavor_GetLongName( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+		if ( WeaponItemFlavor_HasTakeover( weapon ) )
+		{
+			string weaponName = WeaponItemFlavor_GetTakeoverLongName( weapon )
+			if ( weaponName != "" )
+				return weaponName
+		}
+
+
+	return ItemFlavor_GetLongName( weapon )
+}
+
+
+string function WeaponItemFlavor_GetStatsCategory( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( weapon ), "statsCategory" )
+}
+
+array<int> function WeaponItemFlavor_GetAmmoTypes( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	array<int> ammoTypes
+
+	var ammoTypeSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "ammoTypes" )
+
+	foreach ( var ammoTypeBlock in IterateSettingsArray( ammoTypeSettingsArray ) )
+	{
+		string ammoTypeName = GetSettingsBlockString( ammoTypeBlock, "ammoType" )
+
+		if ( ammoTypeName != "" )
+		{
+			ammoTypes.append( eAmmoPoolType[ammoTypeName] )
+		}
+	}
+
+	return ammoTypes
+}
+
+LightData function WeaponItemFlavor_GetMenuCustomLightData( ItemFlavor flavor )
+{
+
+
+
+
+
+	asset lightingAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( flavor ), "customLightingDef" )
+
+	LightData data
+	if( lightingAsset == $"" )
+		return data
+
+	data.key_color =          GetGlobalSettingsVector( lightingAsset, "colorKey" )
+	data.key_brightness =     GetGlobalSettingsFloat( lightingAsset, "brightnessKey" )
+	data.key_cone =           GetGlobalSettingsFloat( lightingAsset, "coneKey" )
+	data.key_innercone =      GetGlobalSettingsFloat( lightingAsset, "innerConeKey" )
+	data.key_distance =       GetGlobalSettingsFloat( lightingAsset, "distanceKey" )
+	data.key_halfbrightfrac = GetGlobalSettingsFloat( lightingAsset, "halfBrightFracKey" )
+	data.key_specint =        GetGlobalSettingsFloat( lightingAsset, "specIntKey" )
+	data.key_pbrfalloff =     GetGlobalSettingsBool( lightingAsset, "pbrFalloffKey" )
+	data.key_castshadows =    GetGlobalSettingsBool( lightingAsset, "castShadowsKey" )
+	data.fill_color =         GetGlobalSettingsVector( lightingAsset, "colorFill" )
+	data.fill_brightness =    GetGlobalSettingsFloat( lightingAsset, "brightnessFill" )
+	data.fill_cone =          GetGlobalSettingsFloat( lightingAsset, "coneFill" )
+	data.fill_innercone =     GetGlobalSettingsFloat( lightingAsset, "innerConeFill" )
+	data.fill_distance =      GetGlobalSettingsFloat( lightingAsset, "distanceFill" )
+	data.fill_halfbrightfrac =GetGlobalSettingsFloat( lightingAsset, "halfBrightFracFill" )
+	data.fill_specint =       GetGlobalSettingsFloat( lightingAsset, "specIntFill" )
+	data.fill_pbrfalloff =    GetGlobalSettingsBool( lightingAsset, "pbrFalloffFill" )
+	data.fill_castshadows =   GetGlobalSettingsBool( lightingAsset, "castShadowsFill" )
+	data.rimL_color =         GetGlobalSettingsVector( lightingAsset, "colorRimL" )
+	data.rimL_brightness =    GetGlobalSettingsFloat( lightingAsset, "brightnessRimL" )
+	data.rimL_cone =          GetGlobalSettingsFloat( lightingAsset, "coneRimL" )
+	data.rimL_innercone =     GetGlobalSettingsFloat( lightingAsset, "innerConeRimL" )
+	data.rimL_distance =      GetGlobalSettingsFloat( lightingAsset, "distanceRimL" )
+	data.rimL_halfbrightfrac =GetGlobalSettingsFloat( lightingAsset, "halfBrightFracRimL" )
+	data.rimL_specint =       GetGlobalSettingsFloat( lightingAsset, "specIntRimL" )
+	data.rimL_pbrfalloff =    GetGlobalSettingsBool( lightingAsset, "pbrFalloffRimL" )
+	data.rimL_castshadows =   GetGlobalSettingsBool( lightingAsset, "castShadowsRimL" )
+	data.rimR_color =         GetGlobalSettingsVector( lightingAsset, "colorRimR" )
+	data.rimR_brightness =    GetGlobalSettingsFloat( lightingAsset, "brightnessRimR" )
+	data.rimR_cone =          GetGlobalSettingsFloat( lightingAsset, "coneRimR" )
+	data.rimR_innercone =     GetGlobalSettingsFloat( lightingAsset, "innerConeRimR" )
+	data.rimR_distance =      GetGlobalSettingsFloat( lightingAsset, "distanceRimR" )
+	data.rimR_halfbrightfrac =GetGlobalSettingsFloat( lightingAsset, "halfBrightFracRimR" )
+	data.rimR_specint =       GetGlobalSettingsFloat( lightingAsset, "specIntRimR" )
+	data.rimR_pbrfalloff =    GetGlobalSettingsBool( lightingAsset, "pbrFalloffRimR" )
+	data.rimR_castshadows =   GetGlobalSettingsBool( lightingAsset, "castShadowsRimR" )
+	data.animSeq =            GetGlobalSettingsAsset( lightingAsset, "animSeq" )
+	data.initialized = 		  true
+
+	return data
+}
+
+
+float function WeaponItemFlavor_GetArmoryScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "armoryScale" )
+}
+
+vector function WeaponItemFlavor_GetArmoryOffset( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( weapon ), "armoryOffset" )
+}
+
+float function WeaponItemFlavor_GetArmoryVectorScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "armoryVectorScale" )
+}
+
+vector function WeaponItemFlavor_GetOverviewOffset( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( weapon ), "overviewOffset" )
+}
+
+float function WeaponItemFlavor_GetOverviewVectorScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "overviewVectorScale" )
+}
+
+
+vector function WeaponItemFlavor_GetStoreInspectOffset( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( weapon ), "storeInspectOffset" )
+}
+
+float function WeaponItemFlavor_GetStoreInspectVectorScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "storeInspectVectorScale" )
+}
+
+vector function WeaponItemFlavor_GetStoreInspectAngleOffset( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( weapon ), "storeInspectAngleOffset" )
+}
+
+float function WeaponItemFlavor_GetItemPresentationWideVectorScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "itemPresentationWideVectorScale" )
+}
+
+float function WeaponItemFlavor_GetItemPresentationTallVectorScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "itemPresentationTallVectorScale" )
+}
+
+float function WeaponItemFlavor_GetLootCeremonyScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon || ItemFlavor_GetType( weapon ) == eItemType.melee_skin )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "lootCeremonyScale" )
+}
+
+float function WeaponItemFlavor_GetBattlePassScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon || ItemFlavor_GetType( weapon ) == eItemType.melee_skin)
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "battlePassScale" )
+}
+
+float function WeaponItemFlavor_GetItemInspectScale( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsFloat( ItemFlavor_GetAsset( weapon ), "itemInspectScale" )
+}
+
+
+asset function WeaponItemFlavor_GetHudIcon( ItemFlavor weapon )
+{
+
+		if ( WeaponItemFlavor_HasTakeover( weapon ) )
+		{
+			asset weaponTakeoverIcon = WeaponItemFlavor_GetTakeoverIcon( weapon )
+
+			if ( weaponTakeoverIcon != $"" )
+				return weaponTakeoverIcon
+		}
+
+
+	string weaponName = WeaponItemFlavor_GetClassname( weapon )
+
+	return GetWeaponInfoFileKeyFieldAsset_Global( weaponName, "hud_icon" )
+}
+
+
+bool function WeaponItemFlavor_HasTakeover( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	var childSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "childClassnames" )
+
+	foreach ( var childBlock in IterateSettingsArray( childSettingsArray ) )
+	{
+		bool isTakeover = GetSettingsBlockBool( childBlock , "isTakeover" )
+
+		if ( isTakeover )
+		{
+			return true
+		}
+	}
+
+	return false
+
+}
+
+
+
+string function WeaponItemFlavor_GetTakeoverClassname( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	var childSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "childClassnames" )
+
+	foreach ( var childBlock in IterateSettingsArray( childSettingsArray ) )
+	{
+		string childClassname = GetSettingsBlockString( childBlock, "childClassname" )
+
+		bool isTakeover = GetSettingsBlockBool( childBlock , "isTakeover" )
+
+		if ( childClassname != "" && isTakeover )
+		{
+			return childClassname
+		}
+	}
+
+	return ""
+}
+
+
+
+string function WeaponItemFlavor_GetTakeoverLongName( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	var childSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "childClassnames" )
+
+	foreach ( var childBlock in IterateSettingsArray( childSettingsArray ) )
+	{
+		string localizationKey = GetSettingsBlockString( childBlock, "takeoverLongName" )
+
+		bool isTakeover = GetSettingsBlockBool( childBlock , "isTakeover" )
+
+		if ( localizationKey != "" && isTakeover )
+		{
+#if DEV
+				if ( localizationKey != "" && localizationKey.slice( 0, 1 ) != "#" )
+					localizationKey = format( "%s !UNLOCALIZED!", localizationKey )
+#endif
+
+			return localizationKey
+		}
+	}
+
+	return ""
+}
+
+
+
+asset function WeaponItemFlavor_GetTakeoverIcon( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	var childSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( weapon ) ), "childClassnames" )
+
+	foreach ( var childBlock in IterateSettingsArray( childSettingsArray ) )
+	{
+		asset takeoverIcon = GetSettingsBlockAsset( childBlock, "takeoverWeaponIcon" )
+		bool isTakeover = GetSettingsBlockBool( childBlock , "isTakeover" )
+
+		if ( takeoverIcon != $"" && isTakeover )
+			return takeoverIcon
+	}
+
+	return $""
+}
+
+
+
+vector function WeaponCategoryFlavor_GetMenuZoomOffset( ItemFlavor weaponCategory )
+{
+	Assert( ItemFlavor_GetType( weaponCategory ) == eItemType.weapon_category )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( weaponCategory ), "menuZoomOffset" )
+}
+
+ItemFlavor ornull function WeaponCategoryFlavor_GetCategoryWeapon( ItemFlavor weaponCategory )
+{
+	Assert( ItemFlavor_GetType( weaponCategory ) == eItemType.weapon_category )
+
+	asset weaponFlavor = GetGlobalSettingsAsset( ItemFlavor_GetAsset( weaponCategory ), "categoryWeapon" )
+	if ( weaponFlavor == $"" )
+		return null
+
+	if ( IsValidItemFlavorSettingsAsset( weaponFlavor ) )
+		return GetItemFlavorByAsset( weaponFlavor )
+
+	return null
+}
+
+string function WeaponCategoryFlavor_GetStatsKey( ItemFlavor weaponCategory )
+{
+	Assert( ItemFlavor_GetType( weaponCategory ) == eItemType.weapon_category )
+
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( weaponCategory ), "statsKey" )
+}
+
+
+array<ItemFlavor> function GetAllWeaponItemFlavors( bool includeOrdnance )
+{
+	array< ItemFlavor > allWeapons = clone GetAllItemFlavorsOfType( eItemType.loot_main_weapon )
+	if ( includeOrdnance )
+		return allWeapons
+
+	foreach ( ItemFlavor weapon in clone allWeapons )
+	{
+		if ( WeaponItemFlavor_GetStatsCategory( weapon ) == WEAPON_STAT_CATEGORY_ORDNANCE )
+			allWeapons.fastremovebyvalue( weapon )
+	}
+	return allWeapons
+}
+
+
+array<ItemFlavor> function GetAllWeaponCategories()
+{
+	return GetAllItemFlavorsOfType( eItemType.weapon_category )
+}
+
+
+array<ItemFlavor> function GetWeaponsInCategory( ItemFlavor category )
+{
+	Assert( ItemFlavor_GetType( category ) == eItemType.weapon_category )
+
+	array<ItemFlavor> allWeapons = GetAllItemFlavorsOfType( eItemType.loot_main_weapon )
+	array<ItemFlavor> categoryWeapons
+
+	entity player = null
+
+		player = GetLocalClientPlayer()
+
+
+
+
+	foreach ( weapon in allWeapons )
+	{
+		if ( !ItemFlavor_ShouldBeVisible( weapon, player ) )
+			continue
+
+		if ( WeaponItemFlavor_GetCategory( weapon ) == category )
+			categoryWeapons.append( weapon )
+	}
+
+	return categoryWeapons
+}
+
+
+array<ItemFlavor> function GetAllWeaponsInCategory( ItemFlavor category )
+{
+	Assert( ItemFlavor_GetType( category ) == eItemType.weapon_category )
+
+	array<ItemFlavor> allWeapons = GetAllItemFlavorsOfType( eItemType.loot_main_weapon )
+	array<ItemFlavor> categoryWeapons
+
+	foreach ( weapon in allWeapons )
+	{
+		if ( WeaponItemFlavor_GetCategory( weapon ) == category )
+			categoryWeapons.append( weapon )
+	}
+
+	return categoryWeapons
+}
+
+array<ItemFlavor> function GetAllMeleeWeapons()
+{
+	return GetAllItemFlavorsOfType( eItemType.melee_weapon )
+}
+
+bool function MainWeapon_GetIsShippingWeapon( ItemFlavor flavor )
+{
+	Assert( ItemFlavor_GetType( flavor ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsBool( ItemFlavor_GetAsset( flavor ), "shippingWeapon" )
+}
+
+vector function MainWeapon_GetLoadoutOverviewOffset( ItemFlavor flavor )
+{
+	Assert( ItemFlavor_GetType( flavor ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( flavor ), "loadoutOverviewOffset" )
+}
+
+vector function MainWeapon_GetLoadoutOverviewRotation( ItemFlavor flavor )
+{
+	Assert( ItemFlavor_GetType( flavor ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( flavor ), "loadoutOverviewRotation" )
+}
+
+vector function MainWeapon_GetLoadoutSkinsOffset( ItemFlavor flavor )
+{
+	Assert( ItemFlavor_GetType( flavor ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsVector( ItemFlavor_GetAsset( flavor ), "loadoutSkinsOffset" )
+}
+
+
+asset function GetAkimboWeaponIcon( string weaponId )
+{
+	if ( !IsWeaponKeyFieldDefined( weaponId, "hud_icon_akimbo_active" ) )
+		return $""
+
+	return GetWeaponInfoFileKeyFieldAsset_Global( weaponId, "hud_icon_akimbo_active" )
+}
+
+
+
+asset function GetEmptyAkimboWeaponIcon( string weaponId )
+{
+	if ( !IsWeaponKeyFieldDefined( weaponId, "hud_icon_akimbo_empty" ) )
+		return $""
+
+	return GetWeaponInfoFileKeyFieldAsset_Global( weaponId, "hud_icon_akimbo_empty" )
+}
+
+
+
+bool function CanWeaponAkimbo( string weaponId )
+{
+	return IsWeaponKeyFieldDefined( weaponId, "is_akimbo_weapon" ) && GetWeaponInfoFileKeyField_GlobalBool( weaponId, "is_akimbo_weapon" )
+}
+
+
+
+string function WeaponItemFlavor_GetEnergizedDescription( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( weapon ), "energizedDescription" )
+}
+
+
+
+bool function WeaponItemFlavor_IsEnergizedAffectingStats( ItemFlavor weapon )
+{
+	Assert( ItemFlavor_GetType( weapon ) == eItemType.loot_main_weapon )
+
+	return GetGlobalSettingsBool( ItemFlavor_GetAsset( weapon ), "energizedAffectsStats" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,547 @@
+
+global function FTUEFlow_OpenCYOAMenu
+
+global function FTUEFlow_IsFTUEFlowEnabled
+global function FTUEFlow_GetFTUEFlowStage
+global function FTUEFlow_GetAdventureChosen
+
+global function FTUEFlow_OnPress_NewPlayer
+global function FTUEFlow_OnPress_ExperiencedPlayer
+global function FTUEFlow_OnPress_BaldWraithPlayer
+
+global function FTUEFlow_DialogFlowCheck
+global function FTUEFlow_DialogFlow
+global function FTUEFlow_GameModeSelectRecommendation
+global function FTUEFlow_GetLobbyPlaylistRecommendation
+global function FTUEFlow_GetLobbyMessage
+global function FTUEFlow_PartyMemberJoinedOrLeft
+
+global function FTUEFlow_IsGameModeLocked
+
+global function ServerCallback_FTUEFlow_UpdateLobbySelection
+
+
+
+
+
+
+
+
+
+
+global function FTUEFlow_IsConVarDisabled
+global function FTUEFlow_IsInFTUEFlow
+global function FTUEFlow_IsPreFTUEPlayer
+
+
+
+global function FTUEFlow_SetFTUEFlowStage
+
+global function FTUEFlow_IsBotsOnlyGroupPlayer
+global function FTUEFlow_IsTrainingGroupPlayer
+global function FTUEFlow_IsBothGroupPlayer
+
+
+
+
+
+
+global enum eFTUEFlowStage
+{
+	PRE_FTUE_PLAYER = 0,
+	TRAINING_ONLY = 10,
+	READY_FOR_PRED = 70 
+}
+
+
+enum eFTUEFlowAdventureChosen
+{
+	ADVENTURE_CHOSEN_TUTORIAL = 21,
+	ADVENTURE_CHOSEN_BOT_MATCH = 22,
+	ADVENTURE_CHOSEN_TRIOS = 23
+}
+
+
+
+enum eFTUEModalOptionsIds
+{
+	TUTORIAL
+	BOTS_MATCH
+	PLAY_TAB
+}
+
+const FTUE_ENABLE_EXPERIMENTATION = "ftue_enable_experimentation"
+
+const string FTUE_EXPERIMENT_PLAYLIST_KILLSWITCH = "ftue_exp_killswitch"
+const string FTUE_EXPERIMENT_CONVAR_KILLSWITCH = "ftue_exp_killswitch"
+
+global const int FTUE_DETECTION_GRACE_PERIOD = 20
+
+struct FileStruct_Ftue_Landing_Flow
+{
+	bool cyoaMenuMatchMaking = false
+	bool closeCYOAMenuOnBack = false
+
+
+		int adventureChosen = 0
+
+}
+FileStruct_Ftue_Landing_Flow& file
+
+
+bool function FTUEFlow_IsConVarDisabled()
+{
+	if ( !GetConVarBool( "ftue_flow_enabled" ) || GetConVarBool( "orientation_matches_disabled" ) )
+	{
+		return true
+	}
+
+
+
+
+
+
+
+#if DEV
+		if ( GetConVarBool( "skip_training" ) )
+		{
+			return true
+		}
+#endif
+
+
+	return false
+}
+
+
+
+bool function FTUEFlow_IsFTUEFlowEnabled( entity player )
+{
+	if ( FTUEFlow_IsConVarDisabled() )
+	{
+		return false
+	}
+
+
+		if ( !IsFullyConnected() )
+			return true
+
+
+	if ( GetCurrentPlaylistVarBool( "ftue_flow_disabled", false ) )
+	{
+		return false
+	}
+
+	return true
+}
+
+
+
+
+bool function FTUEFlow_IsInFTUEFlow( entity player )
+{
+	if ( !FTUEFlow_IsFTUEFlowEnabled( player ) )
+	{
+		return false
+	}
+
+	if ( FTUEFlow_IsPreFTUEPlayer( player ) )
+	{
+		return true
+	}
+
+	int flowStage = expect int( player.GetPersistentVar( "activeFTUEFlow" ) )
+	return flowStage > eFTUEFlowStage.PRE_FTUE_PLAYER && flowStage < eFTUEFlowStage.READY_FOR_PRED
+}
+
+
+
+int function FTUEFlow_GetFTUEFlowStage()
+{
+#if UI_AUTOMATION
+	
+	if ( UIAutomation_IsAutomateQueueForPlaylists() )
+	{
+		return eFTUEFlowStage.READY_FOR_PRED
+	}
+#endif
+
+	entity player = GetLocalClientPlayer()
+
+	if ( !FTUEFlow_IsFTUEFlowEnabled( player ) )
+	{
+		return eFTUEFlowStage.READY_FOR_PRED
+	}
+
+	if ( FTUEFlow_IsPreFTUEPlayer( GetLocalClientPlayer() ) )
+	{
+		return eFTUEFlowStage.TRAINING_ONLY
+	}
+
+	return GetPersistentVarAsInt( "activeFTUEFlow" )
+}
+
+
+
+int function FTUEFlow_GetAdventureChosen()
+{
+	return file.adventureChosen
+}
+
+
+
+void function FTUEFlow_SetFTUEFlowStage( entity player, int stage )
+{
+
+	if ( !IsFullyConnected() )
+		return
+
+	Remote_ServerCallFunction( "UICallback_FTUEFlow_SetFTUEFlowStage", stage )
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+void function FTUEFlow_OpenCYOAMenu()
+{
+	RTKPanelImageButtonModal_Show( CYOA_MENU_ID, "#FTUE_REDIRECTION_TITLE", AddFTUEOptions, OnFTUENavigateBack )
+
+	
+	FTUEFlow_StopMatchMaking()
+
+	file.closeCYOAMenuOnBack = file.adventureChosen > 0
+}
+
+void function AddFTUEOptions()
+{
+	RTKPanelImageButtonModal_AddOption( eFTUEModalOptionsIds.TUTORIAL, "#FTUE_REDIRECTION_OPTION_1_TITLE", "#FTUE_REDIRECTION_OPTION_1_DESCRIPTION", "#FTUE_REDIRECTION_PARTY_SIZE_OVER", $"rui/menu/ftue/about_ftue_training", FTUEFlow_OnPress_NewPlayer, FTUEFlow_IsCYOATutorialButtonAvailable() ? ePanelImageButtonState.AVAILABLE : ePanelImageButtonState.LOCKED )
+	RTKPanelImageButtonModal_AddOption( eFTUEModalOptionsIds.BOTS_MATCH, "#FTUE_REDIRECTION_OPTION_2_TITLE", "#FTUE_REDIRECTION_OPTION_2_DESCRIPTION", "", $"rui/menu/ftue/about_ftue_botmatch", FTUEFlow_OnPress_ExperiencedPlayer, ePanelImageButtonState.AVAILABLE )
+	RTKPanelImageButtonModal_AddOption( eFTUEModalOptionsIds.PLAY_TAB, "#FTUE_REDIRECTION_OPTION_3_TITLE", "#FTUE_REDIRECTION_OPTION_3_DESCRIPTION", "", $"rui/menu/ftue/about_ftue_playtab", FTUEFlow_OnPress_BaldWraithPlayer, ePanelImageButtonState.AVAILABLE )
+}
+
+void function OnFTUENavigateBack()
+{
+	if ( file.cyoaMenuMatchMaking == true )
+	{
+		RTKPanelImageButtonModal_CancelSelection()
+		FTUEFlow_StopMatchMaking()
+	}
+	else
+	{
+		if ( file.closeCYOAMenuOnBack )
+		{
+			CloseActiveMenu()
+		}
+		else
+			AdvanceMenu( GetMenu( "SystemMenu" ) )
+	}
+}
+
+
+const string CYOA_MENU_ID = "CYOAMenu"
+
+
+bool function FTUEFlow_DialogFlowCheck( entity player )
+{
+	if ( FTUEFlow_IsInFTUEFlow( player ) )
+	{
+		return true
+	}
+
+	FTUEFlow_SetFTUEFlowStage( player, eFTUEFlowStage.READY_FOR_PRED )
+	return false
+}
+
+
+
+bool function FTUEFlow_DialogFlow()
+{
+	int ftueStage = FTUEFlow_GetFTUEFlowStage()
+
+	switch ( ftueStage )
+	{
+		case eFTUEFlowStage.TRAINING_ONLY:
+			table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+			if ( TUT_SLOT in slotToPlaylistNameMap )
+			{
+				LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[ TUT_SLOT ] )
+				return true
+			}
+			break
+	}
+
+	return false
+}
+
+
+
+void function FTUEFlow_OnPress_NewPlayer()
+{
+	file.adventureChosen = eFTUEFlowAdventureChosen.ADVENTURE_CHOSEN_TUTORIAL
+
+	table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+	if ( !(TUT_SLOT in slotToPlaylistNameMap ) )
+		return
+	LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[ TUT_SLOT ] )
+	FTUEFlow_PIN_UIInteraction_Select( "training" )
+
+	if ( file.cyoaMenuMatchMaking == false )
+	{
+		FTUEFlow_StartMatchMaking()
+	}
+}
+
+
+
+void function FTUEFlow_OnPress_ExperiencedPlayer()
+{
+	if ( file.cyoaMenuMatchMaking == true )
+	{
+		return
+	}
+
+	file.adventureChosen = eFTUEFlowAdventureChosen.ADVENTURE_CHOSEN_BOT_MATCH
+	FTUEFlow_PIN_UIInteraction_Select( "bot_royale" )
+
+	table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+	LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[ BOTS_SLOT ] )
+
+	while ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+		CloseActiveMenu()
+}
+
+
+
+void function FTUEFlow_OnPress_BaldWraithPlayer()
+{
+	if ( file.cyoaMenuMatchMaking == true )
+	{
+		return
+	}
+
+	file.adventureChosen = eFTUEFlowAdventureChosen.ADVENTURE_CHOSEN_TRIOS
+	FTUEFlow_PIN_UIInteraction_Select( "trios" )
+
+	table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+	LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[ TRIOS_SLOT ] )
+
+	while ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+		CloseActiveMenu()
+}
+
+
+
+
+void function FTUEFlow_PIN_UIInteraction_Select( string selection )
+{
+	PIN_UIInteraction_Select( CYOA_MENU_ID, selection, {} );
+}
+
+
+
+void function FTUEFlow_StartMatchMaking()
+{	
+	RTKPanelImageButtonModal_ChangeBackButtonText( "#B_BUTTON_CANCEL", "#B_BUTTON_CANCEL" )
+	ReadyShortcut_OnActivate( null )
+	file.cyoaMenuMatchMaking = true
+}
+
+
+
+void function FTUEFlow_StopMatchMaking()
+{
+	RTKPanelImageButtonModal_ChangeBackButtonText( "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	CancelMatchmaking()
+	Remote_ServerCallFunction( "ClientCallback_CancelMatchSearch" )
+	file.cyoaMenuMatchMaking = false
+}
+
+
+
+string function FTUEFlow_GameModeSelectRecommendation()
+{
+	int ftueStage = FTUEFlow_GetFTUEFlowStage()
+
+	switch ( ftueStage )
+	{
+		case eFTUEFlowStage.TRAINING_ONLY:
+			return "training"
+		default:
+			return ""
+	}
+
+	unreachable
+}
+
+
+
+string function FTUEFlow_GetLobbyPlaylistRecommendation()
+{
+	int ftueStage = FTUEFlow_GetFTUEFlowStage()
+
+	switch ( ftueStage )
+	{
+		case eFTUEFlowStage.TRAINING_ONLY:
+		{
+			table<string, string> playlists = GameModeSelect_GetPlaylists()
+			if ( "training" in playlists )
+				return playlists["training"]
+			else
+				return ""
+		}
+		default:
+			return ""
+	}
+
+	unreachable
+}
+
+
+
+RTKFTUEMessageModel function FTUEFlow_GetLobbyMessage()
+{
+	RTKFTUEMessageModel model	
+	int ftueStage = FTUEFlow_GetFTUEFlowStage()
+
+	switch ( ftueStage )
+	{
+		case eFTUEFlowStage.TRAINING_ONLY:
+			model.title = "#FTUE_LOBBY_RECOMMENDATION_FIRST_GAME_TITLE_A"
+			model.description = "#FTUE_LOBBY_RECOMMENDATION_FIRST_GAME_DESCRIPTION_A"
+			break
+		default:
+			model.title = ""
+			model.description = ""
+			break
+	}
+
+	return model
+}
+
+
+
+void function FTUEFlow_PartyMemberJoinedOrLeft()
+{
+	if ( GetActiveMenu() == GetMenu( "PanelImageButtonModal") && RTKPanelImageButtonModal_GetCurrentMenuId() == CYOA_MENU_ID )
+	{
+		if ( IsPartyLeader() )
+		{
+			RTKPanelImageButtonModal_ChangeOptionStateById( eFTUEModalOptionsIds.TUTORIAL, FTUEFlow_IsCYOATutorialButtonAvailable() ? ePanelImageButtonState.AVAILABLE : ePanelImageButtonState.LOCKED )
+
+			if ( file.cyoaMenuMatchMaking )
+			{
+				file.cyoaMenuMatchMaking = false
+				RTKPanelImageButtonModal_ChangeBackButtonText( "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+				RTKPanelImageButtonModal_ChangeOptionStateById( eFTUEModalOptionsIds.BOTS_MATCH, ePanelImageButtonState.AVAILABLE )
+				RTKPanelImageButtonModal_ChangeOptionStateById( eFTUEModalOptionsIds.PLAY_TAB, ePanelImageButtonState.AVAILABLE )
+			}
+		}
+		else
+		{
+			file.cyoaMenuMatchMaking = false
+			CloseActiveMenu()
+			
+			if ( file.closeCYOAMenuOnBack )
+			{
+				CloseActiveMenu()
+			}
+		}
+	}
+}
+
+
+
+bool function FTUEFlow_IsCYOATutorialButtonAvailable()
+{
+	return ( GetPartySize() == 1 )
+}
+
+
+
+bool function FTUEFlow_IsBotsOnlyGroupPlayer( entity player )
+{
+	return Kepler_IsPlayerInVariant( player, eKeplerScenario.FTUE_LANDING_FLOW_24_0, "bots" )
+}
+
+
+
+bool function FTUEFlow_IsTrainingGroupPlayer( entity player )
+{
+	return Kepler_IsPlayerInVariant( player, eKeplerScenario.FTUE_LANDING_FLOW_24_0, "training" )
+}
+
+
+
+bool function FTUEFlow_IsBothGroupPlayer( entity player )
+{
+	return Kepler_IsPlayerInVariant( player, eKeplerScenario.FTUE_LANDING_FLOW_24_0, "both" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function ServerCallback_FTUEFlow_UpdateLobbySelection()
+{
+	LobbyPlaylist_SetSelectedPlaylist( GetDefaultPlaylist() )
+}
+
+
+
+bool function FTUEFlow_IsGameModeLocked()
+{
+	int ftueStage = FTUEFlow_GetFTUEFlowStage()
+	if ( ftueStage == eFTUEFlowStage.TRAINING_ONLY )
+	{
+		return true
+	}
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function FTUEFlow_IsPreFTUEPlayer( entity player )
+{
+	return player.GetPersistentVarAsInt( "installUnixTime" ) == 0 || player.GetPersistentVar( "preFTUEPlayer" ) == 1
+}
+

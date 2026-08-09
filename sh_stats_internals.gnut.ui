@@ -1,0 +1,2132 @@
+global function ShStatsInternals_LevelInit
+
+
+global function ResolveStatEntry
+global function GetStat_Int
+global function GetStatEntryByIndex
+global function IsValidStatEntryRef
+global function GetStatEntryByRef
+global function StatEntry_GetIndex
+global function StatEntry_GetRef
+global function StatEntry_GetType
+global function StatEntry_GetBehavior
+global function DoesStatSatisfyValue
+
+global function RegisterAccumulatedStat_Int
+global function RegisterVariableStat_Int
+global function RegisterExpensiveCalculatedStat_Int
+global function RegisterCachedCalculatedStat_Int
+global function RegisterBitfieldStat_Int
+global function RegisterGuardedStat_Int
+global function RegisterCommunityStat_Int
+global function RegisterStatEnumStruct
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function Stats_GetGameModesFromBitfield
+
+
+global function StatsArraysShrinkToFit
+
+const bool STATS_DEBUG_PRINT_SPAM = false
+const int UNINITIALIZED = -2 
+const int CALC_STATS_CACHE_DURATION_SEC = 30
+
+
+
+
+
+
+
+
+global enum eStatType
+{
+	INVALID,
+	INT,
+}
+global enum eStatBehavior
+{
+	CALCULATED,		
+	ACCUMULATED,	
+	VARIABLE,		
+	BITFIELD,		
+	GUARDED, 		
+	COMMUNITY,		
+}
+
+
+global struct CalcStatCache
+{
+	string statRef
+	int timeStamp
+	int value
+	int when
+}
+
+global enum eStatWriteMode
+{
+	WRITE_IMMEDIATELY,
+	WRITE_END_OF_MATCH,
+	WRITE_NEVER,
+}
+
+
+
+
+global enum eStatGetWhen
+{
+	CURRENT,
+	START_OF_CURRENT_MATCH,
+}
+
+global enum eStatFetchMode
+{
+	DEFAULT,
+	FORCE_NO_CACHE,
+	BITFIELD_RAW,
+}
+
+global enum eGuardedStatStateForNextOperation
+{
+	RESET,
+	OK,
+	ERROR,
+}
+
+
+
+global struct StatEntry
+{
+	int    index
+	int    indexWithinType
+	string persistenceFullKey_Current
+	var    persistenceFullKey_Current_Handle
+
+	int    type = eStatType.INVALID
+	int    behavior
+	int	   statWriteMode = eStatWriteMode.WRITE_END_OF_MATCH
+	bool   shouldCache 
+	int    gameModeBitField 
+	bool   isTrackedInCurrentMode
+
+	array<string> enumKeys
+
+	
+	int functionref( entity player, array<StatEntry> sourceEntries, int when )       calcFunc_Int
+	array<StatEntry> ornull															calcSourceEntries = null
+	array<StatEntry> ornull															dependents = null
+
+	
+	int functionref( entity player ) resetBeforeSetFunc
+	int functionref( entity player ) resetBeforeGetFunc
+}
+
+
+
+global typedef StatChangedCallbackType_Int void functionref( entity player, StatEntry entry, int newValue )
+
+
+
+global struct StatCalcFuncInfo
+{
+	int functionref( entity player, array<StatEntry> sourceEntries, int when )   calcFunc_Int
+
+	array<StatEntry> ornull															sourceEntries
+}
+
+
+
+
+global struct StatTemplateEnumKeyResolver
+{
+	bool isFinal
+
+	table<string, StatTemplateEnumKeyResolver> children 
+
+	table<string, StatEntry> entries 
+}
+
+
+
+
+global struct StatEnumStruct
+{
+	StatEnumStruct ornull parentEnumStruct
+
+	string fieldName
+	string enumName
+
+	array<string> choices 
+
+#if DEV
+		string structName
+#endif
+}
+
+
+
+
+global struct StatTemplate
+{
+	
+
+	StatEnumStruct ornull parentEnumStruct
+
+	int  type = eStatType.INVALID 
+	int  behavior 
+	int	 statWriteMode = eStatWriteMode.WRITE_END_OF_MATCH
+	bool shouldCache = false 
+	int  gameModeBitField 
+
+	string fieldName
+
+	int enumKeyCount
+
+	StatTemplateEnumKeyResolver& resolver 
+
+	StatEntry& rootEntry 
+
+	array<StatEntry> allEntries
+}
+
+
+
+#if DEV
+struct StatEnumStruct_Children
+{
+	array<StatEnumStruct> childEnumStructs
+	array<StatTemplate>   childStatTemplates
+}
+#endif
+
+
+
+
+
+
+
+
+struct FileStruct_LifetimeLevel
+{
+
+#if DEV
+			StatEnumStruct_Children                        rootFieldsList 
+			table<StatEnumStruct, StatEnumStruct_Children> sesChildrenMap 
+#endif
+
+		array<StatEntry> stats_Int
+
+		array<StatEntry>         allStats
+		table<string, StatEntry> refStatEntryMap
+
+		table< entity, array<CalcStatCache> > calculatedStatsCache 
+
+
+
+
+
+
+	int calculatedStatsCacheDurationSec = 30
+
+	table< entity, array<StatEntry> > playerDirtyStats
+}
+FileStruct_LifetimeLevel& fileLevel
+
+const string STATS_PERSISTENCE_PREFIX_CURRENT = "stats"
+
+
+
+
+
+
+
+
+void function ShStatsInternals_LevelInit()
+{
+	FileStruct_LifetimeLevel newFileLevel
+	fileLevel = newFileLevel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	int lobbyMultiplier = IsLobby() ? 10 : 1 
+	fileLevel.calculatedStatsCacheDurationSec = lobbyMultiplier * CALC_STATS_CACHE_DURATION_SEC
+}
+
+
+
+
+
+
+
+
+array<StatEntry> function GetCalcSourceEntriesFromEntry( StatEntry entry )
+{
+	array<StatEntry> calcSourceEntries
+	if ( entry.calcSourceEntries == null )
+		return []
+	return expect array<StatEntry>( entry.calcSourceEntries )
+}
+
+
+bool function HasStatCachingOptimizations()
+{
+	return fileLevel.calculatedStatsCacheDurationSec > 0
+}
+
+
+
+
+int function GetStat_Int( entity player, StatEntry entry, int when = eStatGetWhen.CURRENT, int fetchMode = eStatFetchMode.DEFAULT )
+{
+
+
+
+
+
+	bool shouldUpdateStatsInPersistenceImmediately = IsLobby() 
+
+	Assert( entry.type == eStatType.INT )
+
+		if ( entry.statWriteMode == eStatWriteMode.WRITE_END_OF_MATCH )
+			Assert( when != eStatGetWhen.CURRENT || shouldUpdateStatsInPersistenceImmediately, format( "Cannot get current stats in client or UI VM during a match (they could be out of date): %s", entry.persistenceFullKey_Current ) )
+
+
+	bool useStatCaching = HasStatCachingOptimizations()
+
+	
+	
+	
+	bool shouldRecalculateLobbyStat = shouldUpdateStatsInPersistenceImmediately && entry.gameModeBitField == CHALLENGE_GAME_MODE_NON_MODE
+	useStatCaching = useStatCaching && !shouldRecalculateLobbyStat
+	if ( useStatCaching )
+	{
+		int unixTime = GetUnixTimestamp()
+		
+
+
+
+
+
+
+
+
+		if ( ( when == eStatGetWhen.CURRENT || when == eStatGetWhen.START_OF_CURRENT_MATCH )
+				&& entry.behavior == eStatBehavior.CALCULATED && !entry.shouldCache )
+		{
+			if ( player in fileLevel.calculatedStatsCache )
+			{
+				foreach ( CalcStatCache calcStat in fileLevel.calculatedStatsCache[player] )
+				{
+					if ( fetchMode == eStatFetchMode.DEFAULT && calcStat.when == when && calcStat.statRef == entry.persistenceFullKey_Current && unixTime <= calcStat.timeStamp + fileLevel.calculatedStatsCacheDurationSec )
+						return calcStat.value
+					else if ( calcStat.when == when && calcStat.statRef == entry.persistenceFullKey_Current && ( unixTime > calcStat.timeStamp + fileLevel.calculatedStatsCacheDurationSec || fetchMode == eStatFetchMode.FORCE_NO_CACHE  ) ) 
+						fileLevel.calculatedStatsCache[player].fastremovebyvalue( calcStat )
+				}
+
+				
+				CalcStatCache calcStat
+				calcStat.value = entry.calcFunc_Int( player, GetCalcSourceEntriesFromEntry( entry ), when )
+				calcStat.timeStamp = unixTime
+				calcStat.statRef = entry.persistenceFullKey_Current
+				calcStat.when = when
+				fileLevel.calculatedStatsCache[ player ].append( calcStat )
+
+				return calcStat.value
+			}
+			else
+			{
+				
+				CalcStatCache calcStat
+				calcStat.value = entry.calcFunc_Int( player, GetCalcSourceEntriesFromEntry( entry ), when )
+				calcStat.timeStamp = unixTime
+				calcStat.statRef = entry.persistenceFullKey_Current
+				calcStat.when = when
+				fileLevel.calculatedStatsCache[ player ] <- [ calcStat ]
+
+				return calcStat.value
+			}
+		}
+	}
+	else 
+	{
+		if ( (when == eStatGetWhen.CURRENT || when == eStatGetWhen.START_OF_CURRENT_MATCH)
+				&& entry.behavior == eStatBehavior.CALCULATED && !entry.shouldCache )
+			return entry.calcFunc_Int( player, GetCalcSourceEntriesFromEntry( entry ), when )
+	}
+
+	if ( entry.behavior == eStatBehavior.BITFIELD && fetchMode != eStatFetchMode.BITFIELD_RAW )
+		return entry.calcFunc_Int( player, GetCalcSourceEntriesFromEntry( entry ), when )
+
+#if DEV
+		
+		if ( DEV_ShouldIgnorePersistence() )
+			return 0
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		if ( when == eStatGetWhen.CURRENT || when == eStatGetWhen.START_OF_CURRENT_MATCH )
+		{
+			if ( entry.statWriteMode == eStatWriteMode.WRITE_END_OF_MATCH )
+			{
+				Assert( when != eStatGetWhen.CURRENT || shouldUpdateStatsInPersistenceImmediately )
+			}
+
+			if ( entry.behavior == eStatBehavior.GUARDED )
+			{
+				int guardStatus = entry.resetBeforeGetFunc( player )
+				switch ( guardStatus )
+				{
+					case eGuardedStatStateForNextOperation.RESET:
+						return 0
+
+					case eGuardedStatStateForNextOperation.OK:
+						return player.GetPersistentVarAsInt( entry.persistenceFullKey_Current )
+
+					default:
+						return 0
+				}
+			}
+			else
+			{
+				return player.GetPersistentVarAsInt( entry.persistenceFullKey_Current )
+			}
+		}
+		unreachable
+
+}
+
+
+
+
+StatEntry function GetStatEntryByIndex( int index )
+{
+	return fileLevel.allStats[index]
+}
+
+
+
+
+bool function IsValidStatEntryRef( string ref )
+{
+	return (ref in fileLevel.refStatEntryMap)
+}
+
+
+
+
+StatEntry function GetStatEntryByRef( string ref )
+{
+	return fileLevel.refStatEntryMap[ref]
+}
+
+
+
+
+int function StatEntry_GetIndex( StatEntry entry )
+{
+	return entry.index
+}
+
+
+
+
+string function StatEntry_GetRef( StatEntry entry )
+{
+	return entry.persistenceFullKey_Current
+}
+
+
+
+
+int function StatEntry_GetType( StatEntry entry )
+{
+	return entry.type
+}
+
+
+
+
+int function StatEntry_GetBehavior( StatEntry entry )
+{
+	return entry.behavior
+}
+
+
+
+
+bool function DoesStatSatisfyValue( entity player, StatEntry entry, float checkValue, int when = eStatGetWhen.CURRENT )
+{
+	Assert( float(int(checkValue)) == checkValue )
+	int value = GetStat_Int( player, entry, when )
+	return (value >= int(checkValue))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+string function GetStatTemplateDebugName( StatTemplate template )
+{
+	string sesPart                 = ""
+	StatEnumStruct ornull ancestor = template.parentEnumStruct
+	while ( ancestor != null )
+	{
+		{
+			expect StatEnumStruct(ancestor)
+			sesPart = format( ".%s[%s]%s", ancestor.fieldName, ancestor.enumName, sesPart )
+		}
+		ancestor = expect StatEnumStruct(ancestor).parentEnumStruct
+	}
+
+	return format( "stats%s.%s", sesPart, template.fieldName )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Stats_IsStatTrackedInCurrentMode( int gameModeBitField )
+{
+	if ( gameModeBitField == CHALLENGE_GAME_MODE_EXPIRED || gameModeBitField == CHALLENGE_GAME_MODE_INVALID )
+	{
+		return false
+	}
+
+	if ( gameModeBitField == CHALLENGE_GAME_MODE_NON_MODE || gameModeBitField == CHALLENGE_GAME_MODE_ANY_PLUS_CASUAL_TRIOS )
+	{
+		return true
+	}
+
+	string mode = GetCurrentPlaylistVarString( "stats_match_type", "survival" )
+
+	Assert( ( mode in STAT_MATCH_TYPE_TO_CHALLENGE_GAMEMODE ), "Invalid Playlist var stats_match_type " + mode )
+
+	int challengeGameMode = STAT_MATCH_TYPE_TO_CHALLENGE_GAMEMODE[ mode ]
+
+	if ( challengeGameMode == CHALLENGE_GAME_MODE_INVALID )
+	{
+		return false
+	}
+
+	if ( gameModeBitField == CHALLENGE_GAME_MODE_EXCEPT_BR )
+	{
+		if ( challengeGameMode == CHALLENGE_GAME_MODE_BATTLE_ROYALE || challengeGameMode == CHALLENGE_GAME_MODE_BATTLE_ROYALE_PLUS_CASUAL_TRIOS )
+		{
+			return false
+		}
+
+		return true
+	}
+
+	if ( IsBitFlagSet( challengeGameMode, gameModeBitField ) )
+	{
+		return true
+	}
+
+	if ( IsBitFlagSet( eChallengeGameMode.RANKED, gameModeBitField ) && GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_RANKED ) )
+	{
+		return true
+	}
+
+	if ( IsBitFlagSet( eChallengeGameMode.UNRANKED_TRIOS, gameModeBitField ) && mode != "casual_trios" && GameMode_IsActive( eGameModes.SURVIVAL ) && GameModeVariant_IsActive( eGameModeVariants.invalid ) )
+	{
+		return true
+	}
+
+	if ( IsBitFlagSet( eChallengeGameMode.SURVIVAL_QUADS, gameModeBitField ) && GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_QUADS ) )
+	{
+		return true
+	}
+
+	if ( IsBitFlagSet( eChallengeGameMode.SURVIVAL_SOLOS, gameModeBitField ) && GameModeVariant_IsActive( eGameModeVariants.SURVIVAL_SOLOS ) )
+	{
+		return true
+	}
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+StatEntry function ResolveStatEntry( StatTemplate template, ... )
+{
+	Assert( template.type != eStatType.INVALID, "StatTemplate was not initialized." )
+
+	int keyArgCount = expect int(vargc)
+	Assert( keyArgCount == template.enumKeyCount, "Stat '" + GetStatTemplateDebugName( template ) + "' requires " + template.enumKeyCount + " enum keys but ResolveStatEntry was called with " + keyArgCount + "." )
+
+	if ( vargc == 0 )
+		return template.rootEntry
+
+	StatTemplateEnumKeyResolver resolver = template.resolver
+	for ( int resolveDepth = 0; resolveDepth < keyArgCount - 1; resolveDepth++ )
+	{
+		Assert( !resolver.isFinal )
+		string key = expect string(vargv[resolveDepth])
+
+
+
+
+
+
+		resolver = resolver.children[key]
+	}
+	Assert( resolver.isFinal )
+	string key = expect string(vargv[keyArgCount - 1])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	return resolver.entries[key]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+StatEnumStruct function RegisterStatEnumStruct( StatEnumStruct ornull parentSESOrNull, string fieldName, string enumName, array<string> choices )
+{
+	StatEnumStruct ses
+	ses.parentEnumStruct = parentSESOrNull
+	ses.fieldName = fieldName
+	ses.enumName = enumName
+	ses.choices = choices
+	ses.choices.shrinktofit()
+
+#if DEV
+		if ( parentSESOrNull == null )
+		{
+			fileLevel.rootFieldsList.childEnumStructs.append( ses )
+		}
+		else
+		{
+			StatEnumStruct parentSES = expect StatEnumStruct(parentSESOrNull)
+			StatEnumStruct_Children sesChildren
+			if ( parentSES in fileLevel.sesChildrenMap )
+				sesChildren = fileLevel.sesChildrenMap[parentSES]
+			else
+				fileLevel.sesChildrenMap[parentSES] <- sesChildren
+			sesChildren.childEnumStructs.append( ses )
+		}
+#endif
+
+	return ses
+}
+
+
+
+
+StatTemplate function InternalRegisterStatCommon( StatEnumStruct ornull parentSESOrNull, string fieldName, int type, int behavior, int stateWriteMode, bool shouldCache, int gameModeBitfield )
+{
+	StatTemplate template
+
+	template.fieldName = fieldName
+	template.type = type
+	template.behavior = behavior
+	template.statWriteMode = stateWriteMode
+	template.shouldCache = shouldCache
+	template.gameModeBitField = gameModeBitfield
+	Assert( !shouldCache || template.behavior == eStatBehavior.CALCULATED )
+
+	if ( parentSESOrNull == null )
+	{
+		template.rootEntry.type = template.type
+		template.rootEntry.behavior = template.behavior
+		template.rootEntry.statWriteMode = template.statWriteMode
+		template.rootEntry.shouldCache = template.shouldCache
+		template.rootEntry.gameModeBitField = template.gameModeBitField
+		template.rootEntry.isTrackedInCurrentMode = Stats_IsStatTrackedInCurrentMode( gameModeBitfield )
+
+
+
+
+
+
+
+
+
+
+		template.rootEntry.persistenceFullKey_Current = STATS_PERSISTENCE_PREFIX_CURRENT + "." + fieldName
+		if ( template.rootEntry.behavior != eStatBehavior.CALCULATED || template.rootEntry.shouldCache )
+		{
+#if DEV
+			
+			if ( !DEV_ShouldIgnorePersistence() )
+#endif
+			{
+				template.rootEntry.persistenceFullKey_Current_Handle = PersistenceGetVarHandle( template.rootEntry.persistenceFullKey_Current )
+			}
+		}
+
+		template.rootEntry.index = fileLevel.allStats.len()
+		fileLevel.allStats.append( template.rootEntry )
+
+		fileLevel.refStatEntryMap[template.rootEntry.persistenceFullKey_Current] <- template.rootEntry
+
+		template.rootEntry.indexWithinType = fileLevel.stats_Int.len()
+		fileLevel.stats_Int.append( template.rootEntry )
+
+#if DEV
+			fileLevel.rootFieldsList.childStatTemplates.append( template )
+#endif
+
+		template.allEntries.append( template.rootEntry )
+	}
+	else
+	{
+		StatEnumStruct parentSES = expect StatEnumStruct( parentSESOrNull )
+
+#if DEV
+			StatEnumStruct_Children sesChildren
+			if ( parentSES in fileLevel.sesChildrenMap )
+				sesChildren = fileLevel.sesChildrenMap[ parentSES ]
+			else
+				fileLevel.sesChildrenMap[ parentSES ] <- sesChildren
+			sesChildren.childStatTemplates.append( template )
+#endif
+
+		array<StatEnumStruct> sesAncestorsReversed = []
+		StatEnumStruct ornull ancestorOrNull       = parentSESOrNull
+		while ( ancestorOrNull != null )
+		{
+			StatEnumStruct ancestor = expect StatEnumStruct(ancestorOrNull)
+			sesAncestorsReversed.append( ancestor )
+			ancestorOrNull = ancestor.parentEnumStruct
+		}
+
+		template.enumKeyCount = sesAncestorsReversed.len()
+		template.resolver = BuildStatTemplateEnumKeyResolversRecursive( template, 0, sesAncestorsReversed, template, "", [] )
+	}
+
+	return template
+}
+
+
+
+
+StatTemplateEnumKeyResolver function BuildStatTemplateEnumKeyResolversRecursive( StatTemplate template, int depth, array<StatEnumStruct> sesAncestorsReversed, StatTemplate stat, string partialKey, array<string> enumKeys )
+{
+	StatTemplateEnumKeyResolver resolver
+
+	StatEnumStruct ancestor = sesAncestorsReversed[sesAncestorsReversed.len() - 1 - depth]
+
+	if ( depth == sesAncestorsReversed.len() - 1 )
+	{
+		resolver.isFinal = true
+		foreach ( string choice in ancestor.choices )
+		{
+			array<string> grownEnumKeys = []
+			grownEnumKeys.extend( enumKeys )
+			grownEnumKeys.append( choice )
+
+			StatEntry entry
+			entry.type = template.type
+			entry.behavior = template.behavior
+			entry.statWriteMode = template.statWriteMode
+			entry.shouldCache = template.shouldCache
+			entry.gameModeBitField = template.gameModeBitField
+
+			entry.persistenceFullKey_Current = format( "%s.%s%s[%s].%s", STATS_PERSISTENCE_PREFIX_CURRENT, partialKey, ancestor.fieldName, choice, stat.fieldName )
+			int entryPersistencePartialKeyOffset = STATS_PERSISTENCE_PREFIX_CURRENT.len() + 1
+
+			entry.isTrackedInCurrentMode = Stats_IsStatTrackedInCurrentMode( template.gameModeBitField )
+
+
+
+
+
+
+
+
+
+
+			if ( template.gameModeBitField == CHALLENGE_GAME_MODE_EXCEPT_BR )
+			{
+				foreach ( int gameModeEnum, string modeRef in GAME_MODE_TO_STAT_REF_MAP )
+				{
+					if ( entry.persistenceFullKey_Current.find( modeRef, entryPersistencePartialKeyOffset ) != -1 )
+					{
+						entry.gameModeBitField = Stats_GetModeBitfieldForGameModes( [gameModeEnum] )
+					}
+				}
+			}
+
+			if ( entry.behavior != eStatBehavior.CALCULATED || entry.shouldCache )
+			{
+#if DEV
+				
+				if ( !DEV_ShouldIgnorePersistence() )
+#endif
+				{
+					entry.persistenceFullKey_Current_Handle = PersistenceGetVarHandle( entry.persistenceFullKey_Current )
+				}
+			}
+
+			entry.enumKeys = grownEnumKeys
+
+			entry.index = fileLevel.allStats.len()
+			fileLevel.allStats.append( entry )
+
+			fileLevel.refStatEntryMap[entry.persistenceFullKey_Current] <- entry
+
+			entry.indexWithinType = fileLevel.stats_Int.len()
+			fileLevel.stats_Int.append( entry )
+
+
+			resolver.entries[choice] <- entry
+
+			template.allEntries.append( entry )
+		}
+	}
+	else
+	{
+		resolver.isFinal = false
+		foreach ( string choice in ancestor.choices )
+		{
+			string grownPartialKey = format( "%s%s[%s].", partialKey, ancestor.fieldName, choice )
+
+			array<string> grownEnumKeys = []
+			grownEnumKeys.extend( enumKeys )
+			grownEnumKeys.append( choice )
+			StatTemplateEnumKeyResolver subResolver = BuildStatTemplateEnumKeyResolversRecursive( stat, depth + 1, sesAncestorsReversed, stat, grownPartialKey, grownEnumKeys )
+			resolver.children[choice] <- subResolver
+		}
+	}
+
+	return resolver
+}
+
+
+
+
+StatTemplate function RegisterAccumulatedStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int gameModeBitfield, int statWriteMode )
+{
+	return InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.ACCUMULATED, statWriteMode, false, gameModeBitfield )
+}
+
+
+
+
+StatTemplate function RegisterVariableStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int gameModeBitfield, int statWriteMode )
+{
+	return InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.VARIABLE, statWriteMode, false, gameModeBitfield )
+}
+
+
+
+void function InternalRegisterCalcFunc( StatTemplate stat, StatCalcFuncInfo functionref( StatEntry, array<StatTemplate> ) setupFunc, array<StatTemplate> sourceTemplates )
+{
+	foreach( StatEntry entry in stat.allEntries )
+	{
+		StatCalcFuncInfo calcInfo = setupFunc( entry, sourceTemplates )
+		entry.calcFunc_Int = calcInfo.calcFunc_Int
+		entry.calcSourceEntries = calcInfo.sourceEntries
+
+		if ( calcInfo.sourceEntries != null )
+		{
+			array<StatEntry> sourceEntries = expect array<StatEntry>( calcInfo.sourceEntries )
+			foreach( StatEntry sourceEntry in sourceEntries )
+			{
+				if ( sourceEntry.dependents == null )
+					sourceEntry.dependents = []
+				array<StatEntry> dependents = expect array<StatEntry>( sourceEntry.dependents )
+				dependents.append( entry )
+			}
+		}
+	}
+}
+
+
+
+void function InternalSetupGuardedStatFunctions( StatTemplate stat, int functionref( entity ) resetBeforeSetFunc, int functionref( entity ) resetBeforeGetFunc )
+{
+	foreach ( StatEntry entry in stat.allEntries )
+	{
+		entry.resetBeforeSetFunc = resetBeforeSetFunc
+		entry.resetBeforeGetFunc = resetBeforeGetFunc
+	}
+}
+
+
+
+
+StatTemplate function InternalRegisterCalculatedStatCommon( StatEnumStruct ornull enumStructOrNull, string fieldName, int statWriteMode, bool shouldCache,
+		StatCalcFuncInfo functionref( StatEntry, array<StatTemplate> ) setupFunc, array<StatTemplate> sourceTemplates, int gameModeBitfield )
+{
+	StatTemplate stat = InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.CALCULATED, statWriteMode, shouldCache, gameModeBitfield )
+
+	InternalRegisterCalcFunc( stat, setupFunc, sourceTemplates )
+
+	return stat
+}
+
+
+
+
+StatTemplate function RegisterExpensiveCalculatedStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int statWriteMode,
+		StatCalcFuncInfo functionref( StatEntry, array<StatTemplate> ) setupFunc, array<StatTemplate> sourceTemplates, int gameModeBitfield )
+{
+	return InternalRegisterCalculatedStatCommon( enumStructOrNull, fieldName, statWriteMode, false, setupFunc, sourceTemplates, gameModeBitfield )
+}
+
+
+
+
+StatTemplate function RegisterCachedCalculatedStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int statWriteMode,
+		StatCalcFuncInfo functionref( StatEntry, array<StatTemplate> ) setupFunc, array<StatTemplate> sourceTemplates, int gameModeBitfield )
+{
+	return InternalRegisterCalculatedStatCommon( enumStructOrNull, fieldName, statWriteMode, true, setupFunc, sourceTemplates, gameModeBitfield )
+}
+
+
+
+StatTemplate function RegisterBitfieldStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int statWriteMode,
+		StatCalcFuncInfo functionref( StatEntry, array<StatTemplate> ) setupFunc, array<StatTemplate> sourceTemplates, int gameModeBitfield )
+{
+	StatTemplate stat = InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.BITFIELD, statWriteMode, false, gameModeBitfield )
+
+	InternalRegisterCalcFunc( stat, setupFunc, sourceTemplates )
+
+	return stat
+}
+
+
+
+StatTemplate function RegisterGuardedStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int gameModeBitfield, int statWriteMode,
+		int functionref( entity ) resetBeforeSetFunc, int functionref( entity ) resetBeforeGetFunc )
+{
+	StatTemplate stat = InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.GUARDED, statWriteMode, false, gameModeBitfield )
+	InternalSetupGuardedStatFunctions( stat, resetBeforeSetFunc, resetBeforeGetFunc )
+
+	return stat
+}
+
+
+
+StatTemplate function RegisterCommunityStat_Int( StatEnumStruct ornull enumStructOrNull, string fieldName, int gameModeBitfield, int statWriteMode )
+{
+	return InternalRegisterStatCommon( enumStructOrNull, fieldName, eStatType.INT, eStatBehavior.COMMUNITY, statWriteMode, false, gameModeBitfield )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function StatsArraysShrinkToFit()
+{
+	
+	fileLevel.stats_Int.shrinktofit()
+	fileLevel.allStats.shrinktofit()
+#if DEV
+		foreach ( StatTemplate stat in fileLevel.rootFieldsList.childStatTemplates )
+		{
+			stat.allEntries.shrinktofit()
+		}
+#endif
+}
+
+
+array<int> function Stats_GetGameModesFromBitfield( int modeBitfield )
+{
+	array<int> out = []
+
+	foreach ( int entry in eChallengeGameMode )
+	{
+		if ( IsBitFlagSet( modeBitfield, entry ) )
+		{
+			out.append( entry )
+		}
+	}
+
+	return out
+}
+
+
+
+int function Stats_GetModeBitfieldForGameModes( array<int> modes )
+{
+	int bitField
+
+	foreach ( int mode in modes )
+	{
+		bitField = SetBitFlag( bitField, mode )
+	}
+
+	
+	
+
+	return bitField
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

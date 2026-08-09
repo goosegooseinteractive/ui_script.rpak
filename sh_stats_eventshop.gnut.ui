@@ -1,0 +1,100 @@
+global function StatsRegister_EventShopStats
+global function EventShopStats_GetCurrencyTotal
+
+
+
+
+
+
+
+
+
+const string EVENTSHOP_CURRENT_GUID_PVAR = "eventshop_current_guid"
+
+void function StatsRegister_EventShopStats()
+{
+	CAREER_STATS.eventshop_currency_total = RegisterGuardedStat_Int( null, "eventshop_currency_total", CHALLENGE_GAME_MODE_NON_MODE, CHALLENGES_CALC_DEPENDS, EventShopCurrencyTotal_Guard_Set, EventShopCurrencyTotal_Guard_Get )
+}
+
+int function EventShopCurrencyTotal_Guard_Set( entity player )
+{
+
+		Assert( false, "Cannot write to a statref from CLIENT or UI VMs; can only be done on SERVER.")
+		return eGuardedStatStateForNextOperation.ERROR
+
+
+
+
+}
+
+int function EventShopCurrencyTotal_Guard_Get( entity player )
+{
+	return _EventShopCurrencyTotal_Guard_Shared( player, false )
+}
+
+int function _EventShopCurrencyTotal_Guard_Shared( entity player, bool isSet )
+{
+
+		Assert( !isSet )
+
+
+	ItemFlavor ornull currentEventShop = EventShop_GetCurrentActiveEventShop()
+	if ( currentEventShop == null )
+	{
+		return eGuardedStatStateForNextOperation.RESET
+	}
+
+	expect ItemFlavor( currentEventShop )
+	int currentEventShopGUID = ItemFlavor_GetGUID( currentEventShop )
+	int lastEventShopGUID = player.GetPersistentVarAsInt( format( "%s.%s", DYNAMIC_CHALLENGE_DATA_PERSISTENCE_STRUCT, EVENTSHOP_CURRENT_GUID_PVAR ) )
+
+	if ( currentEventShopGUID != lastEventShopGUID )
+	{
+
+
+
+
+
+
+
+		return eGuardedStatStateForNextOperation.RESET
+	}
+
+	return eGuardedStatStateForNextOperation.OK
+}
+
+int function EventShopStats_GetCurrencyTotal( entity player )
+{
+	return GetStat_Int( player, ResolveStatEntry ( CAREER_STATS.eventshop_currency_total ) )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif

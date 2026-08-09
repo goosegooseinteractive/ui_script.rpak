@@ -1,0 +1,53 @@
+
+global function StatsRegister_ArenaDuels
+
+
+
+
+
+
+
+
+void function StatsRegister_ArenaDuels()
+{
+	CAREER_STATS.gamemode_arenaduels_duels_won = RegisterAccumulatedStat_Int( null, "gamemode_arenaduels_duels_won", eChallengeGameMode.ARENADUELS, CHALLENGES_CALC_DEPENDS )
+	CAREER_STATS.gamemode_arenaduels_duels_played = RegisterAccumulatedStat_Int( null, "gamemode_arenaduels_duels_played", eChallengeGameMode.ARENADUELS, CHALLENGES_CALC_DEPENDS )
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                       

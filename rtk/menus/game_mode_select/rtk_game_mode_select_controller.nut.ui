@@ -1,0 +1,2220 @@
+
+
+global function InitRTKGameModeSelectPanel
+global function RTKGameModeSelect_InitMetaData
+global function RTKGameModeSelect_OnInitialize
+global function RTKGameModeSelect_OnPreDestroy
+global function RTKGameModeSelect_OnDestroy
+global function GameModeSelect_ScheduleNameToTileDefaultsMap
+global function GameModeSelect_ScheduleNameToTileDefaults
+global function GameModeSelect_ScheduleNameToDefaultPillarColor
+global function GameModeSelect_ScheduleNameToDefaultPillarColorLightness
+global function GameModeSelect_ApplyTileDefaults
+global function RTKMutator_GMS_SwapImageByHeight
+global function RTKMutator_GMS_SquadSizeIcon
+global function RTKMutator_GMS_SquadSizeColor
+
+global struct RTKGameModeSelect_Properties
+{
+	rtk_panel content
+	rtk_behavior button
+	rtk_behavior directionalNavigation
+}
+
+global enum eGameModeSelectTileActions
+{
+	DEFAULT,
+	RANKED,
+	ROAD_TO_RANKED,
+}
+
+global enum eRTKGameModeSelectPlaylistSquadSizeState
+{
+	ONLY_OPTION,
+	SELECTED,
+	UNSELECTED
+}
+
+global struct RTKGameModeSelectPlaylistSquadSize_Struct
+{
+	string playlistName
+	string key
+	int squadSize 
+	int queueSize 
+	int partySize 
+	int endTime = -1
+	bool available
+	int state
+	int fillState
+	asset icon
+}
+
+global struct RTKGameModeSelectPlaylistButton_Struct
+{
+	asset prefab = $"ui_rtk/menus/game_mode_select/rtk_game_mode_select_button.rpak"
+	asset prefabAddon = $""
+	string name
+	string displayName
+	bool emblemOffset
+	string subDisplayName
+	string mapName
+	string modeName
+	string slotName
+	string scheduleName
+	string description
+	bool isFeatured
+	string featuredSlotDisplayString
+	asset panelImage
+	bool imageAssetTakeover = false
+	asset imageAsset
+	asset imageAsset1h
+	asset imageAsset2h
+	asset imageAsset3h
+	asset thumbnailAsset
+	asset emblemImage = $""
+	vector frameColor = < 0.3906, 0.4414, 0.4375 >
+	float frameColorLightness = -0.40
+	float squadSizeDefaultLightness = -0.50
+	RTKRankedBadgeModel& rankedBadge
+	string tooltipTitle
+	bool hidden 
+	bool hovered = false
+	bool notHovered = true 
+	bool disabled 
+	bool locked 
+	bool animateBG = true
+	bool showMoreInfo
+	bool showSelectMode
+	bool showViewChallenges
+
+	bool showRankedLadder
+
+	string lockedReason
+	string nextMapName
+	string nextModeName
+	int rotationEndTime = -1
+	int rankExpireEndTime = -1
+	int squadSizeEndTime = -1
+	int comingSoonTime = -1
+	string comingSoonName = ""
+	int abandonPenaltyEndTime = -1
+	int rankedRumbleLadderEndTime = -1
+	string rankedRumbleLadderString = ""
+	int gameModeSelectTileAction 
+	array<RTKGameModeSelectPlaylistSquadSize_Struct> playlistSquadSizes
+
+	
+	string ui_mode_select_tab_index 
+	string ui_mode_select_tab_index_name 
+	string ui_mode_select_tab_slot_index 
+	string ui_mode_select_grid_height 
+	string ui_mode_select_grid_height_min 
+	string ui_mode_select_grid_height_max 
+	
+	string ui_mode_select_show_upcoming 
+	string ui_mode_select_req_training 
+	string ui_mode_select_req_orientation 
+	string ui_mode_select_combine_key 
+
+	
+	string ui_mode_select_featured 
+	string ui_mode_select_featured_slot 
+}
+
+global struct RTKGameModeSelectPlaylistTab_Struct
+{
+	string displayName
+	int index
+	bool showRightSpacer
+	array< RTKGameModeSelectPlaylistButton_Struct > playlists
+}
+
+global struct RTKGameModeSelectControllerPanel_ModelStruct
+{
+	array< RTKGameModeSelectPlaylistTab_Struct > tabs
+	int activeTab = 0
+	bool visible = false
+	bool isPartyLeader = false
+	int partySize = 0
+	bool showFTUEPrompt = false
+	bool showDevPrompt = false
+	bool centerContent = false
+	string featuredSlot = ""
+	string featuredSlotDisplayString = ""
+	bool hasCompletedTraining
+	bool hasCompletedPlayerOrientation
+	string headerText
+	string headerDescText
+
+	
+	string map1Name
+	string map1Mode
+	asset map1Image
+	string map2Name
+	string map2Mode
+	asset map2Image
+	string map3Name
+	string map3Mode
+	asset map3Image
+	string map4Name
+	string map4Mode
+	asset map4Image
+}
+
+struct PrivateData
+{
+	void functionref( var button ) ftueDialogOpen
+#if DEV
+	void functionref( var button ) devConfluenceOpen
+#endif
+}
+
+struct FileStruct_VMPersistence
+{
+	table< string, string > mergedPlaylistSelection
+	int footerMenuID = -1
+	string userFocusedPlaylist
+	array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray 
+}
+FileStruct_VMPersistence& fileVMPersistence
+
+#if DEV
+const bool DEBUG_PRINTS = false
+#endif
+const string MODEL_NAME = "gameModeSelect"
+const bool ONE_PAGE_MODE = true 
+const bool ALLOW_AUTOMATED_COLUMN_EXPANSION = true 
+const int MAX_TABS = ONE_PAGE_MODE ? ( ALLOW_AUTOMATED_COLUMN_EXPANSION ? 8 : 4 ) : 8
+const bool ENABLE_DEV_TAB = !ONE_PAGE_MODE 
+const bool ENABLE_FEATURED_TAB = !ONE_PAGE_MODE 
+const bool ALL_PLAYLISTS_ARE_FEATURED = false 
+const bool ALLOW_DESTRUCTIVE_EXPANSION = true 
+const bool ALLOW_AUTOMATED_TILE_EXPANSION = true 
+const bool ALLOW_SCROLLING_CONTENT = true 
+const bool USE_LARGER_TILES = false
+const int MAX_UPDATE_DELAY = 600
+
+void function InitRTKGameModeSelectPanel( var panel )
+{
+	
+}
+
+void function RTKGameModeSelect_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "RTKGameModeSelectOnPreDestroy" )
+}
+
+void function RTKGameModeSelect_OnInitialize( rtk_behavior self )
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_NAME, true ) )
+	RTKGameModeSelect_InstantiateTabs( self, UpdateDataModels() )
+	RTKGameModeSelect_InitalizeFooter( self )
+	RTKGameModeSelect_InitalizeRefreshCallbacks( self )
+	RTKGameModeSelect_InitalizeClickBGToClose( self )
+	RTKGameModeSelect_InitalizeDpad( self )
+
+	
+	UpdateOpenModeSelectDialog()
+}
+
+void function RTKGameModeSelect_RebuildContentThread( rtk_behavior self, rtk_behavior button )
+{
+	EndSignal( uiGlobal.signalDummy, "RTKGameModeSelectOnPreDestroy" )
+	UpdateDataModels()
+	WaitEndFrame()
+	WaitFrame()
+	RTKButton_SetButtonState( button, RTKBUTTONSTATE_HIGHLIGHTED )
+}
+
+void function RTKGameModeSelect_InitalizeClickBGToClose( rtk_behavior self )
+{
+	rtk_behavior ornull button = self.PropGetBehavior( "button" )
+	if ( button != null )
+	{
+		expect rtk_behavior( button )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			PCBackButton_Activate( null )
+		} )
+	}
+}
+
+void function RTKGameModeSelect_InitalizeDpad( rtk_behavior self )
+{
+	rtk_behavior ornull directionalNavigation = self.PropGetBehavior( "directionalNavigation" )
+	if ( directionalNavigation != null )
+	{
+		expect rtk_behavior( directionalNavigation )
+
+		RTKDirectionalNavigation_OnRootFocused( directionalNavigation, false, true )
+	}
+}
+
+void function RTKGameModeSelect_InitalizeRefreshCallbacks( rtk_behavior self )
+{
+	thread RTKGameModeSelect_RefreshThread( self )
+
+	if( !HasCallback_UserInfoUpdated( OnUserInfoUpdated ) )
+		AddCallback_UserInfoUpdated( OnUserInfoUpdated )
+
+	if( !HasCallback_OnPartyMemberAdded( OnPartyMembersChanged ) )
+		AddCallback_OnPartyMemberAdded( OnPartyMembersChanged )
+
+	if( !HasCallback_OnPartyMemberRemoved( OnPartyMembersChanged ) )
+		AddCallback_OnPartyMemberRemoved( OnPartyMembersChanged )
+
+	AddCallback_OnPartyUpdated( OnPartyMembersChanged )
+}
+
+void function RTKGameModeSelect_InitalizeFooter( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	p.ftueDialogOpen = void function( var button ) : ( self ) {
+		if ( FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+		{
+			FTUEFlow_OpenCYOAMenu()
+		}
+	}
+	RegisterButtonPressedCallback( BUTTON_STICK_LEFT, p.ftueDialogOpen )
+	RegisterButtonPressedCallback( KEY_F1, p.ftueDialogOpen )
+
+#if DEV
+		p.devConfluenceOpen = void function( var button ) : ( self ) {
+			LaunchExternalWebBrowser( "https://confluence.respawn.com/x/BSZvCw", WEBBROWSER_FLAG_NONE )
+		}
+		RegisterButtonPressedCallback( KEY_F2, p.devConfluenceOpen )
+#endif
+
+	
+	if ( fileVMPersistence.footerMenuID == -1 )
+	{
+		fileVMPersistence.footerMenuID = AssignMenuGUID()
+	}
+	if ( fileVMPersistence.footerMenuID != -1 )
+	{
+		RTKFooters_Add( fileVMPersistence.footerMenuID, LEFT, BUTTON_B, "#B_BUTTON_BACK", KEY_ESCAPE, "#B_BUTTON_BACK", PCBackButton_Activate )
+		RTKFooters_Add( fileVMPersistence.footerMenuID, LEFT, BUTTON_STICK_LEFT, "#GAME_MODE_SELECTOR_CYOA_PROMPT", KEY_F1, "#GAME_MODE_SELECTOR_CYOA_PROMPT", p.ftueDialogOpen,
+			bool function() : ( self ) {
+				return FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() )
+			}
+		)
+#if DEV
+			RTKFooters_Add( fileVMPersistence.footerMenuID, LEFT, BUTTON_INVALID, "", KEY_F2, "%[|F2]% DEV:Confluence", p.devConfluenceOpen )
+#endif
+		RTKFooters_Update()
+	}
+}
+
+void function RTKGameModeSelect_RefreshThread( rtk_behavior self )
+{
+	EndSignal( uiGlobal.signalDummy, "RTKGameModeSelectOnPreDestroy" )
+
+	int updateDelay = ( GetSoonestPlaylistRotationTime() - GetUnixTimestamp() ) 
+
+	float maxMatchmakingDelayEndTime = LobbyPlaylist_GetCurrentMaxMatchmakingDelayEndTime()
+	if ( maxMatchmakingDelayEndTime >= 0.001 )
+	{
+		updateDelay = minint( updateDelay, int( ceil ( maxMatchmakingDelayEndTime - UITime() ) ) ) 
+	}
+
+	if ( updateDelay <= 0 || updateDelay >= MAX_UPDATE_DELAY )
+		updateDelay = MAX_UPDATE_DELAY
+
+	wait updateDelay + 1
+
+	UpdateDataModels()
+
+	WaitEndFrame()
+	thread RTKGameModeSelect_RefreshThread( self )
+}
+
+void function RTKGameModeSelect_OnPreDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKGameModeSelectOnPreDestroy" )
+
+	if ( HasGamemodeSelector() ) 
+	{
+		DismissGamemodeSelector()  
+	}
+
+	if( HasCallback_UserInfoUpdated( OnUserInfoUpdated ) )
+		RemoveCallback_UserInfoUpdated( OnUserInfoUpdated )
+
+	if( HasCallback_OnPartyMemberRemoved( OnPartyMembersChanged ) )
+		RemoveCallback_OnPartyMemberRemoved( OnPartyMembersChanged )
+
+	if( HasCallback_OnPartyMemberAdded( OnPartyMembersChanged ) )
+		RemoveCallback_OnPartyMemberAdded( OnPartyMembersChanged )
+
+	RemoveCallback_OnPartyUpdated( OnPartyMembersChanged )
+
+	PrivateData p
+	self.Private( p )
+	DeregisterButtonPressedCallback( BUTTON_STICK_LEFT, p.ftueDialogOpen )
+	DeregisterButtonPressedCallback( KEY_F1, p.ftueDialogOpen )
+
+#if DEV
+	DeregisterButtonPressedCallback( KEY_F2, p.devConfluenceOpen )
+#endif
+
+	if ( fileVMPersistence.footerMenuID != -1 )
+	{
+		RTKFooters_RemoveAll( fileVMPersistence.footerMenuID )
+	}
+}
+
+void function RTKGameModeSelect_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_NAME )
+	fileVMPersistence.playlistButtonsScriptArray.clear()
+}
+
+void function RTKGameModeSelect_UpdateUpcomingContentDataModel( rtk_behavior self, string playlistName, string scheduleName, bool isVisible = false )
+{
+	if ( playlistName == "" )
+		return
+
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	RTKStruct_SetBool( modelRootStruct, "visible", isVisible )
+
+	if ( !isVisible )
+		return
+
+	thread DelaySetUpcomingContentDataModelVisible()
+
+	if ( scheduleName == "" )
+	{
+		string ornull scheduleNameFromPlaylist = GetScheduleFromPlaylist( playlistName )
+		if ( scheduleNameFromPlaylist == null )
+			return
+		scheduleName = expect string ( scheduleNameFromPlaylist )
+	}
+
+	if ( scheduleName == "" )
+		return
+
+	const int MAX_UPCOMING_TILES = 4
+	for (int i = 0; i < MAX_UPCOMING_TILES; i++ )
+	{
+		string nextName = playlistName
+
+		if ( i != 0 )
+			nextName = GetNextPlaylistInRotationForSchedule(scheduleName , i )
+
+		string mapName = GetPlaylistMapVarStringOrPlaylistVarString( nextName, 0, "map_name", "" )
+		string modeName = GetModeName( nextName, 0, "", i > 0 ? playlistName : "" )
+		asset thumbnailAsset
+
+		string imageKey  = GetPlaylistMapVarStringOrPlaylistVarString( nextName, 0, "panel_image", "" )
+		if ( imageKey == "")
+		{
+			imageKey  = GetPlaylistMapVarStringOrPlaylistVarString( nextName, 0, "image", "" )
+		}
+		thumbnailAsset = GetThumbnailImageFromImageMap( imageKey )
+
+		
+		RTKStruct_SetString( modelRootStruct, "map" + ( i + 1 ) + "Name", mapName )
+		RTKStruct_SetString( modelRootStruct, "map" + ( i + 1 ) + "Mode", modeName )
+		RTKStruct_SetAssetPath( modelRootStruct, "map" + ( i + 1 ) + "Image", thumbnailAsset )
+	}
+}
+
+void function RTKGameModeSelect_InstantiateTabs( rtk_behavior self, array< RTKGameModeSelectPlaylistTab_Struct > playlistTabsScriptArray )
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	
+	if ( ONE_PAGE_MODE )
+	{
+		
+		rtk_panel ornull content = self.PropGetPanel( "content" )
+		if ( content != null )
+		{
+			expect rtk_panel( content )
+
+			array< rtk_panel > children =  content.GetChildren()
+			foreach ( child in children  )
+			{
+				RTKPanel_Destroy( child )
+			}
+
+			int availableColumnCount = MAX_TABS
+			int rowCount = 3
+			float columnPadding = USE_LARGER_TILES ? 28.0 : 32.0
+			float columnWidth =  USE_LARGER_TILES ? 440.0 : 422.0 
+			columnWidth += columnPadding
+			float rowHeight = USE_LARGER_TILES ? 240.0 : 232.0 
+			float rowPadding = USE_LARGER_TILES ? 22.0 : 24.0
+			rowHeight += rowPadding
+
+			
+			array< int > tabIndexToColumnCount
+			tabIndexToColumnCount.resize( MAX_TABS, 0 )
+
+			if ( ALLOW_AUTOMATED_COLUMN_EXPANSION )
+			{
+				for ( int i = 0; i < playlistTabsScriptArray.len() && i < tabIndexToColumnCount.len() && availableColumnCount > 0; i++ )
+				{
+					int playlistRequestedTiles = 0 
+					for ( int j = 0; j < playlistTabsScriptArray[i].playlists.len(); j++ )
+					{
+						if ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height != "" )
+						{
+							int newTiles = int( min( rowCount, max( 1, int ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height ) ) ) )
+
+							if ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_max != "" )
+							{
+								int maxHeight = minint( rowCount, int ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_max ) )
+								newTiles = minint( newTiles, maxHeight )
+							}
+
+							if ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_min != "" )
+							{
+								int minHeight = maxint( 1, int ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_min ) )
+								newTiles = maxint( newTiles, minHeight )
+							}
+
+							playlistRequestedTiles += newTiles
+						}
+						else
+						{
+							int newTiles = 1
+
+							if ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_min != "" )
+							{
+								int minHeight = maxint( 1, int ( playlistTabsScriptArray[i].playlists[j].ui_mode_select_grid_height_min ) )
+								newTiles = maxint( newTiles, minHeight )
+							}
+
+							playlistRequestedTiles += newTiles
+						}
+					}
+					int columnsRequired = int( ceil( playlistRequestedTiles / float( rowCount ) ) )
+					tabIndexToColumnCount[i] = columnsRequired <= availableColumnCount ? columnsRequired : 0
+					availableColumnCount -= tabIndexToColumnCount[i]
+#if DEV
+					if ( DEBUG_PRINTS )
+						printt("GMS: tabIndexToColumnCount i:", i, " cols:", tabIndexToColumnCount[i], " columnsRequired:", columnsRequired, " spare:", availableColumnCount, " playlists:", playlistTabsScriptArray[i].playlists.len())
+#endif
+				}
+			}
+			else
+			{
+				for ( int i = 0; i < playlistTabsScriptArray.len() && i < tabIndexToColumnCount.len() && availableColumnCount > 0; i++ )
+				{
+					tabIndexToColumnCount[i] = 1
+					availableColumnCount -= tabIndexToColumnCount[i]
+				}
+			}
+
+			float xOffset = 0
+			
+			bool centerContent = ( MAX_TABS - availableColumnCount ) <= ( MAX_TABS / 2 )
+			if ( centerContent )
+			{
+				RTKStruct_SetBool( modelRootStruct, "centerContent", true )
+				xOffset = content.GetWidth()
+
+				
+				for( int i = 0; i < tabIndexToColumnCount.len(); i ++ )
+				{
+					xOffset -= ( columnWidth + columnPadding ) * ( tabIndexToColumnCount[i] )
+				}
+				
+				xOffset /= 2.0
+			}
+			else
+			{
+				xOffset += columnPadding / 2
+				RTKStruct_SetBool( modelRootStruct, "centerContent", false )
+			}
+
+			for( int i = 0; i < playlistTabsScriptArray.len(); i ++ )
+			{
+				RTKGameModeSelectPlaylistTab_Struct playlistTabScript = playlistTabsScriptArray[i]
+
+				if ( playlistTabScript.playlists.len() <= 0 )
+				{
+					Warning("GMS: this playlist tab has no playlists", playlistTabScript.displayName, " at index ", i)
+					continue
+				}
+
+				if ( i >= tabIndexToColumnCount.len() )
+				{
+					Warning("GMS: more playlist tabs requested than columns are assigned", playlistTabScript.displayName, " at index ", i)
+					continue 
+				}
+
+				if ( tabIndexToColumnCount[i] == 0 )
+				{
+					Warning("GMS: tab assigned zero column width ", playlistTabScript.displayName, " at index ", i)
+					continue
+				}
+
+				float tabWidth = columnWidth * tabIndexToColumnCount[i]
+				if ( !ALLOW_SCROLLING_CONTENT && (xOffset + tabWidth > content.GetWidth() ) )
+				{
+					Warning("GMS: no room to instantiate tab", playlistTabScript.displayName)
+					continue
+				}
+
+				rtk_panel tabPanel = RTKPanel_Instantiate( $"ui_rtk/menus/game_mode_select/rtk_game_mode_select_column.rpak", content, "tab_panel_" + i )
+				string bindPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "tabs[" + i + "]", true, [ MODEL_NAME ] )
+				tabPanel.SetBindingRootPath( bindPath )
+
+				rtk_behavior ornull columnAnimator = tabPanel.FindBehaviorByName( "ColumnAnimator" )
+				if ( columnAnimator != null )
+				{
+					expect rtk_behavior( columnAnimator )
+					RTKAnimator_Seek( columnAnimator, "onShow", max( 0, 0.5 - ( 0.08 * i ) ) )
+					RTKAnimator_Resume( columnAnimator )
+				}
+
+#if DEV
+				if ( DEBUG_PRINTS )
+					printt("GMS: instantiate playlisttab", playlistTabScript.displayName, " index ", playlistTabScript.index, " into uitab ",  i, bindPath)
+#endif
+				tabPanel.SetAnchor( RTKANCHOR_TOP_LEFT )
+				tabPanel.SetPivot( <0, 0, 0> )
+				tabPanel.SetPositionXY( xOffset, 0 )
+				tabPanel.SetSize( < tabWidth, content.GetHeight(), 0 > )
+
+				
+				
+				
+				
+
+				xOffset += tabWidth
+
+				int gridSlots = rowCount * tabIndexToColumnCount[i]
+				RTKGameModeSelect_InstantiateTiles( self, tabPanel, gridSlots, i, playlistTabScript.playlists, < columnWidth - columnPadding, rowHeight - rowPadding, 0.0>, < columnPadding, rowPadding, 0.0 > )
+			}
+		}
+	}
+	else
+	{
+		Assert( false, "RTKGameModeSelect multi page implementation is incomplete, enable ONE_PAGE_MODE" )
+		
+	}
+}
+
+void function RTKGameModeSelect_InstantiateTiles( rtk_behavior self, rtk_panel parentPanel, int gridSlots, int tabIndex, array< RTKGameModeSelectPlaylistButton_Struct > playlists, vector gridSize, vector padding )
+{
+	if ( gridSlots <= 0 )
+	{
+		Warning("GMS: RTKGameModeSelect_InstantiateTiles called with no grid slots")
+		return
+	}
+
+	float parentWidth = parentPanel.GetWidth()
+	float parentHeight = parentPanel.GetHeight()
+
+	float xOffset = 0.0
+	float yOffset = USE_LARGER_TILES ? 40.0 : 38.0
+	gridSlots = gridSlots - playlists.len() 
+	if ( gridSlots < 0 )
+		gridSlots = 0 
+
+	foreach ( int i, RTKGameModeSelectPlaylistButton_Struct playlist in playlists )
+	{
+#if DEV
+		if ( DEBUG_PRINTS )
+			printt("GMS: RTKGameModeSelect_InstantiateTiles playlist", playlist.name, i, " in tab ", tabIndex )
+#endif
+		if ( gridSlots < 0 )
+		{
+			Warning("GMS: RTKGameModeSelect_InstantiateTiles reached negative grid slots", playlist.name, i, " in tab ", tabIndex,  " gridSlots ", gridSlots, " playlists.len() ", playlists.len() )
+		}
+
+		string bindingPath = "&" + RTK_MODELTYPE_MENUS + "." + MODEL_NAME + ".tabs[" + tabIndex + "].playlists[" + i + "]"
+
+		rtk_panel panel = RTKPanel_Instantiate( playlist.prefab, parentPanel, "GameModeSelectButton_" + i )
+
+		if ( playlist.prefabAddon != $"" )
+		{
+			rtk_panel panelAddon = RTKPanel_Instantiate( playlist.prefabAddon, panel, "GameModeSelectButton_addon"  + i )
+			panelAddon.SetBindingRootPath( bindingPath )
+		}
+
+		rtk_behavior ornull button = panel.FindBehaviorByTypeName( "Button" )
+		if ( button != null )
+		{
+			expect rtk_behavior( button )
+
+			rtk_behavior ornull imageLoopingAnimator = button.GetPanel().FindBehaviorByName( "ImageLoopingAnimator" )
+			rtk_behavior ornull borderLoopingAnimator = button.GetPanel().FindBehaviorByName( "BorderLoopingAnimator" )
+			rtk_behavior ornull borderAnimator = button.GetPanel().FindBehaviorByName( "BorderAnimator" )
+			rtk_behavior ornull imageAnimator = button.GetPanel().FindBehaviorByName( "ImageAnimator" )
+
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, playlist ) {
+				
+				RTKGameModeSelect_TileOnPressed( self, button, playlist, keycode )
+			} )
+
+			self.AutoSubscribe( button, "onHighlightedOrFocused", function( rtk_behavior button, int prevState ) : ( self, playlist, bindingPath, imageLoopingAnimator, borderLoopingAnimator, borderAnimator, imageAnimator ) {
+				if ( prevState == 3 ) 
+					return
+
+				RTKGameModeSelectPlaylistButton_Struct playlistFresh = RTKGameModeSelect_GetCachedPlaylistStruct( self, playlist )
+
+				if ( playlistFresh.name == "" )
+					return
+
+				fileVMPersistence.userFocusedPlaylist = playlistFresh.name
+
+				bool showUpcomingMaps = playlistFresh.ui_mode_select_show_upcoming == "1" || playlistFresh.ui_mode_select_show_upcoming == ""
+				RTKGameModeSelect_UpdateUpcomingContentDataModel( self, playlistFresh.name, playlistFresh.scheduleName, showUpcomingMaps )
+
+				if ( imageLoopingAnimator != null )
+				{
+					rtk_behavior imageLoopingAnimatorNotNull = expect rtk_behavior( imageLoopingAnimator ) 
+					if ( RTKAnimator_GetCurrentAnimation( imageLoopingAnimatorNotNull ) == "" )
+					{
+						RTKAnimator_Seek( imageLoopingAnimatorNotNull, "onHighlightedOrFocused", 0.0 )
+					}
+					RTKAnimator_Resume( imageLoopingAnimatorNotNull )
+				}
+
+				if ( borderLoopingAnimator != null )
+				{
+					RTKAnimator_PlayAnimation( expect rtk_behavior( borderLoopingAnimator ), "onHighlightedOrFocused" )
+				}
+
+				if ( borderAnimator != null )
+				{
+					RTKAnimator_PlayAnimation( expect rtk_behavior( borderAnimator ), "onHighlightedOrFocused" )
+				}
+
+				if ( imageAnimator != null )
+				{
+					RTKAnimator_PlayAnimation( expect rtk_behavior( imageAnimator ), "onHighlightedOrFocused" )
+				}
+
+				playlist.hovered = true
+				playlist.notHovered = false
+				RTKDataModel_SetBool( bindingPath + ".hovered", true )
+				RTKDataModel_SetBool( bindingPath + ".notHovered", false )
+			} )
+
+			self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, playlist, bindingPath, imageLoopingAnimator, borderLoopingAnimator, borderAnimator, imageAnimator ) {
+				if ( prevState == 0 && !GetDpadNavigationActive() ) 
+					return
+
+				RTKGameModeSelect_UpdateUpcomingContentDataModel( self, playlist.name, playlist.scheduleName, false )
+
+				if ( borderLoopingAnimator != null )
+				{
+					RTKAnimator_Pause( expect rtk_behavior( borderLoopingAnimator ) )
+				}
+
+				if ( imageLoopingAnimator != null )
+				{
+					RTKAnimator_Stop( expect rtk_behavior( imageLoopingAnimator ) )
+				}
+
+				if ( borderAnimator != null )
+				{
+					RTKAnimator_PlayAnimation( expect rtk_behavior( borderAnimator ), "onIdle" )
+				}
+
+				if ( imageAnimator != null )
+				{
+					RTKAnimator_PlayAnimation( expect rtk_behavior( imageAnimator ), "onIdle" )
+				}
+
+				playlist.hovered = false
+				playlist.notHovered = true
+				RTKDataModel_SetBool( bindingPath + ".hovered", false )
+				RTKDataModel_SetBool( bindingPath + ".notHovered", true )
+			} )
+		}
+
+		rtk_panel ornull squadSizePanel = panel.FindDescendantByName( "Options" )
+		if ( squadSizePanel != null && button != null )
+		{
+			expect rtk_behavior( button )
+			expect rtk_panel( squadSizePanel )
+			self.AutoSubscribe( squadSizePanel, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, playlist, button ) {
+				rtk_behavior ornull childButton = newChild.FindBehaviorByTypeName( "Button" )
+				if ( childButton != null )
+				{
+					self.AutoSubscribe( childButton, "onPressed", function( rtk_behavior childButton, int keycode, int prevState ) : ( self, newChildIndex, playlist, button ) {
+						RTKGameModeSelectPlaylistButton_Struct curPlaylist = RTKGameModeSelect_GetCachedPlaylistStruct( self, playlist )
+						if ( newChildIndex < curPlaylist.playlistSquadSizes.len()  )
+						{
+							RTKGameModeSelect_PreviewAndMaybeCommitPlaylistSelection( self, button, curPlaylist.playlistSquadSizes[newChildIndex] )
+						}
+					} )
+				}
+			})
+		}
+
+		float tileWidth = gridSize.x
+		float tileHeight = gridSize.y
+		float tilePadding = padding.x
+		float rowPadding = padding.y
+
+		bool destructiveExpansionWarning = false
+		if ( playlist.ui_mode_select_grid_height == "" && ALLOW_AUTOMATED_TILE_EXPANSION )
+		{
+			int maxHeight = INT_MAX
+			if ( playlist.ui_mode_select_grid_height_max != "" )
+				maxHeight = minint( maxHeight, int ( playlist.ui_mode_select_grid_height_max ) )
+
+			bool firstInColumn = ( i == 0 )
+			if ( ( yOffset + tileHeight ) > parentHeight )
+				firstInColumn = true 
+
+#if DEV
+			if ( DEBUG_PRINTS )
+				printt("GMS: auto ", playlist.ui_mode_select_grid_height, " gridSlots:", gridSlots, " i:", i, " firstInColumn:", firstInColumn, " maxHeight:", maxHeight)
+#endif
+
+			
+			if ( gridSlots >= 2 && firstInColumn && maxHeight >= 3 )
+			{
+				tileHeight *= 3.0
+				tileHeight += ( rowPadding * 2.0 )
+				gridSlots -= 2
+			} else if ( gridSlots >= 1 && firstInColumn && maxHeight >= 2 )
+			{
+				tileHeight *= 2.0
+				tileHeight += ( rowPadding * 1.0 )
+				gridSlots -= 1
+			}
+		}
+		else if ( int ( playlist.ui_mode_select_grid_height ) > 0 )
+		{
+			int prefGridHeightExtension = int ( playlist.ui_mode_select_grid_height ) - 1
+#if DEV
+			if ( DEBUG_PRINTS )
+				printt("GMS: override prefGridHeightExtension ", prefGridHeightExtension, " gridSlots ", gridSlots )
+#endif
+			if ( gridSlots < ( prefGridHeightExtension ) )
+			{
+				destructiveExpansionWarning = true
+			}
+
+			if ( !destructiveExpansionWarning || ALLOW_DESTRUCTIVE_EXPANSION )
+			{
+				tileHeight *= ( 1.0 + prefGridHeightExtension )
+				tileHeight += ( rowPadding * prefGridHeightExtension )
+				gridSlots -= prefGridHeightExtension
+			}
+		}
+
+		panel.SetBindingRootPath( "&" + RTK_MODELTYPE_MENUS + "." + MODEL_NAME + ".tabs[" + tabIndex + "].playlists[" + i + "]" )
+
+		panel.SetPivot( <0, 0, 0> )
+		panel.SetSize( < tileWidth, tileHeight, 0 > )
+
+		if ( ( yOffset + tileHeight ) > parentHeight )
+		{
+			xOffset += panel.GetWidth()
+			xOffset += tilePadding
+
+			if ( ( xOffset + tileWidth ) > parentWidth )
+			{
+				Warning("GMS: ", tabIndex, i, " tile does not fit")
+				panel.SetActive( false )
+				panel.SetVisible( false )
+				continue
+			}
+			else
+			{
+				yOffset = 40.0
+			}
+		}
+
+		panel.SetPositionXY( xOffset, yOffset )
+#if DEV
+		if ( DEBUG_PRINTS )
+			printt( "GMS: ", tabIndex, i, " placed at x ", xOffset, " y ", yOffset, " tileHeight ", tileHeight, " tileWidth ", tileWidth, ( destructiveExpansionWarning && ALLOW_DESTRUCTIVE_EXPANSION ? " - warning, override caused destruction of other tiles " : "" ) )
+#endif
+		yOffset += panel.GetHeight()
+		yOffset += rowPadding
+	}
+
+}
+
+int function SortBySlot( RTKGameModeSelectPlaylistButton_Struct a, RTKGameModeSelectPlaylistButton_Struct b )
+{
+	int aId = int( a.ui_mode_select_tab_slot_index )
+	int bId = int( b.ui_mode_select_tab_slot_index )
+	if ( aId > bId )
+		return 1
+	else if ( bId > aId )
+		return -1
+
+	return 0
+}
+
+void function OnUserInfoUpdated( string hardware, string id )
+{
+	UpdateDataModels()
+}
+
+void function OnPartyMembersChanged()
+{
+	UpdateDataModels()
+}
+
+array< RTKGameModeSelectPlaylistTab_Struct > function UpdateDataModels()
+{
+	UpdateFeaturedSlot()
+	UpdateFTUEModelData()
+
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	rtk_array playlistTabsModelArray = RTKStruct_GetArray( modelRootStruct, "tabs" )
+	RTKArray_Clear( playlistTabsModelArray )
+
+	array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray = BuildButtonScriptArray()
+	playlistButtonsScriptArray = ApplyDefaultsToButtonScriptArray( playlistButtonsScriptArray )
+
+	array< RTKGameModeSelectPlaylistTab_Struct > playlistTabsScriptArray = BuildTabsScriptArray( playlistButtonsScriptArray )
+
+	RTKArray_SetValue( playlistTabsModelArray, playlistTabsScriptArray )
+
+	RTKStruct_SetBool( modelRootStruct, "isPartyLeader", IsPartyLeader() )
+	RTKStruct_SetInt( modelRootStruct, "partySize", GetPartySize() )
+
+#if DEV
+		RTKStruct_SetBool( modelRootStruct, "showDevPrompt", true )
+#endif
+
+	RTKFooters_Update()
+
+	fileVMPersistence.playlistButtonsScriptArray = playlistButtonsScriptArray
+
+	return playlistTabsScriptArray
+}
+
+void function UpdateFeaturedSlot()
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	RTKStruct_SetString( modelRootStruct, "featuredSlot", "" )
+	RTKStruct_SetString( modelRootStruct, "featuredSlotDisplayString", "" )
+
+	if ( FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+	{
+		string recommendedSlot = FTUEFlow_GameModeSelectRecommendation()
+		if ( recommendedSlot != "" )
+		{
+			RTKStruct_SetString( modelRootStruct, "featuredSlot", recommendedSlot )
+			RTKStruct_SetString( modelRootStruct, "featuredSlotDisplayString", "#MENU_RETICLE_RECOMMENDED" )
+			return
+		}
+	}
+
+	string currentLTM = Playlist_GetLTMSlotPlaylist()
+	string currentLTMTrunc = currentLTM.len() > 31 ? currentLTM.slice(0, 31) : currentLTM
+	string lastSeenLTM = string( GetPersistentVar( "lastSeenLobbyLTM" ) ) 
+	string lastSeenLTMTrunc = lastSeenLTM.len() > 31 ? lastSeenLTM.slice(0, 31) : lastSeenLTM
+
+	if ( (currentLTM != "") && (currentLTMTrunc != lastSeenLTMTrunc) && Lobby_IsPlaylistAvailable( currentLTM ) )
+	{
+		RTKStruct_SetString( modelRootStruct, "featuredSlot", "ltm" )
+		RTKStruct_SetString( modelRootStruct, "featuredSlotDisplayString", "#HEADER_NEW_MODE" )
+		return
+	}
+	else
+	{
+		array<ItemFlavor> currentEvents = GetActiveBuffetEventArray( GetUnixTimestamp() )
+		foreach ( event in currentEvents )
+		{
+			var sBlock         = ItemFlavor_GetSettingsBlock( event )
+			string highlight = GetSettingsBlockString( sBlock, "highlightGamemodeSelectorSlot" )
+			string highlightTrunc = highlight.len() > 31 ? highlight.slice(0, 31) : highlight
+			if ( highlight != "" && highlightTrunc != lastSeenLTMTrunc )
+			{
+				RTKStruct_SetString( modelRootStruct, "featuredSlot", highlight )
+				RTKStruct_SetString( modelRootStruct, "featuredSlotDisplayString", "#HEADER_NEW_EVENT" )
+				return
+			}
+		}
+	}
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+}
+
+void function UpdateFTUEModelData()
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	RTKStruct_SetBool( modelRootStruct, "showFTUEPrompt", FTUEFlow_IsInFTUEFlow( GetLocalClientPlayer() ) )
+	bool hasLocalPlayerCompletedTraining = HasLocalPlayerCompletedTraining() || IsLocalPlayerExemptFromTraining()
+	bool hasLocalPlayerCompletedNewPlayerOrientation = hasLocalPlayerCompletedTraining
+
+
+		hasLocalPlayerCompletedNewPlayerOrientation = HasLocalPlayerCompletedNewPlayerOrientation() || IsLocalPlayerExemptFromNewPlayerOrientation()
+
+
+	RTKStruct_SetBool( modelRootStruct, "hasCompletedTraining", hasLocalPlayerCompletedTraining )
+	RTKStruct_SetBool( modelRootStruct, "hasCompletedPlayerOrientation", hasLocalPlayerCompletedNewPlayerOrientation )
+
+
+	if ( hasLocalPlayerCompletedNewPlayerOrientation )
+
+
+
+	{
+		RTKStruct_SetString( modelRootStruct, "headerText", "" )
+		RTKStruct_SetString( modelRootStruct, "headerDescText", "#GAMEMODE_SELECT_HEADER" )
+	}
+
+	else if ( hasLocalPlayerCompletedTraining )
+	{
+		RTKStruct_SetString( modelRootStruct, "headerText", "#PL_WELCOME_TO_APEX" )
+		RTKStruct_SetString( modelRootStruct, "headerDescText", "#GAMEMODE_SELECT_HEADER_COMPLETE_ORIENTATION" )
+	}
+
+	else
+	{
+		RTKStruct_SetString( modelRootStruct, "headerText", "#PL_WELCOME_TO_APEX" )
+		RTKStruct_SetString( modelRootStruct, "headerDescText", "#GAMEMODE_SELECT_HEADER_COMPLETE_TRAINING" )
+	}
+}
+
+array< RTKGameModeSelectPlaylistTab_Struct > function BuildTabsScriptArray( array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray )
+{
+	array< RTKGameModeSelectPlaylistTab_Struct > playlistTabsScriptArray
+
+	
+	if ( ENABLE_FEATURED_TAB )
+	{
+		RTKGameModeSelectPlaylistTab_Struct featuredTab
+		featuredTab.index = playlistTabsScriptArray.len()
+		featuredTab.displayName = "#GAME_MODE_SELECTOR_FEATURED_TITLE"
+		playlistTabsScriptArray.push( featuredTab )
+
+		
+		for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+		{
+			RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+			if ( playlistButton.ui_mode_select_featured == "1" || ALL_PLAYLISTS_ARE_FEATURED )
+			{
+				featuredTab.playlists.push( playlistButton )
+			}
+		}
+	}
+
+	
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+
+		if ( playlistButton.ui_mode_select_tab_index == "" )
+			continue
+
+		int tabIndex = int( playlistButton.ui_mode_select_tab_index ) + ( ENABLE_FEATURED_TAB ? 1 : 0 )
+		while ( tabIndex >= playlistTabsScriptArray.len() && playlistTabsScriptArray.len() <= MAX_TABS )
+		{
+			RTKGameModeSelectPlaylistTab_Struct newTab
+			newTab.index = playlistTabsScriptArray.len()
+			playlistTabsScriptArray.push( newTab )
+		}
+		if ( tabIndex < playlistTabsScriptArray.len() )
+		{
+			if ( !playlistButton.hidden )
+				playlistTabsScriptArray[ tabIndex ].playlists.push( playlistButton )
+		}
+	}
+
+	
+	for ( int i = playlistTabsScriptArray.len() - 1; i >= 0; i-- )
+	{
+		if ( playlistTabsScriptArray[i].playlists.len() == 0 )
+			playlistTabsScriptArray.remove( i )
+	}
+
+	
+	for ( int i = playlistTabsScriptArray.len() - 1; i >= 0; i-- )
+	{
+		RTKGameModeSelectPlaylistTab_Struct tab = playlistTabsScriptArray[i]
+		tab.showRightSpacer = i < ( playlistTabsScriptArray.len() - 1 )
+	}
+
+	for ( int i = 0; i < playlistTabsScriptArray.len(); i++ )
+	{
+		playlistTabsScriptArray[ i ].playlists.sort( SortBySlot )
+	}
+
+#if DEV
+		if ( ENABLE_DEV_TAB )
+		{
+			RTKGameModeSelectPlaylistTab_Struct devTab
+			devTab.index = playlistTabsScriptArray.len()
+			devTab.displayName = "GAME_MODE_SELECTOR_DEV_TITLE"
+			playlistTabsScriptArray.push( devTab )
+
+			
+			for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+			{
+				RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+				if ( playlistButton.ui_mode_select_tab_index != "" )
+					continue
+
+				devTab.playlists.push( playlistButton )
+			}
+		}
+#endif
+
+	
+	for( int i = 0; i < playlistTabsScriptArray.len(); i ++ )
+	{
+		RTKGameModeSelectPlaylistTab_Struct playlistTabScript = playlistTabsScriptArray[i]
+
+		for( int j = 0; j < playlistTabScript.playlists.len(); j ++ )
+		{
+			RTKGameModeSelectPlaylistButton_Struct playlistScript = playlistTabScript.playlists[j]
+
+			if ( playlistScript.ui_mode_select_tab_index_name != "" && playlistTabScript.displayName == "" )
+			{
+				playlistTabScript.displayName = playlistScript.ui_mode_select_tab_index_name
+			}
+		}
+	}
+
+	return playlistTabsScriptArray
+}
+
+array< RTKGameModeSelectPlaylistButton_Struct > function BuildButtonScriptArray()
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+
+	array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray
+
+	
+	array<string> playlists = GetVisiblePlaylistNames()
+	for ( int i = 0; i < playlists.len(); i++ )
+	{
+		string playlistName = playlists[i]
+		RTKGameModeSelectPlaylistButton_Struct newButtonStruct
+
+		ApplyPlaylistButtonPlaylistVars( playlistName, newButtonStruct, modelRootStruct )
+		ApplyPlaylistButtonLocks( playlistName, newButtonStruct, modelRootStruct )
+		ApplyPlaylistButtonTimers( playlistName, newButtonStruct, modelRootStruct )
+		ApplyPlaylistButtonRankedBadge( playlistName, newButtonStruct, modelRootStruct )
+
+#if DEV
+		if ( DEBUG_PRINTS )
+			printt( "GMS: BuildButtonScriptArray adding ", playlistName, " to playlistButtonsScriptArray" )
+#endif
+		playlistButtonsScriptArray.push( newButtonStruct )
+	}
+
+	playlistButtonsScriptArray = MergePlaylistButtons( playlistButtonsScriptArray )
+
+	return playlistButtonsScriptArray
+}
+
+RTKGameModeSelectPlaylistButton_Struct function ApplyPlaylistButtonPlaylistVars( string playlistName, RTKGameModeSelectPlaylistButton_Struct newButtonStruct, rtk_struct modelRootStruct )
+{
+	string featuredSlot = RTKStruct_GetString( modelRootStruct, "featuredSlot" )
+	string featuredSlotDisplayString = RTKStruct_GetString( modelRootStruct, "featuredSlotDisplayString" )
+	string undecoratedPlaylistName = GetUndecoratedPlaylistName( playlistName )
+	int mapIdx = playlistName != "" ? GetPlaylistActiveMapRotationIndex( playlistName ) : -1
+	string scheduleName = ""
+	string ornull scheduleNameOrNull = GetScheduleFromPlaylist( playlistName )
+	if ( scheduleNameOrNull != null )
+	{
+		scheduleName = expect string( scheduleNameOrNull )
+	}
+	else
+	{
+		scheduleName = newButtonStruct.slotName
+	}
+
+	string tileImageKey = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "tile_image", "" )
+	string imageKey  = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "image", "" ) 
+	string panelImageKey = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "panel_image", "" ) 
+	asset panelImageAsset = GameMode_GetTileImage( [ tileImageKey, panelImageKey ] )
+	asset imageAsset = GameMode_GetTileImage( [ tileImageKey, imageKey ] )
+	asset thumbnailAsset = GetThumbnailImageFromImageMap( imageKey ) 
+	if ( HasEventTakeOverActive() && IsPlaylistLockedForEvent( playlistName ) )
+	{
+		if ( scheduleName == "mixtape" )
+			imageAsset = GameMode_GetTileImage( [ "mixtape_locked" ] )
+		else
+			imageAsset = GameMode_GetTileImage( [ tileImageKey + "_event_locked", imageKey + "_event_locked" ] )
+
+		thumbnailAsset = GetThumbnailImageFromImageMap( "event_locked" )
+		newButtonStruct.imageAssetTakeover = true
+		newButtonStruct.imageAsset = imageAsset
+		newButtonStruct.imageAsset1h = imageAsset
+		newButtonStruct.imageAsset2h = imageAsset
+		newButtonStruct.imageAsset3h = imageAsset
+	}
+	else
+	{
+		newButtonStruct.imageAsset = imageAsset
+		newButtonStruct.imageAsset1h = GameMode_GetTileImage( [ tileImageKey, imageKey ], 1 )
+		newButtonStruct.imageAsset2h = GameMode_GetTileImage( [ tileImageKey, imageKey ], 2 )
+		newButtonStruct.imageAsset3h = GameMode_GetTileImage( [ tileImageKey, imageKey ], 3 )
+	}
+
+	string mapName =  GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "map_name", "" )
+	string descText = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "description", "#HUD_UNKNOWN" )
+
+	string titleOverride = GetPlaylistVarString( playlistName, "survival_takeover_name", "" )
+	string title = titleOverride != "" ? titleOverride : GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "title" )
+	if ( title == "" )
+		title = GetModeName( playlistName, mapIdx, "#PLAYLIST_UNAVAILABLE" )
+
+	
+	bool isInFlow = NewPlayerMatchMaking_IsInMatchMakingFlow( GetLocalClientPlayer() )
+	bool isContinuousMatchPlayer = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() ) == eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH
+	if ( isInFlow && isContinuousMatchPlayer )
+	{
+		if ( GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "title" ) == "#GAME_MODE_UNRANKED" )
+		{
+			title = "#PL_ORIENTATION_MATCH"
+		}
+	}
+
+	string subtitle = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "subtitle" )
+	if ( subtitle == "" )
+		subtitle = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "gamemode_select_category_name" )
+	if ( subtitle == "" )  
+		subtitle = " "
+
+	newButtonStruct.hidden = newButtonStruct.hidden || GetPlaylistVarBool( playlistName, "ui_mode_select_hide", false )
+	newButtonStruct.name = playlistName
+	newButtonStruct.displayName = GetConVarBool( "gamemode_select_show_decorated_playlist" ) ? playlistName : GetConVarBool( "gamemode_select_show_undecorated_playlist" ) ? undecoratedPlaylistName : title
+	newButtonStruct.emblemOffset = title.len() >= 17 
+	newButtonStruct.subDisplayName = subtitle
+	newButtonStruct.mapName = mapName
+	newButtonStruct.modeName = GetModeName( playlistName, 0, "", playlistName )
+	newButtonStruct.slotName = undecoratedPlaylistName
+	newButtonStruct.scheduleName = scheduleName
+	newButtonStruct.isFeatured = featuredSlot == newButtonStruct.scheduleName
+	newButtonStruct.featuredSlotDisplayString = newButtonStruct.isFeatured ? featuredSlotDisplayString : ""
+	newButtonStruct.panelImage = panelImageAsset
+	newButtonStruct.thumbnailAsset = thumbnailAsset
+	newButtonStruct.description = descText
+	newButtonStruct.showMoreInfo = FeatureHasTutorialTabs( GetPlaylistVarString( playlistName, "ui_rules", "" ) )
+	newButtonStruct.ui_mode_select_tab_index = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_tab_index" )
+	newButtonStruct.ui_mode_select_tab_index_name = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_tab_index_name" )
+	newButtonStruct.ui_mode_select_tab_slot_index = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_tab_slot_index" )
+	newButtonStruct.ui_mode_select_featured = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_featured" )
+	newButtonStruct.ui_mode_select_featured_slot = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_featured_slot" )
+	newButtonStruct.ui_mode_select_grid_height = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_grid_height" )
+	newButtonStruct.ui_mode_select_grid_height_min = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_grid_height_min" )
+	newButtonStruct.ui_mode_select_grid_height_max = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_grid_height_max" )
+	
+	newButtonStruct.ui_mode_select_show_upcoming = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_show_upcoming" )
+	newButtonStruct.ui_mode_select_req_training = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_req_training" )
+	newButtonStruct.ui_mode_select_req_orientation = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_req_orientation" )
+	newButtonStruct.ui_mode_select_combine_key = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_combine_key" )
+
+	int currentPlaylistIndex = GetPlaylistVarInt( playlistName, "gamemode_selector_index", GAMEMODE_INVALID_INDEX )
+	if ( !newButtonStruct.isFeatured && currentPlaylistIndex != GAMEMODE_INVALID_INDEX && currentPlaylistIndex >= 0 && currentPlaylistIndex <= GAMEMODE_MAX_SEEN_INDEX )
+	{
+		if ( !(expect bool( GetPersistentVar( format( "gamemodeSelectorSeenIndex[%d]", currentPlaylistIndex ) ) )) )
+		{
+			newButtonStruct.isFeatured = true
+			newButtonStruct.featuredSlotDisplayString = Localize( "#HEADER_NEW_MODE" )
+		}
+	}
+
+	string modeSelectorEmblem = GetPlaylistMapVarStringOrPlaylistVarString( playlistName, mapIdx, "ui_mode_select_emblem" )
+	if ( modeSelectorEmblem != "" && modeSelectorEmblem != "0" )
+	{
+		if ( modeSelectorEmblem == "1" )
+		{
+			newButtonStruct.emblemImage = GetModeEmblemImage( playlistName )
+		}
+		else
+		{
+			newButtonStruct.emblemImage = GetModeEmblemImage( modeSelectorEmblem )
+		}
+	}
+	else if ( newButtonStruct.scheduleName == "mixtape" )
+	{
+		newButtonStruct.emblemImage = GetModeEmblemImage( playlistName )
+	}
+
+	return newButtonStruct
+}
+
+RTKGameModeSelectPlaylistButton_Struct function ApplyPlaylistButtonLocks( string playlistName, RTKGameModeSelectPlaylistButton_Struct newButtonStruct, rtk_struct modelRootStruct )
+{
+	entity localClientPlayer = GetLocalClientPlayer()
+
+	bool hasLocalPlayerCompletedTraining = RTKStruct_GetBool( modelRootStruct, "hasCompletedTraining" )
+	bool hasLocalPlayerCompletedNewPlayerOrientation = RTKStruct_GetBool( modelRootStruct, "hasCompletedPlayerOrientation" )
+
+	bool isPlaylistAvailable = Lobby_IsPlaylistAvailable( playlistName )
+	int playlistState = LobbyPlaylist_GetPlaylistState( playlistName ) 
+
+	newButtonStruct.locked = !isPlaylistAvailable
+	newButtonStruct.lockedReason = Localize( LobbyPlaylist_GetPlaylistStateString( playlistState ) )
+	newButtonStruct.disabled = false 
+	newButtonStruct.showSelectMode = !newButtonStruct.disabled
+
+	if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+	{
+		newButtonStruct.prefabAddon = $"ui_rtk/menus/game_mode_select/rtk_game_mode_select_ranked_addon.rpak"
+		newButtonStruct.gameModeSelectTileAction = eGameModeSelectTileActions.RANKED
+	}
+	else
+	{
+		newButtonStruct.gameModeSelectTileAction = eGameModeSelectTileActions.DEFAULT
+	}
+
+	bool notPartyLeader = !IsPartyLeader()
+	bool lockedByRoadToRanked = ( playlistState == ePlaylistState.RANKED_ACCESS_REQUIRED && GetConVarBool( RANKED_ENABLE_ROAD_TO_RANKED ) && Ranked_IsOngoingRoadToRankedChallenges( localClientPlayer ) )
+
+	if ( playlistState == ePlaylistState.PARTY_SIZE_OVER )
+	{
+		newButtonStruct.disabled = false
+	}
+
+	if ( notPartyLeader )
+	{
+		
+		newButtonStruct.showSelectMode = false
+		newButtonStruct.locked = true
+		if ( playlistState == ePlaylistState.AVAILABLE )
+			newButtonStruct.lockedReason = Localize( "#GAME_MODE_SELECTOR_NOT_PARTY_LEADER" )
+	}
+	else if ( lockedByRoadToRanked )
+	{
+		
+		newButtonStruct.gameModeSelectTileAction = eGameModeSelectTileActions.ROAD_TO_RANKED
+		newButtonStruct.showSelectMode = false
+		newButtonStruct.locked = true
+		newButtonStruct.disabled = false
+		newButtonStruct.showViewChallenges = true
+	}
+	else if ( !hasLocalPlayerCompletedTraining && newButtonStruct.ui_mode_select_req_training == "1" )
+	{
+		newButtonStruct.locked = true
+		newButtonStruct.showSelectMode = false
+		
+	}
+	else if ( !hasLocalPlayerCompletedNewPlayerOrientation && newButtonStruct.ui_mode_select_req_orientation == "1" )
+	{
+		newButtonStruct.locked = true
+		newButtonStruct.showSelectMode = false
+		
+	}
+	else if ( HasEventTakeOverActive() && IsPlaylistLockedForEvent( playlistName ) )
+	{
+		newButtonStruct.locked = true
+		newButtonStruct.showSelectMode = false
+		
+	}
+	else if ( newButtonStruct.disabled && GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+	{
+		if ( Playlist_ShouldLockRankedPlaylistForPatch( playlistName ) )
+		{
+			newButtonStruct.lockedReason = Localize( "#PLAYLIST_STATE_RANKED_PATCH_REQUIRED" )
+		}
+		else if ( Playlist_ShouldLockRankedPlaylistForSplit() )
+		{
+			newButtonStruct.lockedReason = Localize( "#PLAYLIST_STATE_RANKED_SPLIT_ROLLOVER" )
+		}
+		else if ( Ranked_IsPastRankedSeasonEndDate() )
+		{
+			ItemFlavor ornull rankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+			bool isFirstSplit              = rankedPeriod != null ? Ranked_IsRankedV2FirstSplit( expect ItemFlavor( rankedPeriod ) ) : true
+
+			if ( isFirstSplit ) 
+			{
+				int ornull seasonEndDate = Ranked_GetCurrentRankedPeriodEndTime()
+				if ( seasonEndDate != null )
+				{
+					expect int( seasonEndDate )
+					newButtonStruct.lockedReason = Localize( "#PLAYLIST_STATE_RANKED_PATCH_REQUIRED_COUNTDOWN" )
+				}
+				else
+				{
+					newButtonStruct.lockedReason = Localize( "#PLAYLIST_STATE_RANKED_PATCH_REQUIRED" )
+				}
+			}
+			else 
+			{
+				newButtonStruct.lockedReason = Localize( "#PLAYLIST_STATE_RANKED_RESTART" )
+			}
+		}
+	}
+
+	return newButtonStruct
+}
+
+RTKGameModeSelectPlaylistButton_Struct function ApplyPlaylistButtonTimers( string playlistName, RTKGameModeSelectPlaylistButton_Struct newButtonStruct, rtk_struct modelRootStruct )
+{
+	string ornull rotationName = GetPlaylistRotationNameFromPlaylist( playlistName )
+
+	if ( rotationName != null && IsPlaylistInActiveRotation( playlistName ) )
+	{
+		newButtonStruct.rotationEndTime = GetPlaylistRotationNextTime( expect string (rotationName) )
+
+		if ( newButtonStruct.scheduleName != "" )
+		{
+			string nextName = GetNextPlaylistInRotationForSchedule(newButtonStruct.scheduleName , 1 )
+			if ( nextName != "" )
+			{
+				newButtonStruct.nextMapName = GetPlaylistMapVarStringOrPlaylistVarString( nextName, 0, "map_name", "" )
+				if ( newButtonStruct.nextMapName == newButtonStruct.mapName )
+					newButtonStruct.nextMapName = ""
+
+				newButtonStruct.nextModeName = GetModeName( nextName, 0, "", playlistName )
+				if ( newButtonStruct.nextModeName == newButtonStruct.modeName )
+					newButtonStruct.nextModeName = ""
+				else
+					newButtonStruct.nextModeName = Localize( "#GAME_MODE_SELECTOR_NEXT", Localize( newButtonStruct.nextModeName ) )
+			}
+		}
+	}
+	else
+	{
+		int rotationRemainingTimeSeconds = ( playlistName != "" ) ? GetPlaylistActiveMapRotationTimeLeft( playlistName ) : 0
+		if ( rotationRemainingTimeSeconds > 0 )
+		{
+			newButtonStruct.rotationEndTime = GetUnixTimestamp() + rotationRemainingTimeSeconds
+		}
+	}
+
+	if ( GetPlaylistVarBool( playlistName, "ui_mode_select_hide_rotation_timer", false ) )
+		newButtonStruct.rotationEndTime = -1
+
+	if ( GetPlaylistVarBool( playlistName, "ui_mode_select_hide_next_mode_name", false ) )
+		newButtonStruct.nextModeName = ""
+
+	
+	float currentMaxMatchmakingDelayEndTime = LobbyPlaylist_GetCurrentMaxMatchmakingDelayEndTime()
+	if ( currentMaxMatchmakingDelayEndTime > 0 )
+	{
+		newButtonStruct.abandonPenaltyEndTime = GetUnixTimestamp() + SharedRanked_GetMaxPartyMatchmakingDelay()
+	}
+	else
+	{
+		newButtonStruct.abandonPenaltyEndTime = -1
+	}
+
+	bool hideCountDown = GetPlaylistVarBool( playlistName, "force_hide_schedule_block_countdown", false )
+	if (!hideCountDown)
+	{
+		TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( playlistName )
+		if ( playlistTimeRange != null )
+		{
+			
+			if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+			{
+				int ornull seasonEndDate = Ranked_GetCurrentRankedPeriodEndTimeWithRumble()
+				if ( seasonEndDate != null )
+				{
+					expect int( seasonEndDate )
+					newButtonStruct.rankExpireEndTime = seasonEndDate
+				}
+			}
+			else
+			{
+				newButtonStruct.rankExpireEndTime = expect TimestampRange( playlistTimeRange ).endUnixTime
+			}
+		}
+
+		if ( newButtonStruct.rankExpireEndTime <= GetUnixTimestamp() )
+			newButtonStruct.rankExpireEndTime = -1
+
+
+		if ( newButtonStruct.disabled == false && newButtonStruct.locked == false && GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+		{
+			int rankedRumbleState = RankedEvent_GetRumbleRankedState()
+			newButtonStruct.rankedRumbleLadderString = ""
+			switch( rankedRumbleState )
+			{
+				case eRankedRumbleState.INACTIVE:
+					
+					break
+
+				case eRankedRumbleState.FINISH:
+					
+					
+					
+					
+					
+					newButtonStruct.rankedRumbleLadderString = "#RANKED_RUMBLE_FINISHED"
+
+					newButtonStruct.showRankedLadder = true
+
+					break
+
+				case eRankedRumbleState.COMING_SOON:
+					CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+					if ( rankedEvent != null )
+					{
+						newButtonStruct.rankedRumbleLadderEndTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+						newButtonStruct.rankedRumbleLadderString = "#RANKED_RUMBLE_NEXT_LADDER_IN2"
+
+						newButtonStruct.showRankedLadder = true
+
+					}
+					break
+
+				case eRankedRumbleState.ACTIVE:
+					CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+					if ( rankedEvent != null )
+					{
+						newButtonStruct.rankedRumbleLadderEndTime = Cups_GetFinishUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+						newButtonStruct.rankedRumbleLadderString = "#RANKED_RUMBLE_LADDER_ACTIVE_TIMER2"
+
+						newButtonStruct.showRankedLadder = true
+
+					}
+					break
+			}
+		}
+
+	}
+
+	
+	if ( newButtonStruct.scheduleName != "" && newButtonStruct.abandonPenaltyEndTime < GetUnixTimestamp() )
+	{
+		string upcomingPlaylistName = GetNextPlaylistForSchedule( newButtonStruct.scheduleName )
+		if ( upcomingPlaylistName != "" )
+		{
+			int showUpcomingInXHours = GetPlaylistVarInt( upcomingPlaylistName, "show_coming_soon_x_hours_before", -1 )
+			TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( playlistName ) 
+			if ( showUpcomingInXHours >= 1 && showUpcomingInXHours <= 8760 && playlistTimeRange != null )
+			{
+				int remainingTimeSeconds = maxint( 0, expect TimestampRange( playlistTimeRange ).endUnixTime - GetUnixTimestamp() )
+				if ( remainingTimeSeconds > 0 && remainingTimeSeconds <= showUpcomingInXHours * 3600  )
+				{
+					newButtonStruct.comingSoonTime = expect TimestampRange( playlistTimeRange ).endUnixTime
+					newButtonStruct.comingSoonName = Localize( GetPlaylistVarString( upcomingPlaylistName, "title", "" ) )
+					newButtonStruct.rankExpireEndTime = -1
+				}
+			}
+		}
+	}
+
+	return newButtonStruct
+}
+
+RTKGameModeSelectPlaylistButton_Struct function ApplyPlaylistButtonRankedBadge( string playlistName, RTKGameModeSelectPlaylistButton_Struct newButtonStruct, rtk_struct modelRootStruct )
+{
+	entity localClientPlayer = GetLocalClientPlayer()
+	if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+	{
+		RTKRankedBadgeModel rankedBadge
+
+		int rankScore      = 0
+		int ladderPosition = 0
+		bool inProvisionals = !Ranked_HasCompletedProvisionalMatches( localClientPlayer )
+		bool hasPromoTrial				 	= RankedTrials_PlayerHasIncompleteTrial( localClientPlayer )
+		bool useProvisionalBadgeAsset		= inProvisionals || hasPromoTrial
+
+		rankScore = GetPlayerRankScore( localClientPlayer )
+		ladderPosition = Ranked_GetLadderPosition( localClientPlayer )
+
+		SharedRankedDivisionData thisDivision 	= GetCurrentRankedDivisionFromScoreAndLadderPosition( rankScore, ladderPosition )
+
+		rankedBadge.divisionName				= thisDivision.divisionName
+		rankedBadge.rankColor					= GetKeyColor( COLORID_RANKED_BORDER_COLOR_ROOKIE, thisDivision.tier.index ) / 255
+		rankedBadge.badgeRuiAsset 				= useProvisionalBadgeAsset ? RANKED_PLACEMENT_BADGE : thisDivision.tier.iconRuiAsset
+		rankedBadge.rankedIcon 					= string( thisDivision.tier.icon )
+		rankedBadge.emblemDisplayMode 			= thisDivision.emblemDisplayMode
+
+		
+		rankedBadge.isLadderOnlyRank = thisDivision.isLadderOnlyDivision || thisDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_LADDER_POSITION || thisDivision.emblemDisplayMode == emblemDisplayMode.DISPLAY_RP
+
+		switch ( thisDivision.emblemDisplayMode )
+		{
+			case emblemDisplayMode.DISPLAY_DIVISION:
+				rankedBadge.emblemText 			= thisDivision.emblemText
+				break
+			case emblemDisplayMode.DISPLAY_RP:
+				string rankScoreShortened 		= FormatAndLocalizeNumber( "1", float( rankScore ), IsTenThousandOrMore( rankScore ) )
+				rankedBadge.emblemText 			= Localize( "#RANKED_POINTS_GENERIC", rankScoreShortened )
+				break
+			case emblemDisplayMode.DISPLAY_LADDER_POSITION:
+				string ladderPosShortened
+				if ( ladderPosition == SHARED_RANKED_INVALID_LADDER_POSITION )
+					ladderPosShortened 			= ""
+				else
+					ladderPosShortened 			= Localize( "#RANKED_LADDER_POSITION_DISPLAY", FormatAndLocalizeNumber( "1", float( ladderPosition ), IsTenThousandOrMore( ladderPosition ) ) )
+				rankedBadge.emblemText 			= ladderPosShortened
+				break;
+			case emblemDisplayMode.NONE:
+			default:
+				rankedBadge.emblemText			= ""
+				break;
+		}
+
+		rankedBadge.ladderPosition 				= ladderPosition
+		rankedBadge.rankScore 					= rankScore
+
+		
+		rankedBadge.badgeLabel					= useProvisionalBadgeAsset ? "" : rankedBadge.emblemText
+
+		bool isPlacementMode 					= inProvisionals
+		bool useDynamicPips						= false
+		isPlacementMode 						= inProvisionals || hasPromoTrial
+		rankedBadge.isPromotional				= hasPromoTrial
+		useDynamicPips 							= !inProvisionals && hasPromoTrial
+		rankedBadge.isPlacementMode 			= isPlacementMode
+
+		rankedBadge.tooltipTitle 				= inProvisionals ? Localize( "#RANKED_PROVISIONAL_TITLE" ) : thisDivision.divisionName
+		rankedBadge.tooltipBody 				= inProvisionals ? Localize( "#RANKED_PROVISIONAL_DESC" ) : ""
+
+		int badge1MatchesCompleted 				= 0
+		int badge1MaxMatches 					= Ranked_GetNumProvisionalMatchesRequired()
+		if ( inProvisionals )
+		{
+			badge1MatchesCompleted 				= Ranked_GetNumProvisionalMatchesCompleted( localClientPlayer )
+		}
+		else if ( hasPromoTrial )
+		{
+			ItemFlavor currentTrial 			= RankedTrials_GetAssignedTrial( localClientPlayer )
+			badge1MatchesCompleted 				= RankedTrials_GetGamesPlayedInTrialsState( localClientPlayer )
+			badge1MaxMatches 					= RankedTrials_GetGamesAllowedInTrialsState( localClientPlayer, currentTrial )
+		}
+
+		rankedBadge.completedMatches 			= badge1MatchesCompleted
+		rankedBadge.maxMatches 					= badge1MaxMatches
+		rankedBadge.useDynamicPips				= useDynamicPips
+		rankedBadge.startPip 					= 0
+
+		
+		int demotionProtectionBuffer = GetDemotionProtectionBuffer ( localClientPlayer )
+		rankedBadge.showDemoteProtection = rankScore < thisDivision.tier.scoreMin && thisDivision.tier.allowsDemotion && !inProvisionals
+		if ( rankedBadge.showDemoteProtection )
+		{
+			rankedBadge.badgeRuiAsset 				= $"ui/ranked_demotion_protection.rpak"
+			rankedBadge.protectionCurrent 			= demotionProtectionBuffer
+		}
+
+
+		if ( !rankedBadge.showDemoteProtection && RankedEvent_GetActiveCup( GetLocalClientPlayer() ) != null )
+		{
+			rankedBadge.rankedIconOverlay = string( thisDivision.tier.ladderIcon )
+		}
+
+
+		if ( inProvisionals )  
+		{
+			for ( int idx = 0; idx < badge1MatchesCompleted; idx++ )
+			{
+				rankedBadge.wonMatches.push( true )
+			}
+		}
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+
+		newButtonStruct.rankedBadge = rankedBadge
+	}
+
+	return newButtonStruct
+}
+
+int function SortPlaylistSquadSizes( RTKGameModeSelectPlaylistSquadSize_Struct a, RTKGameModeSelectPlaylistSquadSize_Struct b )
+{
+	if ( a.squadSize > b.squadSize )
+		return 1
+	else if ( a.squadSize < b.squadSize )
+		return -1
+	return 0
+}
+
+array< RTKGameModeSelectPlaylistButton_Struct > function MergePlaylistButtons( array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray )
+{
+	
+	array<string> sizes = [ "quad", "trio", "duo", "solo" ]
+	table<string, int > mergeMap
+
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+
+		if ( playlistButton.ui_mode_select_combine_key == "" )
+		{
+			foreach( string size in sizes )
+			{
+				if ( playlistButton.ui_mode_select_combine_key == "" && playlistButton.slotName.endswith( size ) )
+				{
+					playlistButton.ui_mode_select_combine_key = playlistButton.slotName.slice( 0, playlistButton.slotName.find( size ) )
+				}
+			}
+		}
+
+		string isUserSelectedPlaylist = LobbyPlaylist_GetSelectedPlaylist()
+		if ( playlistButton.ui_mode_select_combine_key in fileVMPersistence.mergedPlaylistSelection )
+		{
+			isUserSelectedPlaylist = fileVMPersistence.mergedPlaylistSelection[playlistButton.ui_mode_select_combine_key]
+		}
+
+		int playlistState = LobbyPlaylist_GetPlaylistState( playlistButton.name )
+		bool showPlaylist = Lobby_IsPlaylistAvailable( playlistButton.name ) || playlistState == ePlaylistState.PARTY_SIZE_OVER
+#if DEV
+		if ( DEBUG_PRINTS )
+			printt( "GMS: MergePlaylistButtons showPlaylist = ", showPlaylist, " for ", playlistButton.name, " (", playlistState, ")" )
+#endif
+
+		if ( playlistButton.ui_mode_select_combine_key in mergeMap )
+		{
+			if ( playlistButton.name == isUserSelectedPlaylist && showPlaylist && !playlistButton.hidden )
+			{
+				
+				RTKGameModeSelectPlaylistButton_Struct mergedPlaylistButton = playlistButtonsScriptArray[ mergeMap[playlistButton.ui_mode_select_combine_key] ]
+
+				RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize
+				playlistSquadSize.playlistName = playlistButton.name
+				playlistSquadSize.squadSize = GetMaxTeamSizeForPlaylist( playlistButton.name )
+				playlistSquadSize.queueSize = GetMaxQueueSizeForPlaylist( playlistButton.name )
+				playlistSquadSize.partySize = GetPartySize()
+				playlistSquadSize.icon = $""
+				playlistSquadSize.state = eRTKGameModeSelectPlaylistSquadSizeState.SELECTED
+				playlistSquadSize.key = playlistButton.ui_mode_select_combine_key
+				playlistSquadSize.available = true
+
+				playlistButton.playlistSquadSizes = mergedPlaylistButton.playlistSquadSizes
+				for ( int j = 0; j < playlistButton.playlistSquadSizes.len(); j++ )
+				{
+					playlistButton.playlistSquadSizes[j].state = eRTKGameModeSelectPlaylistSquadSizeState.UNSELECTED
+				}
+				playlistButton.playlistSquadSizes.push( playlistSquadSize )
+
+				mergedPlaylistButton.hidden = true
+
+				mergeMap[playlistButton.ui_mode_select_combine_key] = i
+			}
+			else if ( mergeMap[playlistButton.ui_mode_select_combine_key] != i )
+			{
+				playlistButton.hidden = true
+
+				RTKGameModeSelectPlaylistButton_Struct mergedPlaylistButton = playlistButtonsScriptArray[ mergeMap[playlistButton.ui_mode_select_combine_key] ]
+
+				RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize
+				playlistSquadSize.playlistName = playlistButton.name
+				playlistSquadSize.squadSize = GetMaxTeamSizeForPlaylist( playlistButton.name )
+				playlistSquadSize.queueSize = GetMaxQueueSizeForPlaylist( playlistButton.name )
+				playlistSquadSize.partySize = GetPartySize()
+				playlistSquadSize.icon = $""
+				playlistSquadSize.state = eRTKGameModeSelectPlaylistSquadSizeState.UNSELECTED
+				playlistSquadSize.key = playlistButton.ui_mode_select_combine_key
+				playlistSquadSize.available = showPlaylist
+
+				mergedPlaylistButton.playlistSquadSizes.push( playlistSquadSize )
+			}
+		}
+		else
+		{
+			if ( playlistButton.ui_mode_select_combine_key != "" )
+			{
+				mergeMap[playlistButton.ui_mode_select_combine_key] <- i
+			}
+
+			RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize
+			playlistSquadSize.playlistName = playlistButton.name
+			playlistSquadSize.squadSize = GetMaxTeamSizeForPlaylist( playlistButton.name )
+			playlistSquadSize.queueSize = GetMaxQueueSizeForPlaylist( playlistButton.name )
+			playlistSquadSize.partySize = GetPartySize()
+			playlistSquadSize.icon = $""
+			playlistSquadSize.state = eRTKGameModeSelectPlaylistSquadSizeState.SELECTED
+			playlistSquadSize.key = playlistButton.ui_mode_select_combine_key
+			playlistSquadSize.available = showPlaylist
+
+			playlistButton.playlistSquadSizes.push( playlistSquadSize )
+		}
+	}
+
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+
+		playlistButton.playlistSquadSizes.sort( SortPlaylistSquadSizes )
+
+		for ( int j = 0; j < playlistButton.playlistSquadSizes.len(); j++ )
+		{
+			if ( GetPlaylistVarBool( playlistButton.playlistSquadSizes[j].playlistName, "ui_mode_select_q_size_countdown", false ) )
+			{
+				TimestampRange ornull playlistTimeRange = Playlist_GetPlaylistScheduledTimeRange( playlistButton.playlistSquadSizes[j].playlistName )
+				if ( playlistTimeRange != null )
+				{
+					playlistButton.playlistSquadSizes[j].endTime =  expect TimestampRange( playlistTimeRange ).endUnixTime
+					if ( playlistButton.playlistSquadSizes[j].endTime <= GetUnixTimestamp() )
+						playlistButton.playlistSquadSizes[j].endTime = -1
+
+					
+					if ( playlistButton.playlistSquadSizes[j].endTime > 0 && playlistButton.playlistSquadSizes[j].state == eRTKGameModeSelectPlaylistSquadSizeState.SELECTED )
+						playlistButton.rankExpireEndTime = -1
+
+					
+					if ( playlistButton.squadSizeEndTime < 0 || playlistButton.playlistSquadSizes[j].state == eRTKGameModeSelectPlaylistSquadSizeState.SELECTED )
+						playlistButton.squadSizeEndTime = playlistButton.playlistSquadSizes[j].endTime
+				}
+			}
+
+			if ( playlistButton.playlistSquadSizes.len() <= 1 )
+			{
+				playlistButton.playlistSquadSizes[j].state = eRTKGameModeSelectPlaylistSquadSizeState.ONLY_OPTION
+			}
+			else if ( !playlistButton.isFeatured && playlistButton.playlistSquadSizes[j].state == eRTKGameModeSelectPlaylistSquadSizeState.UNSELECTED )
+			{
+				if ( GameModeVariant_IsActiveForPlaylist( playlistButton.name, eGameModeVariants.invalid ) ) 
+				{
+					int lastSeenUnrankedSquadSize = GetPersistentVarAsInt( "lastSeenUnrankedSquadSize" )
+					if ( playlistButton.playlistSquadSizes[j].squadSize != 3 && playlistButton.playlistSquadSizes[j].squadSize != lastSeenUnrankedSquadSize )
+					{
+						playlistButton.isFeatured = true
+						playlistButton.featuredSlotDisplayString = "#GAME_MODE_SELECTOR_NEW_OPTION"
+						Remote_ServerCallFunction( "ClientCallback_ViewedUnrankedSquadSize", playlistButton.playlistSquadSizes[j].squadSize )
+					}
+				}
+			}
+		}
+	}
+
+	return playlistButtonsScriptArray
+}
+
+table< string, array< string > > function GameModeSelect_ScheduleNameToTileDefaultsMap()
+{
+	
+	table< string, array< string > > scheduleNameToTileDefaults
+	
+
+
+
+
+
+
+
+
+
+	scheduleNameToTileDefaults = {
+		
+		ltm 		= ["0", "0", "", "1", "1", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"],
+		spotlight_0 = ["0", "1", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+		spotlight_1 = ["0", "2", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+		spotlight_2 = ["0", "3", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+		spotlight_3 = ["0", "4", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+		spotlight_4 = ["0", "5", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+		spotlight_5 = ["0", "6", "", "", "", "#GAME_MODE_SELECTOR_SPOTLIGHT_TITLE", "1", "1"], 
+
+		
+		ranked 	  = ["1", "0", "2", "1", "1", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "1"],
+		ranked_b  = ["1", "0", "2", "1", "1", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "1"],
+		regular_0 = ["1", "1", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],
+		regular_1 = ["1", "2", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],
+		regular_2 = ["1", "3", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],
+		regular_3 = ["1", "4", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],
+		regular_4 = ["1", "5", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],  
+		regular_5 = ["1", "6", "", "", "", "#GAME_MODE_SELECTOR_CORE_TITLE", "1", "0"],  
+
+		
+		event 		= ["2", "0", "", "1", "1", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],
+		unhinged_0  = ["2", "1", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"], 
+		unhinged_1  = ["2", "2", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],  
+		unhinged_2  = ["2", "3", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],  
+		unhinged_3  = ["2", "4", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],  
+		unhinged_4  = ["2", "5", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],  
+		unhinged_5  = ["2", "6", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],  
+		mixtape 	= ["2", "7", "", "", "", "#GAME_MODE_SELECTOR_UNHINGED_TITLE", "1", "1"],
+
+		
+		training 								= ["3", "0", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],
+		bot_playground 							= ["3", "1", "", "", "1", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "1", "0"],
+		firing_range 							= ["3", "2", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],
+		training_0 								= ["3", "3", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"], 
+		training_1 								= ["3", "4", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],  
+		training_2 								= ["3", "5", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],  
+		training_3 								= ["3", "6", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],  
+		training_4 								= ["3", "7", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],  
+		training_5 								= ["3", "8", "", "", "0", "#GAME_MODE_SELECTOR_TRAINING_TITLE", "0", "0"],  
+	}
+	return scheduleNameToTileDefaults
+}
+
+array< string > function GameModeSelect_ScheduleNameToTileDefaults( string scheduleName )
+{
+	table< string, array< string > > scheduleNameToTileDefaultsMap = GameModeSelect_ScheduleNameToTileDefaultsMap()
+	if ( scheduleName in scheduleNameToTileDefaultsMap )
+	{
+		return scheduleNameToTileDefaultsMap[ scheduleName ]
+	}
+	return []
+}
+
+void function GameModeSelect_ApplyTileDefaults( RTKGameModeSelectPlaylistButton_Struct playlistButton, array< string > scheduleNameToTileDefaults )
+{
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+	bool hasLocalPlayerCompletedTraining = RTKStruct_GetBool( modelRootStruct, "hasCompletedTraining" )
+	bool hasLocalPlayerCompletedNewPlayerOrientation = RTKStruct_GetBool( modelRootStruct, "hasCompletedPlayerOrientation" )
+
+	if ( playlistButton.ui_mode_select_tab_index == "" )
+		playlistButton.ui_mode_select_tab_index 			= scheduleNameToTileDefaults.len() >= 1 ? scheduleNameToTileDefaults[0] : ""
+
+	if ( playlistButton.ui_mode_select_tab_slot_index == "" )
+		playlistButton.ui_mode_select_tab_slot_index 		= scheduleNameToTileDefaults.len() >= 2 ? scheduleNameToTileDefaults[1] : ""
+
+	if ( playlistButton.ui_mode_select_grid_height_min == "" )
+		playlistButton.ui_mode_select_grid_height_min 		= scheduleNameToTileDefaults.len() >= 3 ? scheduleNameToTileDefaults[2] : ""
+
+	if ( playlistButton.ui_mode_select_featured == "" )
+		playlistButton.ui_mode_select_featured 				= scheduleNameToTileDefaults.len() >= 4 ? scheduleNameToTileDefaults[3] : ""
+
+	if ( playlistButton.ui_mode_select_show_upcoming == "" )
+		playlistButton.ui_mode_select_show_upcoming 		= scheduleNameToTileDefaults.len() >= 5 ? scheduleNameToTileDefaults[4] : ""
+
+	if ( playlistButton.ui_mode_select_tab_index_name == "" )
+		playlistButton.ui_mode_select_tab_index_name 		= scheduleNameToTileDefaults.len() >= 6 ? scheduleNameToTileDefaults[5] : ""
+
+	if ( playlistButton.ui_mode_select_req_training == "" )
+		playlistButton.ui_mode_select_req_training 			= scheduleNameToTileDefaults.len() >= 7 ? scheduleNameToTileDefaults[6] : ""
+
+	if ( playlistButton.ui_mode_select_req_orientation == "" )
+		playlistButton.ui_mode_select_req_orientation 		= scheduleNameToTileDefaults.len() >= 8 ? scheduleNameToTileDefaults[7] : ""
+
+#if DEV
+		if ( DEBUG_PRINTS )
+			printt("GMS: ", playlistButton.scheduleName, " into ", playlistButton.ui_mode_select_tab_index, playlistButton.ui_mode_select_tab_slot_index)
+#endif
+	
+	if ( !hasLocalPlayerCompletedTraining && playlistButton.ui_mode_select_req_training == "1" )
+	{
+		playlistButton.locked = true
+		playlistButton.showSelectMode = false
+		
+	}
+	else if ( !hasLocalPlayerCompletedNewPlayerOrientation && playlistButton.ui_mode_select_req_orientation == "1" )
+	{
+		playlistButton.locked = true
+		playlistButton.showSelectMode = false
+		
+	}
+
+	if ( playlistButton.ui_mode_select_tab_index != "" && int ( playlistButton.ui_mode_select_tab_index ) >= 0 )
+		playlistButton.frameColor = GameMode_GetPillarColor( int ( playlistButton.ui_mode_select_tab_index ) )
+
+	if ( playlistButton.ui_mode_select_tab_index != "" && int ( playlistButton.ui_mode_select_tab_index ) >= 0 )
+		playlistButton.frameColorLightness = GameMode_GetPillarColorLightness( int ( playlistButton.ui_mode_select_tab_index ) )
+
+	
+	if ( GameModeVariant_IsActiveForPlaylist( playlistButton.name, eGameModeVariants.SURVIVAL_RANKED ) && Ranked_HasSoloQueueRankScoreThreshold( playlistButton.name ) )
+		playlistButton.squadSizeDefaultLightness = -0.75
+}
+
+vector function GameModeSelect_ScheduleNameToDefaultPillarColor( string scheduleName )
+{
+	array< string > tileDefaults = GameModeSelect_ScheduleNameToTileDefaults( scheduleName )
+	RTKGameModeSelectPlaylistButton_Struct playlistButton
+	GameModeSelect_ApplyTileDefaults( playlistButton, tileDefaults )
+	return playlistButton.frameColor
+}
+
+float function GameModeSelect_ScheduleNameToDefaultPillarColorLightness( string scheduleName )
+{
+	array< string > tileDefaults = GameModeSelect_ScheduleNameToTileDefaults( scheduleName )
+	RTKGameModeSelectPlaylistButton_Struct playlistButton
+	GameModeSelect_ApplyTileDefaults( playlistButton, tileDefaults )
+	return playlistButton.frameColorLightness
+}
+
+array< RTKGameModeSelectPlaylistButton_Struct > function ApplyDefaultsToButtonScriptArray( array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray )
+{
+	table< string, array< string > > scheduleNameToTileDefaultsMap = GameModeSelect_ScheduleNameToTileDefaultsMap()
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlistButton = playlistButtonsScriptArray[i]
+		array< string > tileDefaults = GameModeSelect_ScheduleNameToTileDefaults( playlistButton.scheduleName )
+		GameModeSelect_ApplyTileDefaults( playlistButton, tileDefaults )
+	}
+	return playlistButtonsScriptArray
+}
+
+
+RTKGameModeSelectPlaylistButton_Struct function RTKGameModeSelect_GetCachedPlaylistStruct( rtk_behavior self, RTKGameModeSelectPlaylistButton_Struct playlistIn )
+{
+	string playlistName = playlistIn.name
+	string scheduleName = playlistIn.scheduleName
+	return GetMergedPlaylistStruct( playlistIn, fileVMPersistence.playlistButtonsScriptArray )
+}
+
+
+
+
+
+
+
+
+
+
+
+RTKGameModeSelectPlaylistButton_Struct function GetMergedPlaylistStruct( RTKGameModeSelectPlaylistButton_Struct playlistIn, array< RTKGameModeSelectPlaylistButton_Struct > playlistButtonsScriptArray )
+{
+	string playlistName = playlistIn.name
+	string scheduleName = playlistIn.scheduleName
+
+	if ( playlistIn.ui_mode_select_combine_key in fileVMPersistence.mergedPlaylistSelection )
+	{
+		playlistName = fileVMPersistence.mergedPlaylistSelection[ playlistIn.ui_mode_select_combine_key ]
+	}
+
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlist = playlistButtonsScriptArray[i]
+		if ( playlist.name == playlistName )
+		{
+			for  ( int j = 0; j < playlist.playlistSquadSizes.len(); j++ )
+			{
+				if ( playlist.playlistSquadSizes[j].state != eRTKGameModeSelectPlaylistSquadSizeState.UNSELECTED )
+					return playlist
+			}
+		}
+	}
+
+	for ( int i = 0; i < playlistButtonsScriptArray.len(); i++ )
+	{
+		RTKGameModeSelectPlaylistButton_Struct playlist = playlistButtonsScriptArray[i]
+		if ( playlist.scheduleName == scheduleName )
+		{
+			return playlist
+		}
+	}
+
+	RTKGameModeSelectPlaylistButton_Struct empty
+	return empty
+}
+
+void function RTKGameModeSelect_TileOnPressed( rtk_behavior self, rtk_behavior button, RTKGameModeSelectPlaylistButton_Struct playlistIn, int keycode )
+{
+	RTKGameModeSelectPlaylistButton_Struct playlist = RTKGameModeSelect_GetCachedPlaylistStruct( self, playlistIn )
+	if ( playlist.name == "" )
+		return
+
+	if ( fileVMPersistence.userFocusedPlaylist != playlist.name ) 
+		return
+
+	if ( keycode == BUTTON_Y )
+	{
+		RTKGameModeSelect_ToggleSquadSize( self, button, playlist )
+	}
+	else if ( keycode == BUTTON_X || keycode == MOUSE_RIGHT )
+	{
+		if ( playlist.gameModeSelectTileAction == eGameModeSelectTileActions.ROAD_TO_RANKED )
+		{
+			UI_OpenFeatureTutorialDialog( ROAD_TO_RANKED_TUTORIAL )
+		}
+		else if ( playlist.gameModeSelectTileAction == eGameModeSelectTileActions.RANKED )
+		{
+			OpenRankedInfoPage( null )
+			int rankedRumbleState = RankedEvent_GetRumbleRankedState()
+			if ( rankedRumbleState == eRankedRumbleState.COMING_SOON )
+			{
+				RankedInfo_SetInitialTab( "OverviewPanel" )
+			}
+			else if ( rankedRumbleState == eRankedRumbleState.ACTIVE || rankedRumbleState == eRankedRumbleState.FINISH )
+			{
+				RankedInfo_SetInitialTab( "LeaderboardPanel" )
+			}
+			else
+			{
+				RankedInfo_SetInitialTab( "RankedInfoPanel" )
+			}
+		}
+		else
+		{
+			OpenPlaylistTutorialDialog( playlist.name )
+		}
+	}
+	else if ( keycode == BUTTON_A || keycode == MOUSE_LEFT )
+	{
+		if ( playlist.gameModeSelectTileAction == eGameModeSelectTileActions.ROAD_TO_RANKED )
+		{
+			JumpToChallenges( "road_to_ranked" )
+		}
+		else if ( playlist.locked )
+		{
+			EmitUISound( "menu_deny" )
+		}
+		else
+		{
+			if ( IsPrivateMatchLobby() )
+				PrivateMatch_SetSelectedPlaylist( playlist.name )
+			else
+				LobbyPlaylist_SetSelectedPlaylist( playlist.name )
+
+			DismissGamemodeSelectorAndRefresh()
+			CloseAllDialogs()
+		}
+	}
+}
+
+void function RTKGameModeSelect_PreviewAndMaybeCommitPlaylistSelection( rtk_behavior self, rtk_behavior button, RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize )
+{
+	RTKGameModeSelect_PreviewPlaylistSelection( playlistSquadSize )
+
+	if ( RTKGameModeSelect_CanCommitPlaylistSelection( playlistSquadSize ) )
+		RTKGameModeSelect_CommitPlaylistSelection( playlistSquadSize.playlistName )
+
+	thread RTKGameModeSelect_RebuildContentThread( self, button )
+}
+
+void function RTKGameModeSelect_PreviewPlaylistSelection( RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize )
+{
+	if ( !(playlistSquadSize.key in fileVMPersistence.mergedPlaylistSelection) )
+	{
+		fileVMPersistence.mergedPlaylistSelection[playlistSquadSize.key] <- playlistSquadSize.playlistName
+	}
+	else
+	{
+		fileVMPersistence.mergedPlaylistSelection[playlistSquadSize.key] = playlistSquadSize.playlistName
+	}
+}
+
+bool function RTKGameModeSelect_CanCommitPlaylistSelection( RTKGameModeSelectPlaylistSquadSize_Struct playlistSquadSize )
+{
+	if ( playlistSquadSize.playlistName == "" )
+		return false
+
+	if ( !IsPartyLeader() )
+		return false
+
+	if ( !playlistSquadSize.available )
+		return false
+
+	if ( playlistSquadSize.partySize > playlistSquadSize.queueSize )
+		return false
+
+	if ( IsPrivateMatchLobby() )
+		return true
+
+	return Lobby_IsPlaylistAvailable( playlistSquadSize.playlistName )
+}
+
+void function RTKGameModeSelect_CommitPlaylistSelection( string playlistName )
+{
+	if ( IsPrivateMatchLobby() )
+		PrivateMatch_SetSelectedPlaylist( playlistName )
+	else
+		LobbyPlaylist_SetSelectedPlaylist( playlistName )
+}
+
+void function RTKGameModeSelect_ToggleSquadSize( rtk_behavior self, rtk_behavior button, RTKGameModeSelectPlaylistButton_Struct playlist )
+{
+	int currentIndex = -1
+	for ( int j = 0; j < playlist.playlistSquadSizes.len(); j++ )
+	{
+		if ( playlist.playlistSquadSizes[j].state == eRTKGameModeSelectPlaylistSquadSizeState.SELECTED )
+		{
+			currentIndex = j
+		}
+	}
+
+	if ( currentIndex >= 0 )
+	{
+		currentIndex++
+		if ( currentIndex >= playlist.playlistSquadSizes.len() )
+			currentIndex = 0
+
+		RTKGameModeSelect_PreviewAndMaybeCommitPlaylistSelection( self, button, playlist.playlistSquadSizes[currentIndex] )
+	}
+}
+
+
+void function DelaySetUpcomingContentDataModelVisible()
+{
+	EndSignal( uiGlobal.signalDummy, "RTKGameModeSelectOnPreDestroy" )
+	WaitFrame()
+	rtk_struct modelRootStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_NAME, "RTKGameModeSelectControllerPanel_ModelStruct" )
+	RTKStruct_SetBool( modelRootStruct, "visible", true )
+}
+
+string function GetModeName( string playlistName, int index, string defaultName = "", string currentPlaylistRef = "" )
+{
+	return GetPlaylistMapVarString( playlistName, index, "name", defaultName )
+	
+	
+	
+	
+	
+}
+
+asset function RTKMutator_GMS_SwapImageByHeight( float height, asset tile1h, asset tile2h, asset tile3h )
+{
+	if ( height >= 500 )
+		return tile3h
+
+	if ( height >= 300 )
+		return tile2h
+
+	return tile1h
+}
+
+asset function RTKMutator_GMS_SquadSizeIcon( int state, int squadSize, int partySize, int queueSize, int slot )
+{
+	
+	
+	
+	
+
+	if ( partySize > squadSize )
+		return $"ui_image/rui/menu/gametype_select/mode_squad_icon_fade.rpak"
+
+	if ( slot > queueSize )
+		return $"ui_image/rui/menu/gametype_select/mode_squad_icon_fade.rpak"
+
+	if ( partySize >= slot )
+		return $"ui_image/rui/menu/gametype_select/mode_squad_icon_fill.rpak"
+
+	return $"ui_image/rui/menu/gametype_select/mode_squad_icon_empty.rpak"
+}
+
+vector function RTKMutator_GMS_SquadSizeColor( int state, int endTime, int partySize, int queueSize, int slot )
+{
+	vector colorOut = < 1.0, 1.0, 1.0 >
+
+	if ( state == eRTKGameModeSelectPlaylistSquadSizeState.ONLY_OPTION )
+		colorOut = < 1.0, 1.0, 1.0 >
+
+	if ( slot > queueSize )
+		colorOut =  < 0.40, 0.40, 0.40 >
+
+	if ( partySize > queueSize )
+		colorOut =  < 1.0, 0.0, 0.0 >
+
+	if ( endTime > 0 )
+		colorOut =  < 1.0, 0.6667, 0.0 >
+
+	if ( state == eRTKGameModeSelectPlaylistSquadSizeState.UNSELECTED )
+	{
+		if ( endTime > 0 )
+			colorOut *= 0.66
+		else
+			colorOut *= 0.40
+	}
+
+	return colorOut
+}

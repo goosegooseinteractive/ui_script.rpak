@@ -1,0 +1,942 @@
+
+global function InitRTKMassPackRewardsMenu
+global function RTKMassPackRewardsController_OnBackPressed
+
+global function RTKMassPackRewardsController_OnInitialize
+global function RTKMassPackRewardsController_OnDestroy
+
+global function OpenMassPackRewardsMenu
+global function OpenRewardSummaryMenu
+#if DEV
+	global function OpenRewardSummaryTest
+	global function DEV_OpenRewardSummaryWithItemGUID
+#endif
+global function GetLootPoolItemInfoStruct
+
+global struct RTKMassPackRewardsController_Properties
+{
+	rtk_behavior itemsListBinder
+	rtk_behavior filtersListBinder
+	rtk_behavior filtersSelectableContainer
+	rtk_behavior allFilterButton
+}
+
+global struct RTKMassPackCurrencyModel
+{
+	int heirloomShards = 0
+	int craftingMaterials = 0
+	int premiumCurrency = 0
+	int creditCurrency = 0
+	int exoticCurrency = 0
+	bool showCurrencyWidget = true
+}
+
+struct MassPackRewardsItemFlavorWithOrigin
+{
+	ItemFlavor& reward
+	string originText = ""
+}
+
+struct MassPackRewardsFilterInfo
+{
+	string filterName = ""
+	asset filterIcon = $""
+	array<RTKBrowseLootPoolItem> itemList = []
+	array<MassPackRewardsItemFlavorWithOrigin> rewards = []
+	int numItems = 0
+	ItemFlavor ornull sourceFlav
+}
+
+global struct RTKMassPackRewardsFilterModel
+{
+	asset image = $""
+	int quantity = 1
+	bool isBrowsable = true
+	string name = ""
+}
+
+global struct RTKMassPackRewardsModel
+{
+	array<RTKBrowseLootPoolItem> itemList
+	RTKIndividualItemInfo& individualItemInfo
+	RTKMassPackCurrencyModel& currencyWidgetInfo
+	bool isRewardSummary = false
+	string title
+	array<RTKMassPackRewardsFilterModel> availableFilters = []
+}
+
+const string MODEL_PATH_NAME = "massPackRewards"
+const float MIN_DELAY_SECONDS_BETWEEN_REWARD_DISPLAYS = 10.0 
+
+global const int EMPTY_BADGE_GUID = 1488777442
+
+
+const string EXIT_MENU_POP_UP_WARNING_SOUND = "UI_Menu_LootCeremony_Exit_Warning"
+
+struct PrivateData
+{
+
+	array<MassPackRewardsItemFlavorWithOrigin> rewards = []
+	ItemFlavor ornull lastGameCharacter
+	rtk_struct panelStruct
+}
+
+struct
+{
+	var menu
+	ItemFlavorBag& bag
+	array<RewardItemFlavor> rewardItemFlavors
+	bool isRewardSummary = false
+	table<SettingsAssetGUID, MassPackRewardsFilterInfo>  guidFiltersMap
+	array<RTKBrowseLootPoolItem> allItems = []
+	array<MassPackRewardsItemFlavorWithOrigin> allRewards = []
+	array<ItemFlavor ornull> sourceFlav = []
+	ItemFlavor ornull focusedItemFlavor = null
+	SettingsAssetGUID ornull sourceFlavGuid = null
+	int selectedFilterIndex = -1
+	float lastCloseTime
+	bool levelupSoundPlayed = false
+	void functionref() onCloseRewardMenuCallback = null
+#if DEV
+	bool isTest = false
+#endif
+} file
+
+void function InitRTKMassPackRewardsMenu( var menu )
+{
+	file.menu = menu
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK", RTKMassPackRewardsController_OnBackPressed )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, RTKMassPackRewardsController_OnNavigateBack )
+	AddMenuFooterOption( menu, LEFT, BUTTON_STICK_LEFT, true, "#FOOTER_BUTTON_EQUIP", "#FOOTER_BUTTON_EQUIP", EquipReward, CanEquipReward )
+
+	RegisterSignal( "RTKMassPackRewardsUpdateLocalFooter" )
+
+#if UI_AUTOMATION
+		UIAutomation_AddThinkFunc( menu, MassPackRewardsAutomationThink )
+#endif
+}
+
+#if UI_AUTOMATION
+void function MassPackRewardsAutomationThink( var menu )
+{
+	if ( UIAutomation_AutomationDelay() )
+	{
+		CloseAllMenus()
+		AdvanceMenu( GetMenu( "LobbyMenu" ) )
+	}
+}
+#endif
+
+
+void function EquipReward( var button )
+{
+	if ( file.focusedItemFlavor != null )
+	{
+		ItemFlavor ornull focusedItemFlavor = file.focusedItemFlavor
+		expect ItemFlavor ( focusedItemFlavor )
+		PassEquipReward( ItemFlavor_GetGUID( focusedItemFlavor ) )
+	}
+}
+
+bool function CanEquipReward()
+{
+	if ( file.focusedItemFlavor != null )
+	{
+		ItemFlavor ornull focusedItemFlavor = file.focusedItemFlavor
+		expect ItemFlavor ( focusedItemFlavor )
+		return IsValidItemFlavorGUID( ItemFlavor_GetGUID( focusedItemFlavor )  ) && PassCanEquipReward( focusedItemFlavor )
+	}
+
+	return false
+}
+
+void function OpenMassPackRewardsMenu()
+{
+	if ( GetActiveMenu() == file.menu )
+		return
+	file.isRewardSummary = false
+	file.rewardItemFlavors = GetMassPackRewards()
+	ClearCachedData()
+	file.onCloseRewardMenuCallback = null
+#if DEV
+	file.isTest = false
+#endif
+	AdvanceMenu( file.menu )
+	
+	Remote_ServerCallFunction( "ClientCallback_LastSeenExoticCurrency" )
+}
+
+bool function OpenRewardSummaryMenu( array<RewardItemFlavor> rewards, void functionref() onCloseRewardMenuCallback = null )
+{
+	if ( GetActiveMenu() == file.menu )
+		return false
+
+	
+	
+	if ( ( UITime() < file.lastCloseTime + MIN_DELAY_SECONDS_BETWEEN_REWARD_DISPLAYS ) && onCloseRewardMenuCallback == null )
+	{
+		printf( "Skipping OpenRewardSummaryMenu as MIN_DELAY_SECONDS_BETWEEN_REWARD_DISPLAYS has not been exceeded" )
+		return false
+	}
+
+	file.isRewardSummary = true
+	file.rewardItemFlavors = rewards
+	file.onCloseRewardMenuCallback = onCloseRewardMenuCallback
+	ClearCachedData()
+#if DEV
+	file.isTest = false
+#endif
+	AdvanceMenu( file.menu )
+	file.lastCloseTime = UITime() 
+	return true
+}
+
+#if DEV
+void function OpenRewardSummaryTest()
+{
+	OpenRewardSummaryMenu( GetTestRewards() )
+}
+
+void function DEV_OpenRewardSummaryWithItemGUID( array<int> guids )
+{
+	array<RewardItemFlavor> rewards
+
+	foreach( guid in guids )
+	{
+		RewardItemFlavor reward
+		reward.reward = GetItemFlavorByGUID( guid )
+		reward.sourceFlav = null
+		reward.quantity = 1
+		rewards.append( reward )
+	}
+
+	OpenRewardSummaryMenu( rewards )
+}
+#endif
+
+void function RTKMassPackRewardsController_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.STORE_INSPECT )
+	rtk_struct panelStruct  = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKMassPackRewardsModel" )
+	string modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+	self.GetPanel().SetBindingRootPath( modelPath )
+
+	PrivateData p
+	self.Private( p )
+	p.panelStruct = panelStruct
+
+	int characterGUID = GetPersistentVarAsInt( "lastGameCharacter" )
+
+	if ( IsValidItemFlavorGUID( characterGUID ) )
+		p.lastGameCharacter = GetItemFlavorByGUID( characterGUID )
+
+	Assert( file.rewardItemFlavors.len() > 0, "RTKMassPackRewardsController_OnInitialize expects rewards!" )
+	RTKMassPackRewardController_SetRewardItems( self )
+	if ( file.sourceFlavGuid != null )
+	{
+		SettingsAssetGUID ornull sourceFlavGuid = file.sourceFlavGuid
+		expect SettingsAssetGUID( sourceFlavGuid )
+		RTKMassPackRewardsController_SetModelData( self, file.guidFiltersMap[sourceFlavGuid].itemList, file.guidFiltersMap[sourceFlavGuid].rewards )
+	}
+	else
+	{
+		RTKMassPackRewardsController_SetModelData( self, file.allItems, file.allRewards )
+	}
+	RTKMassPackRewardsController_SetFilterButtons( self )
+	RTKMassPackRewardsController_PlayOpenSound()
+
+	RTKMassPackRewardsController_SetItemListButtons( self )
+
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.menu, "ScreenFrame" ), true )
+
+	thread Thread_UpdateLocalFooterOptions()
+}
+
+void function RTKMassPackRewardsController_OnDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKMassPackRewardsUpdateLocalFooter" )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "mass_pack_rewards" )
+}
+
+void function RTKMassPackRewardsController_OnBackPressed( var button )
+{
+	if ( GetActiveMenu() == file.menu )
+	{
+		if ( UI_GetRewardEscapeConfirmationViewed() )
+		{
+			RTKMassPackRewardsController_CloseMenu()
+			file.lastCloseTime = UITime()
+		}
+		else
+		{
+			ConfirmDialogData dialogData
+			dialogData.headerText     = "#MASS_PACK_OPEN_CONFIRM_EXIT_DIALOG_HEADER"
+			dialogData.messageText    = "#MASS_PACK_OPEN_CONFIRM_EXIT_DIALOG_DESC"
+			dialogData.yesText        = ["#A_BUTTON_CONTINUE", "#CONTINUE"]
+			dialogData.resultCallback = void function ( int result )
+			{
+				if ( result == eDialogResult.YES )
+				{
+					RTKMassPackRewardsController_CloseMenu()
+					UI_SetRewardEscapeConfirmationViewed( true )
+					file.lastCloseTime = UITime()
+				}
+			}
+			OpenConfirmDialogFromData( dialogData )
+			EmitUISound( EXIT_MENU_POP_UP_WARNING_SOUND )
+		}
+	}
+}
+
+void function RTKMassPackRewardsController_CloseMenu()
+{
+	
+	if ( file.onCloseRewardMenuCallback != null )
+	{
+		file.onCloseRewardMenuCallback()
+	}
+	else
+	{
+		
+		CloseAllMenus()
+		AdvanceMenu( GetMenu( "LobbyMenu" ) )
+	}
+}
+
+void function RTKMassPackRewardsController_OnNavigateBack()
+{
+	RTKMassPackRewardsController_OnBackPressed( null )
+}
+
+void function RTKMassPackRewardsController_SetItemListButtons( rtk_behavior self )
+{
+	rtk_behavior ornull itemsListBinder = self.PropGetBehavior( "itemsListBinder" )
+	if ( itemsListBinder != null )
+	{
+		expect rtk_behavior( itemsListBinder )
+		RTKStruct_SetInt( itemsListBinder.GetProperties(), "expectedListMaxCount", file.allRewards.len() )
+		self.AutoSubscribe( itemsListBinder, "onUpdatedList", function (  ) : ( self, itemsListBinder ) {
+			rtk_panel panel = itemsListBinder.GetPanel()
+			array< rtk_panel > gridItems = panel.GetChildren()
+			PrivateData p
+			self.Private( p )
+			foreach( int index, rtk_panel item in gridItems )
+			{
+				index = RTKStruct_GetDataIndex( item.GetProperties(), index )
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+				self.ClearAutoSubscribe( button, "onHighlightedOrFocused" )
+				self.AutoSubscribe( button, "onHighlightedOrFocused", void function( rtk_behavior button, int prevState ) : ( self, index, p ) {
+					if ( index < 0 || index >= p.rewards.len() )
+						return
+
+					RTKMassPackRewardsController_ShowItemPreview( self, p.rewards[index], false )
+					if ( file.isRewardSummary )
+						file.focusedItemFlavor = p.rewards[index].reward
+					else
+						file.focusedItemFlavor = null
+				})
+
+				self.ClearAutoSubscribe( button, "onPressed" )
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, index, p ) {
+					if ( index < 0 || index >= p.rewards.len() )
+						return
+
+					ItemFlavor reward = p.rewards[index].reward
+
+
+					if ( keycode == MOUSE_RIGHT )
+					{
+						EquipReward( null )
+					}
+					else
+					{
+						rtk_array itemsArray = RTKStruct_GetArray( p.panelStruct, "itemList" )
+						int quantity = RTKStruct_GetInt( RTKArray_GetStruct( itemsArray , index ) , "quantity" )
+
+						int badgeTier = -1
+						if ( ItemFlavor_GetType( reward ) == eItemType.gladiator_card_badge )
+						{
+							GladCardBadgeDisplayData gcbdd = GetBadgeData( ToEHI( GetLocalClientPlayer() ), p.lastGameCharacter, 0, reward, null, false )
+							badgeTier = gcbdd.dataInteger
+						}
+
+						if ( InspectItemTypePresentationSupported( reward ) )
+						{
+							SetGenericItemPresentationModeActiveWithNavBack( reward, "", "", void function() : ()
+							{
+							}, quantity, badgeTier )
+						}
+					}
+				} )
+			}
+		} )
+	}
+}
+
+void function Thread_UpdateLocalFooterOptions()
+{
+	EndSignal( uiGlobal.signalDummy, "RTKMassPackRewardsUpdateLocalFooter" )
+
+	
+	
+
+	while ( true )
+	{
+		if ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+			UpdateFooterOptions()
+
+		WaitFrame()
+	}
+}
+
+void function ClearCachedData()
+{
+	file.allRewards.clear()
+	file.guidFiltersMap.clear()
+	file.sourceFlav.clear()
+	file.allItems.clear()
+	file.focusedItemFlavor = null
+	file.sourceFlavGuid = null
+	file.selectedFilterIndex = -1
+	file.levelupSoundPlayed = false
+}
+
+void function UpdateFilterSelectedButton( rtk_behavior self, int index )
+{
+	rtk_behavior ornull filtersSelectableContainer = self.PropGetBehavior( "filtersSelectableContainer" )
+	if ( filtersSelectableContainer != null )
+	{
+		expect rtk_behavior( filtersSelectableContainer )
+		RTKSelectableButtonContainer_UpdateSelectedButton( filtersSelectableContainer, index )
+	}
+}
+
+void function RTKMassPackRewardsController_SetFilterButtons( rtk_behavior self )
+{
+	rtk_behavior ornull filtersListBinder = self.PropGetBehavior( "filtersListBinder" )
+	if ( filtersListBinder != null )
+	{
+		expect rtk_behavior( filtersListBinder )
+		self.AutoSubscribe( filtersListBinder, "onUpdatedList", function (  ) : ( self, filtersListBinder ) {
+			rtk_panel panel = filtersListBinder.GetPanel()
+			array< rtk_panel > listItems = panel.GetChildren()
+			PrivateData p
+			self.Private( p )
+			foreach( int index, item in listItems )
+			{
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+				if ( index < 0 || index >= file.sourceFlav.len() )
+					return
+				ItemFlavor ornull sourceFlav = file.sourceFlav[index]
+				SettingsAssetGUID sourceFlavGuid = ASSET_SETTINGS_UNIQUE_ID_INVALID
+				if ( sourceFlav != null )
+				{
+					expect ItemFlavor( sourceFlav )
+					sourceFlavGuid = ItemFlavor_GetGUID( sourceFlav )
+				}
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, sourceFlavGuid, index ) {
+					file.selectedFilterIndex = index
+					file.sourceFlavGuid = sourceFlavGuid
+					RTKMassPackRewardsController_SetModelData( self, file.guidFiltersMap[sourceFlavGuid].itemList, file.guidFiltersMap[sourceFlavGuid].rewards )
+				} )
+			}
+
+			UpdateFilterSelectedButton( self, file.selectedFilterIndex )
+		} )
+	}
+
+	rtk_behavior ornull allFilterButton = self.PropGetBehavior( "allFilterButton" )
+	if ( allFilterButton != null )
+	{
+		expect rtk_behavior( allFilterButton )
+		self.AutoSubscribe( allFilterButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			PrivateData p
+			self.Private( p )
+			file.sourceFlavGuid = null
+			file.selectedFilterIndex = -1
+			RTKMassPackRewardsController_SetModelData( self, file.allItems, file.allRewards )
+			UpdateFilterSelectedButton( self, -1 )
+		} )
+	}
+}
+
+#if DEV
+array<RewardItemFlavor> function GetTestRewards()
+{
+	var testRewardDatatable = GetDataTable( $"datatable/mass_pack_rewards/mass_pack_rewards_summary_test.rpak" )
+	int rowCount       = GetDataTableRowCount( testRewardDatatable )
+
+	array<RewardItemFlavor> rewards
+
+	for ( int i = 0; i < rowCount; ++i )
+	{
+		asset rewardFlav = GetDataTableAsset( testRewardDatatable, i, GetDataTableColumnByName( testRewardDatatable, "reward" ) )
+		asset sourceFlav = GetDataTableAsset( testRewardDatatable, i, GetDataTableColumnByName( testRewardDatatable, "sourceFlav" ) )
+		int quantity = GetDataTableInt( testRewardDatatable, i, GetDataTableColumnByName( testRewardDatatable, "rewardQty" ) )
+		RewardItemFlavor reward
+		reward.reward = GetItemFlavorByAsset( rewardFlav )
+		reward.sourceFlav = sourceFlav == $"" ? null : GetItemFlavorByAsset( sourceFlav )
+		reward.quantity = quantity
+		rewards.append( reward )
+	}
+
+	return rewards
+}
+#endif
+
+array<RewardItemFlavor> function GetMassPackRewards()
+{
+	array<RewardItemFlavor> rewards
+
+	ItemFlavorBag bag = GRX_GetMostRecentPackOpeningResults()
+
+	for ( int i = 0; i < bag.flavors.len(); ++i )
+	{
+		RewardItemFlavor reward
+		reward.reward = bag.flavors[i]
+		reward.sourceFlav = null
+		reward.quantity = bag.quantities[i]
+
+		rewards.append( reward )
+	}
+
+	return rewards
+}
+
+array <RewardItemFlavor> function GetSortedRewardsInfo( array<RewardItemFlavor> rewards )
+{
+	array<RewardItemFlavor> rewardFlavors = ProcessRewardSetItemsFromPackOpenResultForRewardItems( rewards )
+
+	array <RewardItemFlavor> rewardsInfo
+	for ( int i = 0; i < rewardFlavors.len(); ++i )
+	{
+		RewardItemFlavor rewardInfo
+		rewardInfo.reward = rewardFlavors[i].reward
+		rewardInfo.sourceFlav = rewardFlavors[i].sourceFlav
+		rewardInfo.quantity = rewardFlavors[i].quantity
+		rewardsInfo.append( rewardInfo )
+	}
+	rewardsInfo.sort( SortRewardsByQuality )
+
+	return rewardsInfo
+}
+
+string function GetItemOriginName( ItemFlavor ornull sourceFlav )
+{
+	
+	if ( sourceFlav == null )
+		return ""
+
+	ItemFlavor source = expect ItemFlavor( sourceFlav )
+	string name = ""
+
+	switch ( ItemFlavor_GetType( source ) )
+	{
+		case eItemType.gladiator_card_badge:
+			name = "#MASS_PACK_BADGE_REWARDS"
+			break
+		default:
+			name = ItemFlavor_GetLongName( source )
+			break
+	}
+#if DEV
+	if ( name == "" )
+		name  = "Please enter a long name for asset " + ItemFlavor_GetGUID ( source )
+#endif
+	return name
+}
+
+void function UpdateItemOrigin( rtk_behavior self, MassPackRewardsItemFlavorWithOrigin reward, ItemFlavor ornull sourceFlav, RTKBrowseLootPoolItem itemStruct )
+{
+	PrivateData p
+	self.Private( p )
+
+	string name = GetItemOriginName( sourceFlav )
+
+	SettingsAssetGUID sourceFlavGuid = ASSET_SETTINGS_UNIQUE_ID_INVALID
+
+	if ( sourceFlav != null )
+	{
+		expect ItemFlavor( sourceFlav )
+		sourceFlavGuid = ItemFlavor_GetGUID( sourceFlav )
+	}
+
+	if ( !(sourceFlavGuid in file.guidFiltersMap) )
+	{
+		MassPackRewardsFilterInfo data
+		data.filterName = name
+		data.filterIcon = ItemFlavor_GetRewardSummaryFilterIcon( sourceFlav )
+		data.sourceFlav = sourceFlav
+		file.guidFiltersMap[sourceFlavGuid] <- data
+	}
+
+	reward.originText = name
+	file.guidFiltersMap[sourceFlavGuid].itemList.append( itemStruct )
+	file.guidFiltersMap[sourceFlavGuid].rewards.append( reward )
+	file.guidFiltersMap[sourceFlavGuid].numItems += 1
+}
+
+void function RTKMassPackRewardController_SetRewardItems( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	if ( file.allRewards.len() > 0 )
+		return
+
+	if ( file.isRewardSummary )
+	{
+		array <RewardItemFlavor> allRewardsInfo = GetSortedRewardsInfo( file.rewardItemFlavors )
+		entity player = GetLocalClientPlayer()
+		EHI playerEHI = ToEHI( player )
+
+		foreach ( RewardItemFlavor rewardItemFlavor in allRewardsInfo )
+		{
+			int itemType = ItemFlavor_GetType( rewardItemFlavor.reward )
+
+			
+			if ( itemType == eItemType.account_flag )
+				continue
+
+			ItemFlavor ornull sourceFlav = rewardItemFlavor.sourceFlav
+
+			RTKBrowseLootPoolItem itemStruct = RTKMassPackRewardsController_GetItemInfoStruct( rewardItemFlavor )
+
+			if ( itemType == eItemType.gladiator_card_badge )
+			{
+				GladCardBadgeDisplayData gcbdd = GetBadgeData( playerEHI, p.lastGameCharacter, 0, rewardItemFlavor.reward, null, false )
+				if ( gcbdd.imageAsset == $"" )
+					itemStruct.nestedRuiAsset = gcbdd.ruiAsset
+				itemStruct.image = gcbdd.imageAsset
+
+				if ( rewardItemFlavor.sourceFlav == null )
+				{
+					sourceFlav = GetItemFlavorByGUID( EMPTY_BADGE_GUID ) 
+				}
+			}
+
+			MassPackRewardsItemFlavorWithOrigin rewardWithOrigin
+			rewardWithOrigin.reward = rewardItemFlavor.reward
+
+			UpdateItemOrigin( self, rewardWithOrigin, sourceFlav, itemStruct )
+
+			file.allRewards.append( rewardWithOrigin )
+			file.allItems.append( itemStruct )
+		}
+	}
+	else
+	{
+		array<RTKBrowseLootPoolItem> items = []
+		array<RewardItemFlavor> rewards = ProcessRewardSetItemsFromPackOpenResultForRewardItems( file.rewardItemFlavors )
+		rewards.sort( SortRewardsByQuality )
+
+		array<MassPackRewardsItemFlavorWithOrigin> rewardsWithOrigin
+
+		foreach ( RewardItemFlavor rewardItemFlavor in rewards )
+		{
+			RTKBrowseLootPoolItem itemStruct = RTKMassPackRewardsController_GetItemInfoStruct( rewardItemFlavor )
+			items.append( itemStruct )
+
+			MassPackRewardsItemFlavorWithOrigin rewardWithOrigin
+			rewardWithOrigin.reward = rewardItemFlavor.reward
+			rewardsWithOrigin.append( rewardWithOrigin )
+		}
+
+		file.allItems = items
+		file.allRewards = rewardsWithOrigin
+	}
+}
+
+void function RTKMassPackRewardsController_SetModelData( rtk_behavior self, array<RTKBrowseLootPoolItem> items, array<MassPackRewardsItemFlavorWithOrigin> rewards )
+{
+	Assert( items.len() == rewards.len() )
+	Assert( rewards.len() > 0, "RTKMassPackRewardsController_SetModelData expects non-empty rewards." )
+
+	PrivateData p
+	self.Private( p )
+	p.rewards = rewards
+
+	RTKMassPackRewardsModel model
+	model.itemList = items
+
+	int craftingMaterialsQuantity = 0
+	int heirloomsShardsQuantity = 0
+	int apexCoinsQuantity = 0
+	int legendTokensQuantity = 0
+	int exoticShardsQuantity = 0
+
+	for ( int i = 0; i < items.len(); ++i )
+	{
+		var type = ItemFlavor_GetType( rewards[i].reward )
+		if ( type == eItemType.account_currency_bundle )
+		{
+			if ( items[i].quality != eRarityTier.MYTHIC )
+				craftingMaterialsQuantity += items[i].quantity
+			else
+				heirloomsShardsQuantity += items[i].quantity
+		}
+		else if ( type  == eItemType.account_currency )
+		{
+			if ( rewards[i].reward == GRX_CURRENCIES[GRX_CURRENCY_PREMIUM] )
+				apexCoinsQuantity += items[i].quantity
+			else if ( rewards[i].reward == GRX_CURRENCIES[GRX_CURRENCY_EXOTIC] )
+				exoticShardsQuantity += items[i].quantity
+			else if ( rewards[i].reward == GRX_CURRENCIES[GRX_CURRENCY_CREDITS ] )
+				legendTokensQuantity  += items[i].quantity
+			else if ( rewards[i].reward == GRX_CURRENCIES[GRX_CURRENCY_CRAFTING  ] )
+				craftingMaterialsQuantity  += items[i].quantity
+			else if ( rewards[i].reward == GRX_CURRENCIES[GRX_CURRENCY_HEIRLOOM  ] )
+				heirloomsShardsQuantity  += items[i].quantity
+		}
+	}
+
+	RTKMassPackCurrencyModel currencyModel
+	currencyModel.craftingMaterials = craftingMaterialsQuantity
+	currencyModel.heirloomShards = heirloomsShardsQuantity
+	currencyModel.premiumCurrency = apexCoinsQuantity
+	currencyModel.exoticCurrency = exoticShardsQuantity
+	currencyModel.creditCurrency = legendTokensQuantity
+	currencyModel.showCurrencyWidget = heirloomsShardsQuantity > 0 || craftingMaterialsQuantity > 0 || apexCoinsQuantity > 0 || exoticShardsQuantity > 0 || legendTokensQuantity > 0
+	model.currencyWidgetInfo = currencyModel
+
+	model.isRewardSummary = file.isRewardSummary
+
+	foreach ( SettingsAssetGUID guid, MassPackRewardsFilterInfo info in file.guidFiltersMap )
+	{
+		RTKMassPackRewardsFilterModel filterModel
+		filterModel.image = info.filterIcon
+		filterModel.quantity = info.numItems
+		filterModel.isBrowsable = true
+		filterModel.name = info.filterName
+		model.availableFilters.append( filterModel )
+
+		if ( !file.sourceFlav.contains( info.sourceFlav ) )
+			file.sourceFlav.append( info.sourceFlav )
+	}
+
+	model.title = RTKMassPackRewardsController_GetTitle()
+	RTKStruct_SetValue( p.panelStruct, model )
+	RTKMassPackRewardsController_ShowItemPreview( self, rewards[0] )
+}
+
+void function RTKMassPackRewardsController_PlayOpenSound()
+{
+	
+
+	if ( file.levelupSoundPlayed )
+		return
+
+	
+	if ( file.sourceFlav.len() == 1 )
+	{
+		ItemFlavor ornull sourceFlav = file.sourceFlav[0]
+		ItemFlavor ornull battlepass = GetActiveBattlePass()
+		if ( battlepass != null && sourceFlav != null )
+		{
+			expect ItemFlavor( battlepass )
+			expect ItemFlavor( sourceFlav )
+			if ( ItemFlavor_GetGUID( sourceFlav ) == ItemFlavor_GetGUID( battlepass ) )
+			{
+				EmitUISound( GetGlobalSettingsString( ItemFlavor_GetAsset( battlepass ), "levelUpSound" ) )
+			}
+		}
+	}
+
+	file.levelupSoundPlayed = true
+}
+
+string function RTKMassPackRewardsController_GetTitle()
+{
+	
+	
+	bool hasBPSource = false
+
+	
+	if ( file.sourceFlav.len() == 1 )
+	{
+		ItemFlavor ornull sourceFlav = file.sourceFlav[0]
+		ItemFlavor ornull battlepass = GetActiveBattlePass()
+		if ( battlepass != null && sourceFlav != null )
+		{
+			expect ItemFlavor( battlepass )
+			expect ItemFlavor( sourceFlav )
+			hasBPSource = ItemFlavor_GetGUID( sourceFlav ) == ItemFlavor_GetGUID( battlepass )
+		}
+	}
+
+	if ( file.isRewardSummary )
+		return hasBPSource ? "#MASS_PACK_REWARDS_BP_SUMMARY_TITLE" : "#MASS_PACK_REWARDS_SUMMARY_TITLE"
+	else
+		return "#MASS_PACK_REWARDS_MENU_TITLE"
+
+	unreachable
+}
+
+RTKBrowseLootPoolItem function RTKMassPackRewardsController_GetItemInfoStruct( RewardItemFlavor rewardItemFlavor )
+{
+	RTKBrowseLootPoolItem item = GetLootPoolItemInfoStruct( rewardItemFlavor.reward )
+	if ( rewardItemFlavor.quantity > 1 ) 
+		item.quantity = rewardItemFlavor.quantity
+	return item
+}
+
+RTKBrowseLootPoolItem function GetLootPoolItemInfoStruct( ItemFlavor itemFlavor )
+{
+	RTKBrowseLootPoolItem item
+	item.checked = false
+	item.isFeaturedItem = false
+	item.image = CustomizeMenu_GetGenericRewardButtonImage( itemFlavor )
+	item.frameColor = GetBattlepassRarityColor( item.quality, true )
+	item.backgroundColor = GetBattlepassRarityColor( item.quality, false )
+	item.eventImage = ItemFlavor_GetSourceIcon( itemFlavor )
+	item.quantity = GRX_GetQuantityOverrideForStackableItemFlavor( itemFlavor )
+	item.quality = GRX_GetRarityOverrideFromQuantity( itemFlavor, ItemFlavor_GetQuality( itemFlavor ), item.quantity )
+
+	if ( Wishlist_IsEnabled() )
+	{
+		if ( GRX_IsItemFlavInPackResultContainer( itemFlavor, GRX_CONTAINERTYPE_WISHLIST ) )
+		{
+			item.tagImage = WISHLIST_ACTIVATED_TAG_ASSET
+		}
+		else if( ItemFlavor_IsWishlistUpgradablePack( itemFlavor ) )
+		{
+			item.tagImage = WISHLIST_UPGRADABLE_TAG_ASSET
+		}
+	}
+
+	return item
+}
+
+void function RTKMassPackRewardsController_SetIndividualItemInfo( MassPackRewardsItemFlavorWithOrigin item )
+{
+	rtk_struct individualItemInfoModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "individualItemInfo", true, [ MODEL_PATH_NAME ] ) )
+	RTKStruct_SetValue( individualItemInfoModel, RTKMassPackRewardsController_GetIndividualItemInfoStruct( item ) )
+}
+
+void function RTKMassPackRewardsController_ShowItemPreview( rtk_behavior self, MassPackRewardsItemFlavorWithOrigin item, bool showFX = true )
+{
+	PrivateData p
+	self.Private( p )
+
+	int ornull overrideDataIntegerOrNull = null
+	if ( ItemFlavor_GetType( item.reward ) == eItemType.gladiator_card_badge )
+	{
+		GladCardBadgeDisplayData gcbdd = GetBadgeData( ToEHI( GetLocalClientPlayer() ), p.lastGameCharacter, 0, item.reward, null, false )
+		overrideDataIntegerOrNull = gcbdd.dataInteger
+	}
+
+	RunClientScript( "UIToClient_PreviewStoreItem", ItemFlavor_GetGUID( item.reward ), false, 0, showFX, overrideDataIntegerOrNull )
+	RTKMassPackRewardsController_SetIndividualItemInfo( item )
+}
+
+RTKIndividualItemInfo function RTKMassPackRewardsController_GetIndividualItemInfoStruct( MassPackRewardsItemFlavorWithOrigin item )
+{
+	RTKIndividualItemInfo individualItem
+	individualItem.itemName = ItemFlavor_GetLongName( item.reward )
+	individualItem.itemType = Wishlist_GetItemFlavorRewardShortDescription( item.reward )
+
+	int quantity = GRX_GetQuantityOverrideForStackableItemFlavor( item.reward )
+	int quality  = GRX_GetRarityOverrideFromQuantity( item.reward, ItemFlavor_GetQuality( item.reward ), quantity )
+	string qualityName = ItemQuality_GetQualityName( quality, quantity > 1 )
+
+	individualItem.itemRarity = qualityName
+	individualItem.itemQuality = quality
+	individualItem.itemIsOwned = false
+	individualItem.itemOrigin = ""
+
+	if ( file.isRewardSummary )
+		individualItem.itemOrigin = item.originText
+
+	return individualItem
+}
+
+int function SortRewardsByQuality( RewardItemFlavor a, RewardItemFlavor b )
+{
+	return SortByQuality( a.reward, b.reward )
+}
+
+int function SortByQuality( ItemFlavor a, ItemFlavor b )
+{
+	int a_type = ItemFlavor_GetType( a )
+	int b_type = ItemFlavor_GetType( b )
+
+	if ( a.loadoutSortPriority < b.loadoutSortPriority )
+	{
+		return 1
+	}
+	else if ( a.loadoutSortPriority > b.loadoutSortPriority )
+	{
+		return -1
+	}
+	else
+	{
+		if ( a_type == eItemType.gladiator_card_badge )
+		{
+			return -1
+		}
+		else if ( b_type == eItemType.gladiator_card_badge )
+		{
+			return 1
+		}
+		if ( a_type == eItemType.account_currency )
+		{
+			return -1
+		}
+		else if ( b_type == eItemType.account_currency )
+		{
+			return 1
+		}
+
+		if ( a_type == eItemType.weapon_skin && WeaponSkin_DoesReactToKills ( a ) )
+		{
+			return -1
+		}
+		else if ( b_type == eItemType.weapon_skin && WeaponSkin_DoesReactToKills ( b ) )
+		{
+			return 1
+		}
+
+		
+		if ( a_type == eItemType.skydive_emote || a_type == eItemType.skydive_trail )
+		{
+			a_type = eItemType.character_execution
+		}
+
+		if ( b_type == eItemType.skydive_emote || b_type == eItemType.skydive_trail )
+		{
+			b_type = eItemType.character_execution
+		}
+
+		if ( a_type < eItemType.character && b_type >= eItemType.character )
+		{
+			return 1
+		}
+		else if ( a_type >= eItemType.character && b_type < eItemType.character )
+		{
+			return -1
+		}
+		else
+		{
+			if ( a_type > b_type )
+			{
+				return 1
+			}
+			else if ( a_type < b_type )
+			{
+				return -1
+			}
+
+			
+			
+			int aGUID = ItemFlavor_GetGUID( a )
+			int bGUID = ItemFlavor_GetGUID( b )
+			if ( aGUID < bGUID )
+				return -1
+			else if ( aGUID > bGUID )
+				return 1
+		}
+	}
+
+	return 0
+}

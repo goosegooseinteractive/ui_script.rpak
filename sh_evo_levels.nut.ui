@@ -1,0 +1,755 @@
+global function EvoLevels_Init
+global function EvoLevels_InitTuningValues
+
+global function EvoLevels_IsEnabled
+global function EvoLevels_RegisterEvoLevelSystem
+global function EvoLevels_GetSystemType
+
+global function EvoLevels_GetPlayerLevel
+global function EvoLevels_IsLevelMaxLevel
+global function EvoLevels_IsPlayerAtMaxLevel
+global function EvoLevels_GetLevelFromXp
+global function EvoLevels_GetMaxUpgradeLevels
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const string EVO_LEVELUP_LVL1_SFX_1P = "LevelUp_LegendsUpgrade_lvl1_1P"
+const string EVO_LEVELUP_LVL1_SFX_3P = "LevelUp_LegendsUpgrade_lvl1_3P"
+
+global enum eEvoLevelSystemType
+{
+	NONE,
+	UPGRADE_CORE,
+
+
+
+
+	LINEAR_UPGRADE_CORE,
+
+
+
+
+	COUNT
+}
+
+global struct EvoLevelSystem
+{
+	int systemType = eEvoLevelSystemType.NONE
+
+	array<int> functionref() GetLevelXpThresholdsCallback
+
+
+
+
+
+
+
+
+
+}
+
+struct
+{
+
+
+
+
+
+
+
+
+
+	array<int> xpLevelThresholds
+
+	EvoLevelSystem& sys
+
+
+
+
+
+
+
+
+
+
+} file
+
+struct Tuning
+{
+	bool isEnabled = true
+
+	int modesInitialLevel = 0
+
+	bool awardXpBeyondMaxLevel = false
+
+}
+Tuning tuning
+
+
+const string FUNCNAME_ServerToClient_NotifyLeveledUp = "ServerToClient_NotifyLeveledUp"
+
+
+
+
+const float UPGRADE_CORE_LEVEL_UP_NOTI_DURATION = 4.0
+
+void function EvoLevels_Init()
+{
+	EvoLevels_InitTuningValues()
+
+	if( !EvoLevels_IsEnabled() || !EvoXp_IsEnabled() )
+		return
+
+
+
+
+
+}
+
+void function EvoLevels_InitTuningValues()
+{
+
+
+
+
+	
+	Tuning defaultTunings
+
+	tuning.isEnabled = EvoXp_IsEnabled() && GetCurrentPlaylistVarBool( "evo_levels_enabled", true )
+
+	tuning.modesInitialLevel = GetCurrentPlaylistVarInt( "passive_upgrade_core_modes_initial_level", defaultTunings.modesInitialLevel )
+	tuning.awardXpBeyondMaxLevel = GetCurrentPlaylistVarBool( "passive_upgrade_core_allow_xp_beyond_max", defaultTunings.awardXpBeyondMaxLevel )
+}
+
+bool function EvoLevels_IsEnabled()
+{
+	return LegendUpgrades_IsEnabled()
+}
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________EvoLevels_API___________________________(){}
+#endif
+
+void function EvoLevels_RegisterEvoLevelSystem( EvoLevelSystem system )
+{
+	if ( !EvoLevels_IsEnabled() )
+	{
+		Warning( "Registering Evo Level System, but the Evo Level System is disabled!" )
+	}
+
+
+
+
+
+
+	Assert( system.systemType != eEvoLevelSystemType.NONE, "Trying to register a blank Evo Level system!" )
+
+	Assert( system.GetLevelXpThresholdsCallback != null, "Evo Level system is missing GetLevelXpThresholdsCallback !" )
+
+
+
+
+
+
+
+	file.sys = system
+
+	file.xpLevelThresholds = GetLevelXpThresholds()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function EvoLevels_GetSystemType()
+{
+	return file.sys.systemType
+}
+
+int function EvoLevels_GetMaxUpgradeLevels()
+{
+	if ( !EvoLevels_IsEnabled() )
+		return 0
+
+	if ( file.xpLevelThresholds.len() == 0 )
+		return GetLevelXpThresholds().len()
+
+	return file.xpLevelThresholds.len()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function EvoLevels_GetPlayerLevel( entity player )
+{
+	if( !IsValid( player ) || !EvoLevels_IsEnabled() )
+	{
+		return 0
+	}
+
+	return EvoLevels_GetLevelFromXp( EvoXp_GetXP( player ) )
+}
+
+int function EvoLevels_GetLevelFromXp( int xpValue )
+{
+	if( !EvoLevels_IsEnabled() )
+		return 0
+
+	int currentLevel = 0
+
+	array<int> levelThresholds = file.xpLevelThresholds
+	for( int i=0; i < levelThresholds.len(); i++ )
+	{
+		if( xpValue < levelThresholds[i] )
+			break
+		currentLevel = i + 1
+	}
+	currentLevel = minint( EvoLevels_GetMaxUpgradeLevels(), currentLevel )
+
+	return currentLevel
+}
+
+bool function EvoLevels_IsLevelMaxLevel( int curLevel )
+{
+	if ( !EvoLevels_IsEnabled() )
+		return true
+
+	return curLevel == EvoLevels_GetMaxUpgradeLevels()
+}
+
+bool function EvoLevels_IsPlayerAtMaxLevel( entity player )
+{
+	if ( !EvoLevels_IsEnabled() )
+		return true
+
+	int curLevel = EvoLevels_GetPlayerLevel( player )
+
+	return curLevel == EvoLevels_GetMaxUpgradeLevels()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________Setup___________________________(){}
+#endif
+array<int> function GetLevelXpThresholds()
+{
+	if ( file.sys.systemType == eEvoLevelSystemType.NONE )
+		return [0]
+
+	return file.sys.GetLevelXpThresholdsCallback()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________InternalLevelHelpers___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

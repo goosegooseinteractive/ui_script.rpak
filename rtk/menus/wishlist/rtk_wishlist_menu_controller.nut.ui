@@ -1,0 +1,1120 @@
+
+global function InitRTKWishlistMenu
+
+
+global function RTKWishlistMenu_OnInitialize
+global function RTKWishlistMenu_OnDestroy
+global function RTKWishlistMenu_GetWeaponData
+global function RTKWishlistMenu_GetCharacterData
+global function RTKWishlistMenu_GetEmptyWishlistItemData
+global function RTKWishlistMenu_GetAllCharacterWishlistData
+
+
+global function OpenWishlistMenu
+global function OpenWishlistMenuSeeded
+global function RTKWishlistMenu_SetButtonsLoading
+
+
+global function RTKMutator_IsWishlistFrontInactive
+global function RTKMutator_IsWishlistFrontActive
+global function RTKMutator_IsWishlistFrontInvalid
+
+global function RTKMutator_ShouldShowWishlistStrongGlow
+global function RTKMutator_ShouldShowWishlistEdgecasePanel
+global function RTKMutator_ShouldShowWishlistInnerGlow
+global function RTKMutator_ShouldBlockWishlistGridInput
+global function RTKMutator_ShouldShowWishlistFreeEdits
+
+
+global const string WISHLIST_TUTORIAL_INFO = "wishlistTutorialInfo"
+const string MODEL_PATH_NAME = "wishlistMenu"
+const string EXIT_MENU_POP_UP_WARNING_SOUND = "UI_Menu_LootCeremony_Exit_Warning"
+
+
+const string CHARACTER_PATH_NAME = "characterData"
+const string WEAPON_PATH_NAME = "weaponData"
+
+
+const table<int, string> WISHLIST_ITEM_TYPE_MODEL_KEY = {
+	[eItemType.character] = CHARACTER_PATH_NAME,
+	[eItemType.weapon_category] = WEAPON_PATH_NAME
+}
+
+global struct RTKWishlistMenu_Properties
+{
+	rtk_behavior editButton
+	rtk_behavior activateButton
+	rtk_behavior wishlistInfoButton
+
+	rtk_behavior characterGridListBinder
+	rtk_behavior weaponGridListBinder
+}
+
+global struct RTKWishlistTooltipData
+{
+	
+	array<int> collectedPercentage
+}
+
+global struct RTKWishlistItemData
+{
+	int guid = -1
+
+	string completePercentage
+	asset image
+	string name
+
+	bool isSelected
+	bool isOwned = true
+	bool isDisabled
+	bool isSlotLocked
+
+	bool hasInput = true
+	bool hasWarningText
+
+	RTKWishlistTooltipData& tooltip
+}
+
+global struct RTKWishlistButtonData
+{
+	string text
+	string subText
+
+	bool isVisible = true
+	bool isInteractive = true
+	bool isLoading
+}
+
+global struct RTKWishlistData
+{
+	string title
+	string subtitle
+	string disclaimer
+
+	
+	array<RTKWishlistItemData> weaponData
+	array<RTKWishlistItemData> characterData
+
+	RTKWishlistButtonData& activateButton
+	RTKWishlistButtonData& editButton
+
+	int state = eWishlistFrontState.INACTIVE
+	int freeEdits
+}
+
+global struct RTKWishlistMenuModel
+{
+	RTKWishlistData& wishlistData
+	array<RTKWishlistItemData> weaponData
+	array<RTKWishlistItemData> characterData
+}
+
+struct PrivateData
+{
+	void functionref() OnWishlistSaved
+	int onWishlistStateChangedListenerID
+}
+
+struct
+{
+	var menu
+	bool isLoading
+	bool isSeeded
+}file
+
+
+void function InitRTKWishlistMenu( var menu )
+{
+	file.menu = menu
+
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_CLOSE", "#B_BUTTON_CLOSE", WishlistMenu_OnBackPressed )
+	AddMenuFooterOption( menu, LEFT, BUTTON_STICK_LEFT, true, "#STICK_1_WISHLIST_INFO_FOOTER", "#WISHLIST_INFO_FOOTER", WishlistMenu_OnMoreInfoPressed )
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, WishlistMenu_OnShow )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, WishlistMenu_OnNavigateBack )
+
+	AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( WishlistMenu_PopulateOpenPacksTutorialInfoAboutText, WISHLIST_TUTORIAL_INFO )
+	AddCallback_UI_FeatureTutorialDialog_SetTitle( WishlistMenu_PopulateOpenPacksTutorialTitle, WISHLIST_TUTORIAL_INFO )
+}
+
+array<featureTutorialTab> function WishlistMenu_PopulateOpenPacksTutorialInfoAboutText()
+{
+	array<featureTutorialTab> tabs
+
+	featureTutorialTab tab1
+	array<featureTutorialData> tab1Rules
+
+	tab1.tabName = 	"#WISHLIST_TUTORIAL_OVERVIEW"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_OVERVIEW_TITLE_1", "#WISHLIST_TUTORIAL_OVERVIEW_DESC_1", $"" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_OVERVIEW_TITLE_2", "#WISHLIST_TUTORIAL_OVERVIEW_DESC_2", $"" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_OVERVIEW_TITLE_3", "#WISHLIST_TUTORIAL_OVERVIEW_DESC_3", $"" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_OVERVIEW_TITLE_4", "#WISHLIST_TUTORIAL_OVERVIEW_DESC_4", $"" ) )
+	tab1.rules = tab1Rules
+
+	tabs.append( tab1 )
+
+	featureTutorialTab tab2
+	array<featureTutorialData> tab2Rules
+
+	tab2.tabName = 	"#WISHLIST_TUTORIAL_UPGRADES"
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_UPGRADES_TITLE_1", "#WISHLIST_TUTORIAL_UPGRADES_DESC_1", $"", ["", "", "", "", "", ""], {}, 500 ) )
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_UPGRADES_TITLE_2", "#WISHLIST_TUTORIAL_UPGRADES_DESC_2", $"", ["", "", "", "", "", ""], {}, 500 ) )
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#WISHLIST_TUTORIAL_UPGRADES_TITLE_3", "#WISHLIST_TUTORIAL_UPGRADES_DESC_3", $"", ["", "", "", "", "", ""], {}, 500 ) )
+	tab2.rules = tab2Rules
+
+	tabs.append( tab2 )
+
+	return tabs
+}
+
+string function WishlistMenu_PopulateOpenPacksTutorialTitle()
+{
+	return "#WISHLIST_TUTORIAL_TITLE"
+}
+
+void function WishlistMenu_OnMoreInfoPressed( var button )
+{
+	UI_OpenFeatureTutorialDialog( WISHLIST_TUTORIAL_INFO )
+}
+
+void function WishlistMenu_OnShow()
+{
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.menu, "WishlistPanel" ), false )
+}
+
+void function WishlistMenu_OnBackPressed( var button )
+{
+	if ( GetActiveMenu() != file.menu )
+		return
+
+	if ( file.isLoading )
+		return
+
+	if ( RTKWishlistMenu_ShouldShowExitWarning() )
+	{
+		ConfirmDialogData dialogData
+		dialogData.headerText     = "#WISHLIST_EXIT_WARNING_TITLE"
+		dialogData.messageText    = "#WISHLIST_EXIT_WARNING_DESC"
+		dialogData.yesText        = ["#A_BUTTON_CONTINUE", "#CONTINUE"]
+		dialogData.onOpenAudio = EXIT_MENU_POP_UP_WARNING_SOUND
+		dialogData.resultCallback = void function ( int result )
+		{
+			if ( result == eDialogResult.YES )
+				CloseActiveMenu()
+		}
+
+		OpenConfirmDialogFromData( dialogData )
+	}
+	else
+	{
+		CloseActiveMenu()
+	}
+}
+
+void function WishlistMenu_OnNavigateBack()
+{
+	WishlistMenu_OnBackPressed( null )
+}
+
+
+void function OpenWishlistMenu()
+{
+	if ( !Wishlist_IsEnabled() )
+		return
+
+	if ( GetActiveMenu() == file.menu )
+		return
+
+	AdvanceMenu( file.menu )
+	file.isSeeded = false
+}
+
+void function OpenWishlistMenuSeeded()
+{
+	OpenWishlistMenu()
+	file.isSeeded = true
+}
+
+void function RTKWishlistMenu_SetButtonsLoading()
+{
+	rtk_struct ornull model = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+	if ( model == null )
+		return
+	expect rtk_struct( model )
+
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_struct buttonData = RTKStruct_GetStruct( wishlistData, "activateButton" )
+	rtk_struct editData = RTKStruct_GetStruct( wishlistData, "editButton" )
+
+	RTKStruct_SetBool( buttonData, "isInteractive", false )
+	RTKStruct_SetBool( editData, "isInteractive", false )
+	RTKStruct_SetBool( buttonData, "isLoading", true )
+	RTKStruct_SetBool( editData, "isLoading", true )
+
+	file.isLoading = true
+}
+
+
+void function RTKWishlistMenu_OnInitialize( rtk_behavior self )
+{
+	RTKWishlistMenu_SetPageHeader()
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true ) )
+
+	RTKWishlistMenu_SetUpWeaponGridButtons( self )
+	RTKWishlistMenu_SetUpCharacterGridButtons( self )
+
+	RTKWishlistMenu_SetActivateButton( self )
+	RTKWishlistMenu_SetEditButton( self )
+
+	PrivateData p
+	self.Private( p )
+
+	
+
+
+
+
+
+	p.OnWishlistSaved = (void function() : ( self )
+	{
+		thread function() : ( self ) {
+			EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+			while ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+				wait 0.25
+
+			
+			RTKWishlistMenu_SetLocalWishlistState( Wishlist_GetSelectionUIState( 0 , null, "RTKWishlistMenu_OnInitialize" ) )
+			file.isLoading = false
+		}()
+
+	})
+
+	AddCallback_OnWishlistSaved( p.OnWishlistSaved )
+
+	
+	rtk_struct wishlistDataModel = RTKStruct_GetStruct( model, "wishlistData" )
+	p.onWishlistStateChangedListenerID = RTKStruct_AddPropertyListener( wishlistDataModel, "state", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		expect int(propValue)
+		RTKWishlistMenu_UpdateActivateButton( propValue )
+		RTKWishlistMenu_UpdateEditButton( propValue )
+		RTKWishlistMenu_UpdateGridsInput( propValue )
+		RTKWishlistMenu_UpdateWishlistText( propValue )
+	} )
+
+	RTKWishlistMenu_SetMenuData( model )
+}
+
+void function RTKWishlistMenu_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistDataModel = RTKStruct_GetStruct( model, "wishlistData" )
+
+	RTKStruct_RemovePropertyListener( wishlistDataModel, "state", p.onWishlistStateChangedListenerID )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+	RTKBreadcrumbHeader_RemoveAllSteps()
+
+	
+	file.isSeeded = false
+
+	RemoveCallback_OnWishlistSaved( p.OnWishlistSaved )
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+}
+
+
+void function RTKWishlistMenu_SetUpWeaponGridButtons( rtk_behavior self )
+{
+	rtk_behavior ornull listBinder = self.PropGetBehavior( "weaponGridListBinder" )
+	if ( listBinder != null )
+	{
+		expect rtk_behavior( listBinder )
+
+		self.AutoSubscribe( listBinder, "onUpdatedList", function ( ) : ( self, listBinder ) {
+			rtk_panel panel              = listBinder.GetPanel()
+			array< rtk_panel > gridItems = panel.GetChildren()
+
+			rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+
+			foreach ( int index, item in gridItems )
+			{
+				rtk_array weaponArray = RTKStruct_GetArray( model, "weaponData" )
+				rtk_struct weaponStruct = RTKArray_GetStruct( weaponArray, index )
+
+				
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( index, weaponStruct ) {
+					if ( file.isLoading )
+						return
+
+					RTKWishlistItemData weaponData
+					RTKStruct_GetValue( weaponStruct, weaponData )
+
+					if ( weaponData.isSelected )
+					{
+						RTKWishListMenu_RemoveItemFromWishlistSelection( weaponData, eItemType.weapon_category )
+
+						weaponData.isSelected = false
+						RTKStruct_SetValue( weaponStruct, weaponData )
+					}
+					else
+					{
+						if ( Wishlist_IsCategoryCompleted( weaponData.guid, null ) )
+							return
+
+						if ( RTKWishlistMenu_GetSelectedItemsCount( eItemType.weapon_category, false ) >= Wishlist_GetWishlistParametersForLocalPlayer().adjustedWeaponCategoryCount )
+							return
+
+						RTKWishListMenu_AddItemToWishlistSelection( weaponData, eItemType.weapon_category )
+
+						weaponData.isSelected = true
+						RTKStruct_SetValue( weaponStruct, weaponData )
+					}
+				})
+			}
+		})
+	}
+}
+
+void function RTKWishlistMenu_SetUpCharacterGridButtons( rtk_behavior self )
+{
+	rtk_behavior ornull listBinder = self.PropGetBehavior( "characterGridListBinder" )
+	if ( listBinder != null )
+	{
+		expect rtk_behavior( listBinder )
+
+		self.AutoSubscribe( listBinder, "onUpdatedList", function ( ) : ( self, listBinder ) {
+			rtk_panel panel              = listBinder.GetPanel()
+			array< rtk_panel > gridItems = panel.GetChildren()
+
+			rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+
+			foreach ( int index, item in gridItems )
+			{
+				rtk_array characterArray = RTKStruct_GetArray( model, "characterData" )
+				rtk_struct characterStruct = RTKArray_GetStruct( characterArray, index )
+
+				
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, index, characterStruct ) {
+
+					if ( file.isLoading )
+						return
+
+					RTKWishlistItemData characterData
+					RTKStruct_GetValue( characterStruct, characterData )
+
+					if ( characterData.isSelected )
+					{
+						RTKWishListMenu_RemoveItemFromWishlistSelection( characterData, eItemType.character )
+
+						characterData.isSelected = false
+						RTKStruct_SetValue( characterStruct, characterData )
+					}
+					else
+					{
+						if ( Wishlist_IsCategoryCompleted( characterData.guid, null ) )
+							return
+
+						if ( RTKWishlistMenu_GetSelectedItemsCount( eItemType.character, false ) >= Wishlist_GetWishlistParametersForLocalPlayer().adjustedCharacterCount )
+							return
+
+						RTKWishListMenu_AddItemToWishlistSelection( characterData, eItemType.character )
+
+						characterData.isSelected = true
+						RTKStruct_SetValue( characterStruct, characterData )
+					}
+				})
+			}
+		})
+	}
+}
+
+void function RTKWishlistMenu_SetActivateButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "activateButton" )
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( ) {
+		Wishlist wishlist = RTKWishlistMenu_BuildWishlistFromDataModel()
+		if ( Wishlist_IsValid( wishlist ) )
+		{
+			OpenWishlistActivateDialog( wishlist )
+		}
+		else
+		{
+			rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+			RTKWishlistMenu_SetMenuData( model )
+
+			ConfirmDialogData dialogData
+			dialogData.headerText = "#WARNING"
+			dialogData.messageText = "#UNEXPECTED_ERROR_WISHLIST"
+			dialogData.contextImage = $"ui/menu/common/dialog_notice"
+			OpenOKDialogFromData( dialogData )
+		}
+	})
+	RTKWishlistMenu_UpdateActivateButton( RTKWishlistMenu_GetLocalWishlistState() )
+}
+
+void function RTKWishlistMenu_SetEditButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "editButton" )
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( ) {
+		if ( RTKWishlistMenu_CanEnterEditMode() )
+		{
+			RTKWishlistMenu_SetLocalWishlistState( eWishlistFrontState.INACTIVE )
+		}
+		else
+		{
+			RTKWishlistMenu_ResetWishlistSelection()
+		}
+	})
+	RTKWishlistMenu_UpdateEditButton( RTKWishlistMenu_GetLocalWishlistState() )
+}
+
+
+void function RTKWishlistMenu_SetMenuData( rtk_struct modelStruct )
+{
+	RTKWishlistMenuModel data
+	data.characterData = RTKWishlistMenu_GetAllCharacterData()
+	data.weaponData = RTKWishlistMenu_GetAllWeaponData()
+
+	RTKWishlistData wishlistData = RTKWishlistMenu_GetLocalPlayerWishlistData()
+	data.wishlistData = wishlistData
+	RTKStruct_SetValue( modelStruct, data )
+
+	RTKWishlistMenu_UpdateGridsInput( wishlistData.state )
+	file.isLoading = false
+}
+
+int function RTKWishlistMenu_GetSelectedItemsCount( int itemType, bool checkValidity )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_array itemData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[itemType] )
+
+	int count = 0
+	for ( int i = 0; i < RTKArray_GetCount( itemData ); i++ )
+	{
+		rtk_struct data = RTKArray_GetStruct( itemData, i )
+		int guid = RTKStruct_GetInt( data, "guid" )
+		if ( guid != -1 )
+		{
+			if ( checkValidity )
+			{
+				if ( !Wishlist_IsCategoryCompleted( guid, null ) )
+					count++
+			}
+			else
+			{
+				count++
+			}
+		}
+	}
+	return count
+}
+
+void function RTKWishListMenu_AddItemToWishlistSelection( RTKWishlistItemData addData, int itemType )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_array itemData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[itemType] )
+	int wishlistState = RTKStruct_GetInt( wishlistData, "state" )
+
+	RTKWishlistItemData newData = clone addData
+
+	for ( int i = 0; i < RTKArray_GetCount( itemData ); i++ )
+	{
+		rtk_struct data = RTKArray_GetStruct( itemData, i )
+		if ( RTKStruct_GetInt( data, "guid" ) == -1 ) 
+		{
+			if ( RTKStruct_GetBool( data, "isSlotLocked" ) ) 
+				continue
+
+			newData.completePercentage = ""
+			newData.hasInput = false
+			RTKStruct_SetValue( data, newData )
+
+			RTKWishlistMenu_UpdateEditButton( wishlistState )
+			RTKWishlistMenu_UpdateActivateButton( wishlistState )
+			break
+		}
+	}
+}
+
+void function RTKWishListMenu_RemoveItemFromWishlistSelection( RTKWishlistItemData removeData, int itemType )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_array itemData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[itemType] )
+	int wishlistState = RTKStruct_GetInt( wishlistData, "state" )
+	bool isSlotLocked = false
+	WishlistParameters params = Wishlist_GetWishlistParametersForLocalPlayer()
+	int adjustedCount
+	int selectedCount = RTKWishlistMenu_GetSelectedItemsCount( itemType, false )
+
+	if ( itemType == eItemType.character )
+	{
+		adjustedCount = params.adjustedCharacterCount
+	}
+	else if ( itemType == eItemType.weapon_category )
+	{
+		adjustedCount = params.adjustedWeaponCategoryCount
+	}
+
+	for ( int i = 0; i < RTKArray_GetCount( itemData ); i++ )
+	{
+		rtk_struct data = RTKArray_GetStruct( itemData, i )
+
+		if ( RTKStruct_GetInt( data, "guid" ) == removeData.guid )
+		{
+			RTKWishlistItemData newData = RTKWishlistMenu_GetEmptyWishlistItemData( selectedCount > adjustedCount )
+			RTKStruct_SetValue( data, newData )
+
+			RTKWishlistMenu_UpdateEditButton( wishlistState )
+			RTKWishlistMenu_UpdateActivateButton( wishlistState )
+			break
+		}
+	}
+}
+
+RTKWishlistItemData function RTKWishlistMenu_GetWeaponData( ItemFlavor flav, bool hasInput, int ornull rarity )
+{
+	int guid = ItemFlavor_GetGUID( flav )
+	int wishlistProgress = Wishlist_GetTotalProgressForCategory( guid, rarity )
+
+	RTKWishlistItemData weaponData
+	weaponData.completePercentage = Localize( "#N_PERCENT", wishlistProgress )
+	weaponData.image = ItemFlavor_GetIcon( flav )
+	weaponData.name = Localize( ItemFlavor_GetLongName( flav ) )
+	weaponData.guid	= guid
+	weaponData.hasInput = hasInput
+	weaponData.isDisabled = Wishlist_IsCategoryCompleted( guid, rarity )
+	weaponData.tooltip.collectedPercentage = Wishlist_GetProgressForCategory( guid )
+	return weaponData
+}
+
+array<RTKWishlistItemData> function RTKWishlistMenu_GetAllWeaponData()
+{
+	bool hasInput = RTKWishlistMenu_GetLocalWishlistState() == eWishlistFrontState.INACTIVE
+	array<RTKWishlistItemData> data
+	Wishlist wishlist = RTKWishlistMenu_GetWishlist()
+
+	
+	foreach ( category in GetAllWeaponCategories() )
+	{
+		if ( !GetGlobalSettingsBool( ItemFlavor_GetAsset( category ), "isWishlistableCategory" ) )
+			continue
+
+		RTKWishlistItemData weaponData = RTKWishlistMenu_GetWeaponData( category, hasInput, null )
+		weaponData.isSelected = wishlist.weaponCategories.contains( ItemFlavor_GetGUID( category ) )
+		data.append( weaponData )
+	}
+
+	return data
+}
+
+RTKWishlistItemData function RTKWishlistMenu_GetCharacterData( ItemFlavor flav, bool hasInput, int ornull rarity )
+{
+	entity player = GetLocalClientPlayer()
+	int guid = ItemFlavor_GetGUID( flav )
+	int wishlistProgress = Wishlist_GetTotalProgressForCategory( guid, rarity )
+
+	RTKWishlistItemData characterData
+	characterData.image = CharacterClass_GetGalleryPortrait( flav )
+	characterData.name = Localize( ItemFlavor_GetLongName( flav ) )
+	characterData.isOwned = Loadout_IsCharacterUnlockedForPlayer( player, flav )
+	characterData.completePercentage = Localize( "#N_PERCENT", wishlistProgress )
+	characterData.guid	= guid
+	characterData.hasInput = hasInput
+	characterData.isDisabled = Wishlist_IsCategoryCompleted( guid, rarity )
+	characterData.tooltip.collectedPercentage = Wishlist_GetProgressForCategory( guid )
+
+	return characterData
+}
+
+array<RTKWishlistItemData> function RTKWishlistMenu_GetAllCharacterData()
+{
+	bool hasInput = RTKWishlistMenu_GetLocalWishlistState() == eWishlistFrontState.INACTIVE
+	array<RTKWishlistItemData> data
+	Wishlist wishlist = RTKWishlistMenu_GetWishlist()
+
+	foreach( ItemFlavor character in GetAllCharacters() )
+	{
+		if ( !ItemFlavor_ShouldBeVisible( character, null, GetConVarInt( "mtx_svEdition" ) ) )
+			continue
+
+		if ( !GetGlobalSettingsBool( ItemFlavor_GetAsset( character ), "isWishlistableCategory" ) )
+			continue
+
+		RTKWishlistItemData characterData = RTKWishlistMenu_GetCharacterData( character, hasInput, null )
+		characterData.isSelected = wishlist.characters.contains( ItemFlavor_GetGUID( character ) )
+		data.append( characterData )
+	}
+	return data
+}
+
+RTKWishlistButtonData function RTKWishlistMenu_GetActivateButtonData( int state )
+{
+	RTKWishlistButtonData data
+	switch ( state )
+	{
+		case eWishlistFrontState.INACTIVE:
+			data.isVisible = true
+			bool isValidWishlist = RTKWishlistMenu_GetTotalSelectedItemsCount( true ) == Wishlist_GetWishlistParametersForLocalPlayer().adjustedWishlistLength
+			bool isWishlistDifferent = Wishlist_AreDifferent( RTKWishlistMenu_BuildWishlistFromDataModel(), Wishlist_GetWishlistForLocalPlayer() )
+			data.isInteractive = isValidWishlist && isWishlistDifferent && Wishlist_GetCanAffordSaving()
+			data.text = "#WISHLIST_ACTIVATE"
+			data.subText = Wishlist_GetSaveOfferFormatedPrice()
+			break
+
+		case eWishlistFrontState.COMPLETED:
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.INVALID:
+			data.isVisible = false
+			break
+	}
+	return data
+}
+
+RTKWishlistButtonData function RTKWishlistMenu_GetEditButtonData( int state )
+{
+	RTKWishlistButtonData data
+
+	switch ( state )
+	{
+		case eWishlistFrontState.INACTIVE:
+			
+			
+			data.isInteractive = RTKWishlistMenu_GetTotalSelectedItemsCount( false ) > 0
+			data.text = "#RESET"
+			break
+
+		case eWishlistFrontState.COMPLETED:
+			data.isVisible = false
+			break
+
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.INVALID:
+			data.text = "#WISHLIST_EDIT"
+			break
+	}
+
+	return data
+}
+
+bool function RTKWishlistMenu_CanEnterEditMode()
+{
+	switch ( RTKWishlistMenu_GetLocalWishlistState() )
+	{
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.INVALID:
+			return true
+
+		case eWishlistFrontState.INACTIVE:
+		case eWishlistFrontState.COMPLETED:
+			return false
+	}
+	return false
+}
+
+Wishlist function RTKWishlistMenu_BuildWishlistFromDataModel()
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+
+	rtk_array weaponData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.weapon_category] )
+	rtk_array characterData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.character] )
+
+	Wishlist wishlist
+
+	
+	for ( int i = 0; i < RTKArray_GetCount( weaponData ); i++ )
+	{
+		rtk_struct data = RTKArray_GetStruct( weaponData, i )
+		int guid = RTKStruct_GetInt( data, "guid" )
+		if ( guid != -1 )
+		{
+			wishlist.weaponCategories.append( guid )
+			wishlist.flattened.append( guid )
+		}
+	}
+
+	for ( int i = 0; i < RTKArray_GetCount( characterData ); i++ )
+	{
+		rtk_struct data = RTKArray_GetStruct( characterData, i )
+		int guid = RTKStruct_GetInt( data, "guid" )
+		if ( guid != -1 )
+		{
+			wishlist.characters.append( guid )
+			wishlist.flattened.append( guid )
+		}
+	}
+
+	return wishlist
+}
+
+int function RTKWishlistMenu_GetLocalWishlistState()
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	return RTKStruct_GetInt( wishlistData, "state" )
+}
+
+void function RTKWishlistMenu_SetLocalWishlistState( int state )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	RTKStruct_SetInt( wishlistData, "state", state )
+}
+
+int function RTKWishlistMenu_GetTotalSelectedItemsCount( bool checkValidity )
+{
+	return RTKWishlistMenu_GetSelectedItemsCount( eItemType.character, checkValidity ) + RTKWishlistMenu_GetSelectedItemsCount( eItemType.weapon_category, checkValidity )
+}
+
+bool function RTKWishlistMenu_ShouldShowExitWarning()
+{
+	return RTKWishlistMenu_GetLocalWishlistState() == eWishlistFrontState.INACTIVE
+}
+
+void function RTKWishlistMenu_UpdateActivateButton( int state )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_struct buttonData = RTKStruct_GetStruct( wishlistData, "activateButton" )
+	RTKStruct_SetValue( buttonData, RTKWishlistMenu_GetActivateButtonData( state ) )
+}
+
+void function RTKWishlistMenu_UpdateEditButton( int state )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_struct buttonData = RTKStruct_GetStruct( wishlistData, "editButton" )
+
+	RTKStruct_SetValue( buttonData, RTKWishlistMenu_GetEditButtonData( state ) )
+}
+
+void function RTKWishlistMenu_UpdateWishlistText( int state )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+
+	RTKStruct_SetString( wishlistData, "title", RTKWishlistMenu_GetTitle( state ) )
+	RTKStruct_SetString( wishlistData, "subtitle", RTKWishlistMenu_GetSubtitle( state ) )
+	RTKStruct_SetString( wishlistData, "disclaimer", RTKWishlistMenu_GetDisclaimer( state ) )
+	RTKStruct_SetInt( wishlistData, "freeEdits", GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_WISHLIST_TOKEN] ) )
+}
+
+string function RTKWishlistMenu_GetTitle( int state )
+{
+	switch ( state )
+	{
+		case eWishlistFrontState.INACTIVE:
+			return "#WISHLIST_TITLE_INACTIVE"
+		case eWishlistFrontState.COMPLETED:
+			return "#WISHLIST_TITLE_COMPLETED"
+		case eWishlistFrontState.ACTIVE:
+			return "#WISHLIST_TITLE_ACTIVE"
+		case eWishlistFrontState.INVALID:
+			return "#WISHLIST_TITLE_INVALID"
+	}
+
+	return ""
+}
+
+string function RTKWishlistMenu_GetSubtitle( int state )
+{
+	switch ( state )
+	{
+		case eWishlistFrontState.INACTIVE:
+			return "#WISHLIST_SUBTITLE_INACTIVE"
+		case eWishlistFrontState.COMPLETED:
+			return "#WISHLIST_SUBTITLE_COMPLETED"
+		case eWishlistFrontState.ACTIVE:
+			return "#WISHLIST_SUBTITLE_ACTIVE"
+		case eWishlistFrontState.INVALID:
+			return "#WISHLIST_SUBTITLE_INVALID"
+	}
+
+	return ""
+}
+
+string function RTKWishlistMenu_GetDisclaimer( int state )
+{
+	switch ( state )
+	{
+		case eWishlistFrontState.INACTIVE:
+			return "#WISHLIST_DISCLAIMER_INACTIVE"
+		case eWishlistFrontState.COMPLETED:
+			return "#WISHLIST_DISCLAIMER_COMPLETED"
+		case eWishlistFrontState.ACTIVE:
+			return "#WISHLIST_DISCLAIMER_ACTIVE"
+		case eWishlistFrontState.INVALID:
+			return "#WISHLIST_DISCLAIMER_INVALID"
+	}
+
+	return ""
+}
+
+RTKWishlistData function RTKWishlistMenu_GetLocalPlayerWishlistData()
+{
+	RTKWishlistData wishlistData
+	Wishlist wishlist = RTKWishlistMenu_GetWishlist()
+
+	wishlistData.characterData = RTKWishlistMenu_GetAllCharacterWishlistData( wishlist )
+	wishlistData.weaponData = RTKWishlistMenu_GetAllWeaponWishlistData( wishlist )
+
+	wishlistData.state = Wishlist_GetSelectionUIState( 0, null, "RTKWishlistMenu_GetLocalPlayerWishlistData" )
+
+	wishlistData.title = RTKWishlistMenu_GetTitle( wishlistData.state )
+	wishlistData.subtitle = RTKWishlistMenu_GetSubtitle( wishlistData.state )
+	wishlistData.disclaimer = RTKWishlistMenu_GetDisclaimer( wishlistData.state )
+	wishlistData.freeEdits = GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_WISHLIST_TOKEN] )
+
+	wishlistData.editButton = RTKWishlistMenu_GetEditButtonData( wishlistData.state )
+	wishlistData.activateButton = RTKWishlistMenu_GetActivateButtonData( wishlistData.state )
+	return wishlistData
+}
+
+array<RTKWishlistItemData> function RTKWishlistMenu_GetAllCharacterWishlistData( Wishlist wishlist )
+{
+	array<RTKWishlistItemData> characterData
+	foreach ( guid in wishlist.characters )
+	{
+		RTKWishlistItemData data
+		data = RTKWishlistMenu_GetCharacterData( GetItemFlavorByGUID( guid ), false, null )
+		data.completePercentage = ""
+		characterData.append( data )
+	}
+
+	WishlistParameters params = Wishlist_GetWishlistParametersForLocalPlayer()
+	int adjustedCharacterCount = params.adjustedCharacterCount - characterData.len()
+	int remainingSlots = WISHLIST_REQUIRED_CHARACTER_COUNT - characterData.len()
+
+	for ( int i = 0; i < remainingSlots; i++ )
+	{
+		bool isSlotLocked = i >= adjustedCharacterCount
+		characterData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+	}
+	return characterData
+}
+
+array<RTKWishlistItemData> function RTKWishlistMenu_GetAllWeaponWishlistData( Wishlist wishlist )
+{
+	array<RTKWishlistItemData> weaponData
+	foreach ( guid in wishlist.weaponCategories )
+	{
+		RTKWishlistItemData data
+		data = RTKWishlistMenu_GetWeaponData( GetItemFlavorByGUID( guid ), false, null )
+		data.completePercentage = ""
+		weaponData.append( data )
+	}
+
+	WishlistParameters params = Wishlist_GetWishlistParametersForLocalPlayer()
+	int remainingSlots = WISHLIST_REQUIRED_WEAPONCLASS_COUNT - weaponData.len()
+	int adjustedWeaponCount = params.adjustedWeaponCategoryCount - weaponData.len()
+
+	for ( int i = 0; i < remainingSlots; i++ )
+	{
+		bool isSlotLocked = i >= adjustedWeaponCount
+		weaponData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+	}
+	return weaponData
+}
+
+RTKWishlistItemData function RTKWishlistMenu_GetEmptyWishlistItemData( bool isSlotLocked )
+{
+	RTKWishlistItemData data
+	data.image = $""
+	data.name = ""
+	data.guid	= -1 
+	data.hasInput = false
+	data.isSlotLocked = isSlotLocked
+	return data
+}
+
+RTKWishlistData function RTKWishlistMenu_GetEmptyWishlistData()
+{
+	RTKWishlistData wishlistData
+	bool isSlotLocked
+	int adjustedCharacterCount = Wishlist_GetWishlistParametersForLocalPlayer().adjustedCharacterCount
+	int adjustedWeaponCount = Wishlist_GetWishlistParametersForLocalPlayer().adjustedWeaponCategoryCount
+	for( int i = 0; i < WISHLIST_REQUIRED_CHARACTER_COUNT; i++ )
+	{
+		isSlotLocked = i >= adjustedCharacterCount
+		wishlistData.characterData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+
+		if ( i < WISHLIST_REQUIRED_WEAPONCLASS_COUNT )
+		{
+			isSlotLocked = i >= adjustedWeaponCount
+			wishlistData.weaponData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+		}
+	}
+	return wishlistData
+}
+
+void function RTKWishlistMenu_DeselectAllItemsFromArray( rtk_array items )
+{
+	for( int i = 0; i < RTKArray_GetCount( items ); i++ )
+	{
+		rtk_struct item = RTKArray_GetStruct( items, i )
+		RTKStruct_SetBool( item, "isSelected", false )
+	}
+}
+
+void function RTKWishlistMenu_ResetWishlistSelection()
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+
+	
+	rtk_struct wishlistData = RTKStruct_GetStruct( model, "wishlistData" )
+	rtk_array wishlistCharacterData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.character] )
+	rtk_array wishlistWeaponData = RTKStruct_GetArray( wishlistData, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.weapon_category] )
+
+	RTKWishlistData emptyWishlistData = RTKWishlistMenu_GetEmptyWishlistData()
+	RTKArray_SetValue( wishlistCharacterData, emptyWishlistData.characterData )
+	RTKArray_SetValue( wishlistWeaponData, emptyWishlistData.weaponData )
+
+	
+	rtk_array characterData = RTKStruct_GetArray( model, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.character] )
+	rtk_array weaponData = RTKStruct_GetArray( model, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.weapon_category] )
+
+	
+	RTKWishlistMenu_DeselectAllItemsFromArray( characterData )
+	RTKWishlistMenu_DeselectAllItemsFromArray( weaponData )
+
+	
+	int wishlistState = RTKStruct_GetInt( wishlistData, "state" )
+	RTKWishlistMenu_UpdateEditButton( wishlistState )
+	RTKWishlistMenu_UpdateActivateButton( wishlistState )
+
+	PIN_Wishlist_Reset()
+}
+
+void function RTKWishlistMenu_ToggleGridsInput( bool active )
+{
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistMenuModel" )
+
+	
+	rtk_array characterData = RTKStruct_GetArray( model, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.character] )
+	rtk_array weaponData = RTKStruct_GetArray( model, WISHLIST_ITEM_TYPE_MODEL_KEY[eItemType.weapon_category] )
+	RTKWishlistMenu_ToggleAllItemsInputFromArray( characterData, active )
+	RTKWishlistMenu_ToggleAllItemsInputFromArray( weaponData, active )
+}
+
+void function RTKWishlistMenu_UpdateGridsInput( int state )
+{
+	RTKWishlistMenu_ToggleGridsInput( state == eWishlistFrontState.INACTIVE )
+}
+
+void function RTKWishlistMenu_ToggleAllItemsInputFromArray( rtk_array items, bool active )
+{
+	for( int i = 0; i < RTKArray_GetCount( items ); i++ )
+	{
+		rtk_struct item = RTKArray_GetStruct( items, i )
+		RTKStruct_SetBool( item, "hasInput", active )
+	}
+}
+
+
+
+void function RTKWishlistMenu_SetPageHeader()
+{
+	RTKBreadcrumbStepModel step
+	step.isLastStep = true
+	step.title = "#WISHLIST"
+	RTKBreadcrumbHeader_PushStep( step )
+}
+
+
+Wishlist function RTKWishlistMenu_GetWishlist()
+{
+	Wishlist wishlist = Wishlist_GetWishlistForLocalPlayer() 
+
+	if ( file.isSeeded )
+		wishlist = Wishlist_Generate( null )
+
+	
+	
+	if ( Wishlist_IsCompleted() )
+	{
+		Wishlist emptyWishlist
+		return emptyWishlist
+	}
+	return wishlist
+}
+
+
+
+bool function RTKMutator_IsWishlistFrontInactive( int input )
+{
+	return eWishlistFrontState.INACTIVE == input
+}
+
+bool function RTKMutator_IsWishlistFrontActive( int input )
+{
+	return eWishlistFrontState.ACTIVE == input
+}
+
+bool function RTKMutator_IsWishlistFrontInvalid( int input )
+{
+	return eWishlistFrontState.INVALID == input
+}
+
+bool function RTKMutator_ShouldShowWishlistEdgecasePanel( int input )
+{
+	switch ( input )
+	{
+		case eWishlistFrontState.COMPLETED:
+			return true
+	}
+
+	return false
+}
+
+bool function RTKMutator_ShouldShowWishlistStrongGlow( int input )
+{
+	switch ( input )
+	{
+		case eWishlistFrontState.COMPLETED:
+		case eWishlistFrontState.ACTIVE:
+			return true
+	}
+	return false
+}
+
+bool function RTKMutator_ShouldShowWishlistInnerGlow( int input )
+{
+	switch ( input )
+	{
+		case eWishlistFrontState.COMPLETED:
+			return true
+	}
+	return false
+}
+
+bool function RTKMutator_ShouldBlockWishlistGridInput( int input )
+{
+	switch ( input )
+	{
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.INVALID:
+			return true
+	}
+	return false
+}
+
+bool function RTKMutator_ShouldShowWishlistFreeEdits( int input )
+{
+	switch ( input )
+	{
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.INACTIVE:
+		case eWishlistFrontState.INVALID:
+			return true
+	}
+	return false
+}

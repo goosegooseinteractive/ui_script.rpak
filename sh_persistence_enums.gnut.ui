@@ -1,0 +1,108 @@
+global function PersistenceEnum_IsEnumKey
+global function PersistenceEnum_GetValues
+
+
+enum PDEF_ENUM_KEYS 
+{
+    eCharacterFlavor,
+    eWeaponFlavor,
+    eWeaponStatCategory,
+    eModesFlavors, 
+    eModesFlavorsLegacy, 
+    eArenaSeasonFlavor, 
+    eSeasonFlavor,
+}
+
+bool function PersistenceEnum_IsEnumKey( string enumKey )
+{
+    return enumKey in PDEF_ENUM_KEYS
+}
+
+array<string> function PersistenceEnum_GetValues( string enumKey )
+{
+    Assert( PersistenceEnum_IsEnumKey( enumKey ), "EnumKey '" + enumKey + "' is not a recognized pdef enum key." )
+
+    int enums = PDEF_ENUM_KEYS[ enumKey ]
+    switch ( enums )
+    {
+        case PDEF_ENUM_KEYS.eCharacterFlavor:
+            array<string> allCharacterRefs = []
+            foreach( ItemFlavor character in GetAllCharacters() )
+            {
+                if ( WIP_CharacterClass_ShouldTrackStats( character ) == false && ItemFlavor_GetGRXMode( character ) == eItemFlavorGRXMode.NONE )
+                    continue
+
+                allCharacterRefs.append( ItemFlavor_GetGUIDString( character ) )
+            }
+            return allCharacterRefs
+
+        case PDEF_ENUM_KEYS.eWeaponFlavor:
+            array<string> allWeaponGUIDs = []
+            foreach( ItemFlavor weaponFlav in GetAllWeaponItemFlavors( true ) )
+            {
+                string weaponGUID = ItemFlavor_GetGUIDString( weaponFlav )
+                allWeaponGUIDs.append( weaponGUID )
+            }
+            return allWeaponGUIDs
+
+        case PDEF_ENUM_KEYS.eWeaponStatCategory:
+            array<string> allWeaponStatsCategories = []
+            foreach( ItemFlavor weapon in GetAllWeaponItemFlavors( true ) )
+            {
+                string category = WeaponItemFlavor_GetStatsCategory( weapon )
+                if ( !allWeaponStatsCategories.contains( category ) )
+                    allWeaponStatsCategories.append( category )
+            }
+            allWeaponStatsCategories.sort()
+            return allWeaponStatsCategories
+
+        case PDEF_ENUM_KEYS.eModesFlavors:
+            return STATS_ALTERNATE_MODE_REFS
+
+        case PDEF_ENUM_KEYS.eModesFlavorsLegacy:
+            return [
+                "arenas",
+                "winter_express",
+                "shadowroyale",
+                "control",
+                "gungame",
+                "ftdm",
+                "hardcore_survival",
+                "date_night",
+                "heatwave",
+                "armeddangerous",
+                "swat",
+                "aprilfools_s16",
+                "shadowarmy",
+                "threestrikes",
+                "turbo",
+                "treasurehunt",
+                "aprilfools_s20",
+                "objective_br"
+            ]
+
+        case PDEF_ENUM_KEYS.eArenaSeasonFlavor:
+        
+            return [
+                "SAID01080534582", 
+                "SAID01783977028", 
+                "SAID00048930450", 
+                "SAID00479992436", 
+                "SAID00798342294", 
+                "SAID01642977899", 
+                "SAID00589335273", 
+                "SAID01353540285"  
+            ]
+        case PDEF_ENUM_KEYS.eSeasonFlavor:
+            array<ItemFlavor> seasonFlavs = GetAllSeasonFlavors()
+            array<string> seasonGUIDs
+            foreach( seasonFlav in seasonFlavs )
+            {
+                seasonGUIDs.append( ItemFlavor_GetGUIDString( seasonFlav ) )
+            }
+
+            return seasonGUIDs
+    }
+
+    return []
+}

@@ -1,0 +1,62 @@
+global function RTKArmoryWeaponSkinsScreen_OnInitialize
+global function RTKArmoryWeaponSkinsScreen_OnDestroy
+
+global struct RTKArmoryWeaponSkinsScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+}
+
+const string WEAPON_SKINS_PANEL = "RTKWeaponSkinsPanel"
+
+void function RTKArmoryWeaponSkinsScreen_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.WEAPON_SKIN )
+	RunClientScript( "EnableModelTurn" )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemFavorite( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	ItemFlavor weapon = expect ItemFlavor( CategoryWeaponPanel_GetActiveWeapon() )
+
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ Loadout_WeaponSkin( weapon ) ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.sortOrdinalFunc = WeaponSkin_GetSortOrdinal
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip ) } )
+
+	var panel = Hud_GetChild( CategoryWeaponPanel_GetActivePanel(), WEAPON_SKINS_PANEL )
+
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSortFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddShowHideUIToggleFooterOption( cosmeticEquip, panel )
+
+
+
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddUnlockFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddZoomFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddFavoriteFooterOptions( cosmeticEquip, panel )
+	UpdateFooterOptions()
+}
+
+void function RTKArmoryWeaponSkinsScreen_OnDestroy( rtk_behavior self )
+{
+	var panel = Hud_GetChild( CategoryWeaponPanel_GetActivePanel(), WEAPON_SKINS_PANEL )
+	ClearPanelFooterOptions( panel )
+}

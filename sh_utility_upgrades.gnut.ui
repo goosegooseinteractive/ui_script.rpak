@@ -1,0 +1,425 @@
+globalize_all_functions
+
+void function UpgradeHelper_RegisterUpgradesForCharacter( ItemFlavor character, array<ItemFlavor> upgrades,
+		table< ItemFlavor, array< ItemFlavor > > outCharacterToPassiveUpgrades,
+		table< ItemFlavor , UpgradeChoice > outPassiveFlavorToUpgradeData,
+		table< ItemFlavor, array<SettingsAssetGUID> > characterToPassiveUpgradeOverrides  )
+{
+	array<ItemFlavor> characterUpgrades
+
+#if DEV
+
+
+
+#endif
+	for( int i=0; i < upgrades.len(); i++ )
+	{
+		ItemFlavor upgrade = upgrades[i]
+		UpgradeChoice parsedUpgrade
+		int passiveIndex = CharacterAbility_GetPassiveIndex( upgrade )
+
+		asset upgradeAsset = ItemFlavor_GetAsset( upgrade )
+		string description = GetGlobalSettingsString( upgradeAsset, "localizationKey_DESCRIPTION_LONG" )
+		string name = GetGlobalSettingsString( upgradeAsset, "localizationKey_NAME" )
+		string shortDesc = GetGlobalSettingsString( upgradeAsset, "localizationKey_DESCRIPTION_SHORT" )
+		if( shortDesc == "" )
+			shortDesc = description
+		asset icon = GetGlobalSettingsAsset( upgradeAsset, "icon" )
+		string passiveWeaponMod = CharacterAbility_GetPassiveWeaponMod( upgrade )
+
+		parsedUpgrade.passiveIndex = passiveIndex
+
+		parsedUpgrade.desc = Localize( description )
+		parsedUpgrade.title = Localize( name )
+		parsedUpgrade.shortDesc = Localize( shortDesc )
+		parsedUpgrade.icon = icon
+
+		parsedUpgrade.passiveWeaponMod = passiveWeaponMod
+		outPassiveFlavorToUpgradeData[upgrade] <- parsedUpgrade
+		characterUpgrades.append( upgrade )
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif
+	}
+
+	outCharacterToPassiveUpgrades[character] <- characterUpgrades
+
+	UpgradeHelper_ApplyOverride_Internal( character, outCharacterToPassiveUpgrades, characterToPassiveUpgradeOverrides )
+}
+
+void function UpgradeHelper_ApplyOverride_Internal( ItemFlavor character,
+		table< ItemFlavor, array< ItemFlavor > > characterToPassiveUpgrades,
+		table< ItemFlavor, array<SettingsAssetGUID> > characterToPassiveUpgradeOverrides )
+{
+	if( !( character in characterToPassiveUpgradeOverrides ) )
+		return
+
+	if( !( character in characterToPassiveUpgrades ) )
+		return
+
+	for( int i=0; i < characterToPassiveUpgradeOverrides[character].len(); i++ )
+	{
+		SettingsAssetGUID guid = characterToPassiveUpgradeOverrides[character][i]
+		if( !IsValidItemFlavorGUID( guid ) )
+		{
+			continue
+		}
+		ItemFlavor upgradeFlav = GetItemFlavorByGUID( guid )
+		characterToPassiveUpgrades[character][i] = upgradeFlav
+	}
+}
+
+void function UpgradeHelper_ParseUpgradeOverrides( int expectedLength, string playlistVar,
+		table< ItemFlavor, array< ItemFlavor > > characterToPassiveUpgrades,
+		table< ItemFlavor, array<SettingsAssetGUID> > outCharacterToPassiveUpgradeOverrides )
+{
+	string overrideStr = GetCurrentPlaylistVarString( playlistVar, "" )
+	array<string> characterOverrides = GetTrimmedSplitString( overrideStr, " " )
+	foreach( string override in characterOverrides )
+	{
+		array<string> keys = GetTrimmedSplitString( override, ":" )
+		if( keys.len() < expectedLength ) 
+		{
+			continue
+		}
+		string characterStr = keys[0]
+		if( !IsValidItemFlavorCharacterRef( characterStr ) )
+		{
+			continue
+		}
+
+		ItemFlavor characterFlavor = GetItemFlavorByCharacterRef( characterStr )
+		array<SettingsAssetGUID> overrideGuids
+		for( int i=1; i < expectedLength; i++ )
+		{
+			SettingsAssetGUID guid = ConvertItemFlavorGUIDStringToGUID(keys[i])
+			overrideGuids.append( guid )
+		}
+		outCharacterToPassiveUpgradeOverrides[characterFlavor] <- overrideGuids
+
+		UpgradeHelper_ApplyOverride_Internal( characterFlavor, characterToPassiveUpgrades, outCharacterToPassiveUpgradeOverrides )
+	}
+}
+
+bool function LegendUpgrades_IsEnabled()
+{
+	
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return true
+	}
+
+	else if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return true
+	}
+
+
+
+
+
+
+
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function LegendUpgrades_ShowUpgradeTreeInventory()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ShowUpgradeTreeInventory()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ShowUpgradeTreeInventory()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ArmorTiedToUpgrades()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ArmorTiedToUpgrades()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ArmorTiedToUpgrades()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ShowHudUpgradeSelection()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ShowHudUpgradeSelection()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ShowHudUpgradeSelection()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ShowUpgradeTree_LobbyMenu()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ShowUpgradeTree_LobbyMenu()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ShowUpgradeTree_LobbyMenu()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ShowUpgradeTree_SkillsMenu()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ShowUpgradeTree_SkillsMenu()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ShowUpgradeTree_SkillsMenu()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ShowUpgradeTree_CharacterSelect()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return UpgradeCore_ShowUpgradeTree_CharacterSelect()
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_ShowUpgradeTree_CharacterSelect()
+	}
+
+
+	return false
+}
+
+bool function LegendUpgrades_ShowLevelUpSequence()
+{
+	if ( UpgradeCore_IsEnabled() )
+	{
+		return true
+	}
+
+	if ( LinearUpgradeCore_IsEnabled() )
+	{
+		return LinearUpgradeCore_UseLegendUpgrades()
+	}
+
+
+	return false
+}

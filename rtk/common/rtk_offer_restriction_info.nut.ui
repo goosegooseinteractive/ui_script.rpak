@@ -1,0 +1,11 @@
+global function RTKOfferRestrictionInfo_OnInitialize
+
+global struct RTKOfferRestrictionInfo_Properties
+{
+	bool isRestricted
+}
+
+void function RTKOfferRestrictionInfo_OnInitialize( rtk_behavior self )
+{
+	self.PropSetBool( "isRestricted", GRX_IsOfferRestricted() )
+}

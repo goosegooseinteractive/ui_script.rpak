@@ -1,0 +1,127 @@
+globalize_all_functions
+
+
+bool function DoesPlaylistSupportNoFillTeams( string playlist )
+{
+	return GetPlaylistVarBool( playlist, "allow_no_fill_teams", false )
+}
+
+bool function DoesPlaylistSupportNoFill( string playlist )
+{
+	return GetPlaylistVarInt( playlist, "max_nofill_players", 0 ) > 0
+}
+
+
+void function StartMatchmaking_Internal( string playlist, bool requestNoFillTeam )
+{
+	SetConVarInt( "match_teamNoFill", (requestNoFillTeam ? 1 : 0) )
+	StartMatchmaking( playlist )
+
+
+	if ( Dev_CommandLineHasParm( "-auto_ezlaunch" ) )
+	{
+		thread function()
+		{
+			RegisterSignal( "StartMatchmaking_" )
+			Signal( uiGlobal.signalDummy, "StartMatchmaking_" )
+			EndSignal( uiGlobal.signalDummy, "StartMatchmaking_" )
+
+			wait( 1.0 )
+			if ( !IsFullyConnected() )
+				return
+			if ( !AreWeMatchmaking() )
+				return
+
+			ClientCommand( "ezLaunch" )
+		}()
+	}
+
+
+	Chroma_StartMatchmaking()
+}
+
+void function StartMatchmakingStandard( string playlist )
+{
+	StartMatchmaking_Internal( playlist, false )
+}
+
+void function StartMatchmakingWithNoFillTeams( string playlist )
+{
+	Assert( DoesPlaylistSupportNoFillTeams( playlist ) )
+	StartMatchmaking_Internal( playlist, true )
+}
+
+
+
+bool function IsMatchmakingFromMatchEnabled()
+{
+	return GetConVarBool( "matchmake_from_match_enabled" ) && GetCurrentPlaylistVarBool( "matchmake_from_match", false ) && ( GetCurrentPlaylistVarBool( "private_match", false ) == false )
+}
+
+bool function IsMatchmakingFromMatchAllowed( entity player )
+{
+	bool isAllowed = IsMatchmakingFromMatchEnabled()
+
+
+
+
+
+
+
+
+
+
+
+
+	return isAllowed
+}
+
+
+void function StartMatchmakingFromMatch()
+{
+	printt( "[requeue] StartMatchmakingFromMatch enter" )
+
+	if ( !UI_IsReadyForRequeue() )
+	{
+		printt( "StartMatchmakingFromMatch !UI_IsReadyForRequeue()" )
+		return
+	}
+
+
+	
+	bool isRanked 					 = GameModeVariant_IsActiveForPlaylist( GetCurrentPlaylistName(), eGameModeVariants.SURVIVAL_RANKED )
+	bool rankedEventFinished 		 = isRanked && RankedEvent_IsLastMatchRankedEvent() && RankedEvent_GetRumbleRankedState() == eRankedRumbleState.FINISH
+	if ( rankedEventFinished )
+	{
+		printt( "StartMatchmakingFromMatch Ranked Event Finished" )
+		return
+	}
+
+	
+	if ( !Requeue_SquadOptInEnabled() && !UI_IsFullPartyConnectedForRequeue() )
+	{
+		printt( "StartMatchmakingFromMatch !UI_IsFullPartyConnectedForRequeue()" )
+		return
+	}
+	else if ( Requeue_SquadOptInEnabled() && !Requeue_IsFullPartyConnected() )
+	{
+		printt( "StartMatchmakingFromMatch !Requeue_IsFullPartyConnected()" )
+		return
+	}
+
+	if( !AreWeMatchmaking() && !LeaveMatch_WasInitiated() )
+		EmitUISound( "UI_Menu_ReadyUp_1P" )
+
+	if ( AmIPartyLeader() && !AreWeMatchmaking() && !LeaveMatch_WasInitiated() )
+	{
+		printt( "[requeue] StartMatchmakingFromMatch thread UpdateMatchmakeFromMatchPlaylist_Thread" )
+		thread UpdateMatchmakeFromMatchPlaylist_Thread()
+	}
+
+	printt( "StartMatchmakingFromMatch exit" )
+
+}
+
+
+
+

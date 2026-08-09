@@ -1,0 +1,77 @@
+
+global function InitStatsHub
+global function OpenStatsHub
+
+struct {
+	var    menu
+} file
+
+void function InitStatsHub( var newMenuArg )
+{
+	var menu = newMenuArg
+	file.menu = menu
+
+	
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, RTKStatsHubModal_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, RTKStatsHubModal_OnClose )
+
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}
+
+void function RTKStatsHubModal_OnOpen()
+{
+	var statsPanel  = Hud_GetChild( file.menu, "RTKStatsPanel" )
+	TabDef statsTab = AddTab( file.menu, statsPanel, "#STATS_HUB_TAB_STATS" )
+	SetTabBaseWidth( statsTab, 300 )
+
+	var accountPanel  = Hud_GetChild( file.menu, "RTKAccountTrackPanel" )
+	TabDef accountTab = AddTab( file.menu, accountPanel, "#STATS_HUB_TAB_ACCOUNT" )
+	SetTabBaseWidth( accountTab, 400 )
+
+
+
+
+
+
+
+
+
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	tabData.centerTabs = true
+	SetTabDefsToSeasonal( tabData )
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.STANDARD )
+
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+
+	ActivateTab( tabData, 0 )
+	UpdateMenuTabs()
+}
+
+void function RTKStatsHubModal_OnClose()
+{
+	ClearTabs( file.menu )
+}
+
+void function OpenStatsHub( var button = null, string activateSubPanel = "" )
+{
+	if( RTKTutorialOverlay_IsActive() )
+		return
+
+	while ( IsDialog( GetActiveMenu() ) )
+		return
+
+	if ( GetActiveMenu() != file.menu )
+		AdvanceMenu( file.menu )
+
+	if ( activateSubPanel == "" )
+		return
+
+	TabData tabData = GetTabDataForPanel( GetMenu( "StatsHub" ) )
+	if ( IsTabIndexEnabled( tabData, Tab_GetTabIndexByBodyName( tabData, activateSubPanel ) ) )
+	{
+		ActivateTab( tabData, Tab_GetTabIndexByBodyName( tabData, activateSubPanel ) )
+	}
+}
+
+

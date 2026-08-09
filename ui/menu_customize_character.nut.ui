@@ -1,0 +1,388 @@
+global function InitCustomizeCharacterMenu
+global function CustomizeCharacterMenu_NextButton_OnActivate
+global function CustomizeCharacterMenu_PrevButton_OnActivate
+global function CustomizeCharacterMenu_GetMenu
+
+global function CustomizeCharacterMenu_SetCharacter
+
+struct
+{
+	var menu
+
+	var prevButton
+	var nextButton
+
+	bool tabsInitialized = false
+
+	ItemFlavor ornull characterOrNull = null
+	ItemFlavor ornull equippedCharacterOrNull = null
+
+	table<ItemFlavor, array< Newness_Query > > characterToNewnessQueryListMap
+} file
+
+const bool NEXT = true
+const bool PREV = false
+
+void function InitCustomizeCharacterMenu( var menu )
+{
+	file.menu = menu
+
+	SetTabRightSound( menu, "UI_Menu_LegendTab_Select" )
+	SetTabLeftSound( menu, "UI_Menu_LegendTab_Select" )
+
+	file.prevButton = Hud_GetChild( menu, "PrevButton" )
+	HudElem_SetRuiArg( file.prevButton, "flipHorizontal", true )
+	Hud_AddEventHandler( file.prevButton, UIE_CLICK, CustomizeCharacterMenu_PrevButton_OnActivate )
+
+	file.nextButton = Hud_GetChild( menu, "NextButton" )
+	Hud_AddEventHandler( file.nextButton, UIE_CLICK, CustomizeCharacterMenu_NextButton_OnActivate )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, CustomizeCharacterMenu_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, CustomizeCharacterMenu_OnClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, CustomizeCharacterMenu_OnNavigateBack )
+
+	RegisterSignal( "IsSwitchingCharacters" )
+	RegisterSignal( "CustomizeCharacterMenu_OnClose" )
+}
+
+void function CustomizeCharacterMenu_SetCharacter( ItemFlavor character )
+{
+	file.characterOrNull = character
+}
+
+void function CustomizeCharacterMenu_OnOpen()
+{
+	SetCurrentHubForPIN( "menu_CustomizeCharacterMenu" ) 
+
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.menu, "ScreenFrame" ), true )
+
+	if ( !file.tabsInitialized )
+	{
+		{
+			var panel = Hud_GetChild( file.menu, "CharacterSkinsPanelV2" )
+
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 160 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "CharacterCardsPanelV2" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 210 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "CharacterEmotesPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 220 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "CharacterAnimationsPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 220 )
+		}
+		if ( GetCurrentPlaylistVarBool( "allow_legend_melee_tab", true ) )
+		{
+			var panel = Hud_GetChild( file.menu, "RTKMeleeSkinsPanel" )
+			TabDef tab = AddTab( file.menu, panel, "#MELEE_BUTTON" )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 160 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "LegendLorePanel" )
+			TabDef tab = AddTab( file.menu, panel, "#BIO_BUTTON" )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 160 )
+		}
+		file.tabsInitialized = true
+	}
+
+	SkinsPanel_CreateTabs()
+
+	Assert( file.characterOrNull != null, "CustomizeCharacterMenu_SetCharacter must be called before advancing to " + Hud_GetHudName( file.menu ) )
+	ItemFlavor character = expect ItemFlavor( file.characterOrNull )
+	file.equippedCharacterOrNull = character
+	SetTopLevelCustomizeContext( character )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		TabData tabData = GetTabDataForPanel( file.menu )
+		tabData.centerTabs = true
+		tabData.bannerTitle = Localize( ItemFlavor_GetLongName( character ) ).toupper()
+		tabData.bannerLogoImage = ItemFlavor_GetIcon( character )
+		tabData.bannerLogoScale = 0.6
+		tabData.callToActionWidth = 190
+		tabData.initialFirstTabButtonXPos = GetNearestAspectRatio( GetScreenSize().width, GetScreenSize().height ) <= 2.0? 80: 0
+		SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.CAPSTONE )
+
+		SetTabDefsToSeasonal(tabData)
+		ActivateTab( tabData, 0 )
+	}
+
+	RegisterNewnessCallbacks( character )
+	EmotesPanel_CreateTabs()
+	CharacterCardsPanel_CreateTabs()
+
+	AnimationsPanel_CreateTabs()
+}
+
+
+void function CustomizeCharacterMenu_OnClose()
+{
+	Signal( uiGlobal.signalDummy, "CustomizeCharacterMenu_OnClose" )
+
+	ItemFlavor viewingCharacter = expect ItemFlavor( file.characterOrNull )
+	ItemFlavor ornull equippedCharacter = file.equippedCharacterOrNull
+
+	if( equippedCharacter != null )
+	{
+		expect ItemFlavor( equippedCharacter )
+		CustomizeCharacterMenu_SetLoadoutCharacter( equippedCharacter )
+	}
+
+	DeregisterNewnessCallbacks( viewingCharacter )
+
+	SkinsPanel_DestroyTabs()
+	EmotesPanel_DestroyTabs()
+	CharacterCardsPanel_DestroyTabs()
+	AnimationsPanel_DestroyTabs()
+
+	file.equippedCharacterOrNull = null
+	file.characterOrNull         = null
+	SetTopLevelCustomizeContext( null )
+
+	RunMenuClientFunction( "ClearAllCharacterPreview" )
+}
+
+
+void function RegisterNewnessCallbacks( ItemFlavor character )
+{
+	file.characterToNewnessQueryListMap[ character ] <- []
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.itemTypeList  = [eItemType.character_skin, eItemType.digital_garment]
+		nq.panelOrButton = GetPanel( "CharacterSkinsPanelV2" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.characterToNewnessQueryListMap[ character ].append( nq )
+	}
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.gladiator_card_stance, eItemType.gladiator_card_frame, eItemType.gladiator_card_stat_tracker, eItemType.gladiator_card_badge, eItemType.gladiator_card_intro_quip, eItemType.gladiator_card_kill_quip]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "CharacterCardsPanelV2" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.characterToNewnessQueryListMap[ character ].append( nq )
+	}
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.character_emote, eItemType.emote_icon, eItemType.gladiator_card_kill_quip, eItemType.skydive_emote]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "CharacterEmotesPanel" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.characterToNewnessQueryListMap[ character ].append( nq )
+	}
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.character_select, eItemType.character_execution]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "CharacterAnimationsPanel" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.characterToNewnessQueryListMap[ character ].append( nq )
+	}
+	if ( GetCurrentPlaylistVarBool( "allow_legend_melee_tab", true ) )
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.melee_skin]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "RTKMeleeSkinsPanel" )
+
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.characterToNewnessQueryListMap[ character ].append( nq )
+	}
+}
+
+
+void function DeregisterNewnessCallbacks( ItemFlavor character )
+{
+	foreach ( Newness_Query nq in file.characterToNewnessQueryListMap[ character ]  )
+		Newness_RemoveCallback_OnQueryUpdated( nq )
+
+	file.characterToNewnessQueryListMap[ character ].clear()
+}
+
+
+void function CustomizeCharacterMenu_OnNavigateBack()
+{
+	Assert( GetActiveMenu() == file.menu )
+
+	CloseActiveMenu()
+}
+
+
+void function CustomizeCharacterMenu_PrevButton_OnActivate( var button )
+{
+	thread SwitchCharacters( PREV )
+}
+
+void function CustomizeCharacterMenu_NextButton_OnActivate( var button )
+{
+	thread SwitchCharacters( NEXT )
+}
+
+bool function IsCharacterInArrayAvailable( array<ItemFlavor> allCharacters, int i )
+{
+	bool isAvailable = ( Character_IsCharacterOwnedByPlayer( allCharacters[i] ) || Character_IsCharacterUnlockedForCalevent( allCharacters[i] ) )
+		&& ItemFlavor_ShouldBeVisible( allCharacters[i], GetLocalClientPlayer() )
+	return isAvailable
+}
+
+void function SwitchCharacters( bool direction )
+{
+	Signal( uiGlobal.signalDummy, "IsSwitchingCharacters" )
+	EndSignal( uiGlobal.signalDummy, "IsSwitchingCharacters" )
+	EndSignal( uiGlobal.signalDummy, "CustomizeCharacterMenu_OnClose" )
+
+	wait 0.1
+
+	Assert( direction == NEXT || direction == PREV )
+	if ( file.characterOrNull == null )
+	{
+		Assert( file.characterOrNull != null, "Menu closed before SwitchCharacters ended" )
+		CustomizeCharacterMenu_OnNavigateBack()
+		return
+	}
+
+	ItemFlavor currentCharacter = expect ItemFlavor( file.characterOrNull )
+	array<ItemFlavor> allCharacters = GetAllCharacters()
+	allCharacters = GetCharacterButtonOrder( allCharacters, allCharacters.len() )
+	int index = allCharacters.find( currentCharacter )
+	int nextCharacterIndex = -1
+
+	if ( allCharacters.len() == 0 )
+	{
+		Assert(false, "SwitchCharacters could not find any characters")
+		CustomizeCharacterMenu_OnNavigateBack()
+		return
+	}
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	int lastActiveTabIndex = tabData.activeTabIdx
+
+	DeregisterNewnessCallbacks( currentCharacter )
+	RunMenuClientFunction( "ClearAllCharacterPreview" )
+
+	if ( direction == NEXT )
+	{
+		index++
+		if ( index >= allCharacters.len() )
+		{
+			index = 0
+		}
+
+		for ( int i = index; i < allCharacters.len(); i++ )
+		{
+			if ( IsCharacterInArrayAvailable( allCharacters, i ) )
+			{
+				nextCharacterIndex = i
+				break
+			}
+		}
+
+		if ( nextCharacterIndex == -1 ) 
+		{
+			nextCharacterIndex = 0
+			for ( int i = 0; i < allCharacters.len(); i++ )
+			{
+				if ( IsCharacterInArrayAvailable( allCharacters, i ) )
+				{
+					nextCharacterIndex = i
+					break
+				}
+			}
+		}
+	}
+	else
+	{
+		index--
+		if ( index <= 0 )
+		{
+			index = allCharacters.len() - 1
+		}
+
+		for ( int i = index; i >= 0; i-- )
+		{
+			if ( IsCharacterInArrayAvailable( allCharacters, i ) )
+			{
+				nextCharacterIndex = i
+				break
+			}
+		}
+
+		if ( nextCharacterIndex == -1 )
+		{
+			nextCharacterIndex = 0
+			for ( int i = allCharacters.len() - 1; i >= 0; i-- )
+			{
+				if ( IsCharacterInArrayAvailable( allCharacters, i ) )
+				{
+					nextCharacterIndex = i
+					break
+				}
+			}
+		}
+	}
+
+	if ( nextCharacterIndex >= allCharacters.len() )
+	{
+		Assert(false, "SwitchCharacters could not find a valid index")
+		CustomizeCharacterMenu_OnNavigateBack()
+		return
+	}
+
+	ItemFlavor character = allCharacters[nextCharacterIndex]
+	CustomizeCharacterMenu_SetCharacter( character )
+	SetTopLevelCustomizeContext( character )
+	CustomizeCharacterMenu_SetLoadoutCharacter( character )
+	RegisterNewnessCallbacks( character )
+
+	tabData.bannerTitle = Localize( ItemFlavor_GetLongName( character ) ).toupper()
+	tabData.bannerLogoImage = ItemFlavor_GetIcon( character )
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.CAPSTONE )
+	SetTabDefsToSeasonal(tabData)
+	UpdateMenuTabs()
+}
+
+var function CustomizeCharacterMenu_GetMenu()
+{
+	return file.menu
+}
+void function CustomizeCharacterMenu_SetLoadoutCharacter( ItemFlavor ornull character )
+{
+	if ( !IsFullyConnected() )
+		return
+
+	if( character == null )
+		return
+
+	expect ItemFlavor( character )
+
+	
+	if ( Character_IsCharacterOwnedByPlayer( character ) || Character_IsCharacterUnlockedForCalevent( character ) )
+	{
+		RequestSetItemFlavorLoadoutSlot( LocalClientEHI(), Loadout_Character(), character )
+	}
+}

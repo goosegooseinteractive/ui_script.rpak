@@ -1,0 +1,187 @@
+global function RTKArmoryOrdnancesScreen_OnInitialize
+global function RTKArmoryOrdnancesScreen_OnDestroy
+
+global function InitRTKOrdnancesMenu
+global function InitOrdnancePanel
+global function InitOrdnanceSkinsPanel
+
+global struct RTKArmoryOrdnancesScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+	int weaponGUID
+}
+
+struct PrivateData
+{
+	int weaponGUIDListenerID
+}
+struct
+{
+	var menu
+	var skinsPanel
+	Newness_Query ornull newnessQuery
+} file
+
+void function RTKArmoryOrdnancesScreen_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.WEAPON_SKIN )
+	RunClientScript( "EnableModelTurn" )
+
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( self ) { RTKArmoryOrdnancesScreen_OnItemEquip( self, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) }
+	)
+
+	int weaponGUID = self.PropGetInt( "weaponGUID" )
+	RTKArmoryOrdnancesScreen_UpdateOrdnanceType( self, weaponGUID )
+
+	p.weaponGUIDListenerID = RTKStruct_AddPropertyListener( self.GetProperties(), "weaponGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		RTKArmoryOrdnancesScreen_UpdateOrdnanceType( self, expect int( propValue ) )
+	} )
+
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, file.skinsPanel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, file.skinsPanel )
+	UpdateFooterOptions()
+}
+
+void function RTKArmoryOrdnancesScreen_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	RTKStruct_RemovePropertyListener( self.GetProperties(), "weaponGUID", p.weaponGUIDListenerID )
+	ClearPanelFooterOptions( file.skinsPanel )
+}
+
+void function RTKArmoryOrdnancesScreen_UpdateOrdnanceType( rtk_behavior self, int weaponGUID )
+{
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	CosmeticEquipScreenInitSettings initSettings
+
+	initSettings.loadoutEntries = [ Loadout_WeaponSkin( GetItemFlavorByGUID( weaponGUID ) ) ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.sortOrdinalFunc = WeaponSkin_GetSortOrdinal
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+}
+
+void function RTKArmoryOrdnancesScreen_OnItemEquip( rtk_behavior self, int flavGUID )
+{
+	string itemName = ItemFlavor_GetLongName( GetItemFlavorByGUID( flavGUID ) )
+
+	foreach ( guid in ORDNANCE_WEAPON_GUIDS )
+	{
+		if ( guid == self.PropGetInt( "weaponGUID" ) )
+			continue
+
+		LoadoutEntry loadout           = Loadout_WeaponSkin( GetItemFlavorByGUID( guid ) )
+		array<ItemFlavor> itemFlavList = GetLoadoutItemsSortedForMenu( [ loadout ], WeaponSkin_GetSortOrdinal, null, [] )
+		foreach ( itemFlav in itemFlavList )
+		{
+			if ( Localize ( ItemFlavor_GetLongName( itemFlav ) ) == Localize( itemName ) )
+			{
+				RequestSetItemFlavorLoadoutSlot_WithDuplicatePrevention( LocalClientEHI(), [ loadout ], itemFlav, 0 )
+				break
+			}
+		}
+	}
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+	RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, flavGUID )
+}
+
+
+
+void function InitRTKOrdnancesMenu( var menu )
+{
+	file.menu = menu
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, RTKOrdnancesMenu_OnShow )
+	AddMenuEventHandler( menu, eUIEvent.MENU_HIDE, RTKOrdnancesMenu_OnHide )
+
+	var tabBody = Hud_GetChild( file.menu, "OrdnancesPanel" )
+	TabDef tabdef = AddTab( file.menu, tabBody, "#weapon_category_ordnance_NAME" )
+	SetTabBaseWidth( tabdef, 220 )
+}
+
+void function RTKOrdnancesMenu_OnShow()
+{
+	var ordnancePanel = Hud_GetChild( file.menu, "OrdnancesPanel" )
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	tabData.bannerLogoImage = $"rui/ordnance_icons/ordnance_icon" 
+	tabData.bannerLogoOffset = <0.0, -0.03, 0.0>
+	tabData.bannerLogoWidth = 1.0
+	tabData.bannerLogoHeight = 1.0
+	tabData.centerTabs = true
+
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.CAPSTONE )
+	SetTabDefsToSeasonal(tabData)
+
+	Newness_Query query
+	query.itemFlavor    = GetItemFlavorByGUID( ORDNANCE_CATEGORY_GUID )
+	query.itemTypeList  = [eItemType.loot_main_weapon]
+	query.uiCategory    = eItemTypeUICategory.WEAPON_LOADOUT
+	query.panelOrButton = ordnancePanel
+	query.cb            = OnNewnessQueryChangedUpdatePanelTab
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( query )
+	file.newnessQuery   = query
+
+	ActivateTab( tabData, 0 )
+}
+
+void function RTKOrdnancesMenu_OnHide()
+{
+	var ordnancePanel = Hud_GetChild( file.menu, "OrdnancesPanel" )
+	if ( file.newnessQuery != null )
+	{
+		Newness_Query ornull query = file.newnessQuery
+		expect Newness_Query( query )
+		Newness_RemoveCallback_OnQueryUpdated( query )
+		file.newnessQuery = null
+	}
+}
+
+
+
+
+void function InitOrdnancePanel( var panel )
+{
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OrdnancePanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OrdnancePanel_OnHide )
+
+	var childPanel = Hud_GetChild( panel, "OrdnanceSkinPanel" )
+	TabDef tabdef = AddTab( panel, childPanel, "#SKINS_BUTTON" )
+	SetTabBaseWidth( tabdef, 200 )
+
+	TabData tabData = GetTabDataForPanel( panel )
+	tabData.centerTabs = true
+	SetTabBackground( tabData, Hud_GetChild( panel, "TabsBackground" ), eTabBackground.STANDARD )
+}
+
+void function OrdnancePanel_OnShow( var panel )
+{
+	TabData tabData = GetTabDataForPanel( panel )
+	ActivateTab( tabData, 0 )
+}
+
+void function OrdnancePanel_OnHide( var panel )
+{
+
+}
+
+
+
+
+void function InitOrdnanceSkinsPanel( var panel )
+{
+	file.skinsPanel = panel
+}

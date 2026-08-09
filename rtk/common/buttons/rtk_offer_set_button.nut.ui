@@ -1,0 +1,317 @@
+global function RTKStore_PopulateOfferArtifactSetButtonModel
+global function RTKStore_PopulateOfferUniversalSetButtonModel
+global function RTKStore_PopulateOfferWeaponSetButtonModel
+global function RTKStore_GetSelectedOfferSet
+global function RTKStore_GetGridItemType
+
+global function RTKOfferSetButton_OnInitialize
+global function RTKOfferSetButton_OnDestroy
+
+global struct RTKOfferSetButton_Properties
+{
+	rtk_behavior buttonBehavior
+	int setIndex
+	int gridItemType
+}
+
+struct PrivateData
+{
+	int eventListener
+}
+
+struct
+{
+	int selectedSetIndex
+	int gridItemType
+} file
+
+bool function RTKStore_PopulateOfferArtifactSetButtonModel( RTKOfferButtonModel offerSetButtonModel, int setIndex )
+{
+	array< ItemFlavor > setItems = Artifacts_GetSetItems( setIndex )
+	if ( setItems.len() < 2 )
+		return false
+
+	ItemFlavor firstItem = setItems[0]
+	array<GRXScriptOffer> firstItemOffers = GRX_GetItemDedicatedStoreOffers( firstItem, "artifact_set_shop" )
+	if ( firstItemOffers.len() == 0 )
+		return false
+
+	
+	ItemFlavor secondItem = setItems[1]
+	array<GRXScriptOffer> secondItemOffers = GRX_GetItemDedicatedStoreOffers( secondItem, "artifact_set_shop" )
+	if ( secondItemOffers.len() == 0 )
+		return false
+
+	
+	ItemFlavor ornull prereq = firstItemOffers[0].prereq
+	bool locked = ( prereq != null && !GRX_IsItemOwnedByPlayer( expect ItemFlavor( prereq ) ) )
+
+	ArtifactThemeUIData uiData = Artifacts_GetSetUIData( setIndex )
+
+	int numOwned = 0
+	foreach ( ItemFlavor item in setItems )
+	{
+		if ( GRX_IsItemOwnedByPlayer( item ) )
+			numOwned++
+	}
+
+	offerSetButtonModel.imageRef = ""
+	offerSetButtonModel.offerName = uiData.name
+	offerSetButtonModel.offerImage = uiData.storeImage
+	offerSetButtonModel.offerType = Localize( locked ? "#ARTIFACT_SET_LOCKED" : "#ARTIFACT_SET_UNLOCKED" )
+	offerSetButtonModel.purchaseLimit = Localize( "#OWNED_COLLECTED", numOwned, setItems.len() )
+	offerSetButtonModel.priceColor = < 0.596, 0.596, 0.596 >
+	offerSetButtonModel.price = ( numOwned == setItems.len() ) ? Localize( "#SET_OWNED" ) : Localize( "#PER_ITEM", GRX_GetFormattedPrice( secondItemOffers[0].prices[0], 1 ) )
+	offerSetButtonModel.rarity = eRarityTier.ICONIC
+	offerSetButtonModel.sourceIcon = ItemFlavor_GetSourceIcon( firstItem )
+	offerSetButtonModel.locked = locked
+
+	return true
+}
+
+asset function GetStoreImageFromCosmeticSetOffer( GRXScriptOffer offer )
+{
+	asset storeImage
+
+	ItemFlavor ornull cosmeticSet = ItemFlavor_GetCosmeticSetFlavor( offer.output.flavors[0] )
+	if ( cosmeticSet == null )
+	{
+		Warning(
+			"Failed to get CosmeticSet from Offer's first output flavor. offer=%s , firstFlavor=%s",
+			offer.offerAlias,
+			ItemFlavor_GetAssetName( offer.output.flavors[0] ) )
+	}
+	else
+	{
+		storeImage = CosmeticSet_GetStoreImage( expect ItemFlavor( cosmeticSet ) )
+
+		if ( offer.imageRef != "" && storeImage != $"" )
+		{
+			printf(
+				"Offer contains both an imageRef and storeImage from CosmeticSet. imageRef on offer will used. offer=%s , cosmeticSet=%s , storeImage=%s , imageRef=%s",
+				offer.offerAlias,
+				ItemFlavor_GetAssetName( expect ItemFlavor( cosmeticSet ) ),
+				string( storeImage ),
+				offer.imageRef )
+
+			if ( GetConVarBool( "assetdownloads_enabled" ) )
+			{
+				storeImage = $""
+			}
+		}
+	}
+
+	return storeImage
+}
+
+bool function RTKStore_PopulateOfferUniversalSetButtonModel( RTKOfferButtonModel offerSetButtonModel, int selectedSetIndex )
+{
+	array<GRXScriptOffer> offers =  GRX_GetLocationOffers( "universal_set_shop" )
+	offers.sort( SortOffersBySlot )
+	array<GRXScriptOffer> bundles =  GRX_GetLocationOffers( "universal_bund_shop" )
+	bundles.sort( SortOffersBySlot )
+	array< ItemFlavor > setItems = []
+
+	foreach ( offer in offers )
+	{
+		
+		array<ItemFlavor> offerFlavors = offer.output.flavors
+
+		if ( offerFlavors.len() == 0 || !UniversalMelee_GetStoreSetIndex( selectedSetIndex ).contains( UniversalMelee_GetTheme( offerFlavors[0] ) ) )
+			continue
+
+		foreach ( int index, ItemFlavor flav in offerFlavors )
+		{
+			setItems.push( flav )
+		}
+	}
+
+	string bundleImageRef = ""
+	string bundleTitleText = ""
+	asset bundleStoreImage
+	GRXScriptOffer ornull foundBundle = null
+	foreach ( bundle in bundles )
+	{
+		if ( UniversalMelee_GetStoreSetIndex( selectedSetIndex ).contains( UniversalMelee_GetTheme( bundle.output.flavors[0] ) ) )
+		{
+			bundleImageRef = bundle.imageRef
+			bundleTitleText = bundle.titleText
+			bundleStoreImage = GetStoreImageFromCosmeticSetOffer( bundle )
+			foundBundle = bundle
+			break
+		}
+	}
+
+	array<GRXScriptOffer> baseItemOffers = GRX_GetItemDedicatedStoreOffers( setItems[ 0 ], "universal_set_shop" )
+	if ( baseItemOffers.len() == 0 )
+		return false
+
+	
+	GRXScriptOffer priceOffer = baseItemOffers[ 0 ]
+	if ( setItems.len() >= 3 )
+	{
+		array<GRXScriptOffer> recolorOffers = GRX_GetItemDedicatedStoreOffers( setItems[ 2 ], "universal_set_shop" )
+
+		if ( recolorOffers.len() == 0 )
+			return false
+
+		priceOffer = recolorOffers[ 0 ]
+	}
+
+	
+	ItemFlavor ornull prereq = baseItemOffers[0].prereq
+	bool locked = ( prereq != null && !GRX_IsItemOwnedByPlayer( expect ItemFlavor( prereq ) ) )
+
+	int numOwned = 0
+	foreach ( ItemFlavor item in setItems )
+	{
+		if ( GRX_IsItemOwnedByPlayer( item ) )
+			numOwned++
+	}
+
+	offerSetButtonModel.imageRef = bundleImageRef
+	offerSetButtonModel.offerName = bundleTitleText
+	offerSetButtonModel.offerImage = bundleStoreImage
+	offerSetButtonModel.offerType = Localize( locked ? "#UNIVERSAL_MELEE_SET_LOCKED" : "#UNIVERSAL_MELEE_SET_UNLOCKED" )
+	offerSetButtonModel.purchaseLimit = Localize( "#OWNED_COLLECTED", numOwned, setItems.len() )
+	offerSetButtonModel.priceColor = < 0.596, 0.596, 0.596 >
+	offerSetButtonModel.price = ( numOwned == setItems.len() ) ? Localize( "#SET_OWNED" ) : Localize( "#PER_ITEM", GRX_GetFormattedPrice( priceOffer.prices[ 0 ], 1 ) )
+	offerSetButtonModel.rarity = eRarityTier.ICONIC
+	offerSetButtonModel.sourceIcon = ItemFlavor_GetSourceIcon( setItems[ 0 ] )
+	offerSetButtonModel.locked = locked
+
+	if ( foundBundle != null )
+	{
+		RTKOfferButton_TryTraceStoreButtonAssetDownloadRequired( expect GRXScriptOffer( foundBundle ), offerSetButtonModel )
+	}
+
+	return true
+}
+
+bool function RTKStore_PopulateOfferWeaponSetButtonModel( RTKOfferButtonModel offerSetButtonModel, int selectedSetIndex )
+{
+	array<GRXScriptOffer> offers = GRX_GetOffersFromABundleLocation( "weapon_set_shop", "weapon_bund_shop", selectedSetIndex )
+	array<GRXScriptOffer> bundles = GRX_GetLocationOffers( "weapon_bund_shop" )
+	bundles.sort( SortOffersBySlot )
+	array< ItemFlavor > setItems = []
+
+	foreach ( offer in offers )
+	{
+		
+		array<ItemFlavor> offerFlavors = offer.output.flavors
+		if ( offerFlavors.len() == 0 )
+			continue
+
+		foreach ( int index, ItemFlavor flav in offerFlavors )
+		{
+			setItems.push( flav )
+		}
+	}
+
+	string bundleImageRef = ""
+	string bundleTitleText = ""
+	asset bundleStoreImage
+	GRXScriptOffer ornull foundBundle = null
+	foreach ( int index, bundle in bundles )
+	{
+		if ( index == selectedSetIndex )
+		{
+			bundleImageRef = bundle.imageRef
+			bundleTitleText = bundle.titleText
+			bundleStoreImage = GetStoreImageFromCosmeticSetOffer( bundle )
+			foundBundle = bundle
+			break
+		}
+	}
+
+	array<GRXScriptOffer> baseItemOffers = GRX_GetItemDedicatedStoreOffers( setItems[0], "weapon_set_shop" )
+	if ( baseItemOffers.len() == 0 )
+		return false
+
+	
+	array<GRXScriptOffer> recolorOffers = GRX_GetItemDedicatedStoreOffers( setItems[2], "weapon_set_shop" )
+	if ( recolorOffers.len() == 0 )
+		return false
+
+	
+	ItemFlavor ornull prereq = baseItemOffers[0].prereq
+	bool locked = ( prereq != null && !GRX_IsItemOwnedByPlayer( expect ItemFlavor( prereq ) ) )
+
+	int numOwned = 0
+	foreach ( ItemFlavor item in setItems )
+	{
+		if ( GRX_IsItemOwnedByPlayer( item ) )
+			numOwned++
+	}
+
+	offerSetButtonModel.imageRef = bundleImageRef
+	offerSetButtonModel.offerName = bundleTitleText
+	offerSetButtonModel.offerImage = bundleStoreImage
+	offerSetButtonModel.offerType = Localize( locked ? "#MYTHIC_WEAPON_SET_LOCKED" : "#MYTHIC_WEAPON_SET_UNLOCKED" )
+	offerSetButtonModel.purchaseLimit = Localize( "#OWNED_COLLECTED", numOwned, setItems.len() )
+	offerSetButtonModel.priceColor = < 0.596, 0.596, 0.596 >
+	offerSetButtonModel.price = ( numOwned == setItems.len() ) ? Localize( "#SET_OWNED" ) : Localize( "#PER_ITEM", GRX_GetFormattedPrice( recolorOffers[0].prices[0], 1 ) )
+	offerSetButtonModel.rarity = eRarityTier.ICONIC
+	offerSetButtonModel.sourceIcon = ItemFlavor_GetSourceIcon( setItems[ 0 ] )
+	offerSetButtonModel.locked = locked
+	offerSetButtonModel.binkRef = CosmeticSet_GetStoreTileVideo( setItems[ 0 ] )
+
+	if ( foundBundle != null )
+	{
+		RTKOfferButton_TryTraceStoreButtonAssetDownloadRequired( expect GRXScriptOffer( foundBundle ), offerSetButtonModel )
+	}
+
+	return true
+}
+
+int function RTKStore_GetSelectedOfferSet()
+{
+	return file.selectedSetIndex
+}
+
+int function RTKStore_GetGridItemType()
+{
+	return file.gridItemType
+}
+
+void function RTKOfferSetButton_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull button = self.PropGetBehavior( "buttonBehavior" )
+	if ( button )
+	{
+		expect rtk_behavior ( button )
+		p.eventListener = button.AddEventListener( "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) { RTKOfferSetButton_OnActivate( self ) } )
+	}
+}
+
+void function RTKOfferSetButton_OnDestroy( rtk_behavior self )
+{
+	rtk_behavior ornull button = self.PropGetBehavior( "buttonBehavior" )
+	int listenerID = GetOnPressedEventListener( self )
+
+	if ( button && listenerID != RTKEVENT_INVALID )
+	{
+		expect rtk_behavior ( button )
+		button.RemoveEventListener( "OnPressed", listenerID )
+	}
+}
+
+void function RTKOfferSetButton_OnActivate( rtk_behavior self )
+{
+	RTKStore_SetOverrideStartingSection()
+
+	file.selectedSetIndex = self.PropGetInt( "setIndex" )
+	file.gridItemType = self.PropGetInt( "gridItemType" )
+	AdvanceMenu( GetMenu( "StoreOfferSetItemsMenu" ) )
+}
+
+int function GetOnPressedEventListener( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	return p.eventListener
+}

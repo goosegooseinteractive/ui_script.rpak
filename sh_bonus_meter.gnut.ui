@@ -1,0 +1,626 @@
+
+global function Sh_BonusMeter_Init
+
+
+global function ShouldPackProgressBonusMeter
+
+
+
+
+
+
+
+global function BonusMeter_GetMeterProgress
+global function BonusMeter_GetMeterGoal
+global function BonusMeter_GetDisplayRewardFlavGUID
+global function BonusMeter_GetEligibleRewardFlavGUID
+global function BonusMeter_GetEligibleRewardOffer
+global function BonusMeter_GetTimeRemainingForMeter
+global function BonusMeter_GetExpireTimeForMeter
+global function BonusMeter_TryPurchaseRewardOffer_Thread
+global function BonusMeter_IsCompleted
+global function BonusMeter_IsActive
+global function BonusMeter_TryShowRewards_Thread
+global function AddCallback_BonusMeter_OnMeterProgressPotentiallyChanged
+global function RemoveCallback_BonusMeter_OnMeterProgressPotentiallyChanged
+
+
+#if DEV
+global function BonusMeter_Print
+#endif
+
+const string BONUS_METER_OFFER_LOCATION = "bonusMeter"
+const int BONUS_METER_GOAL = 10
+
+
+struct BonusMeterInfo
+{
+	
+	int goalVal = BONUS_METER_GOAL
+	int expireTime = -1
+	ItemFlavor ornull mainRewardFlav = null
+	ItemFlavor ornull fallbackRewardFlav = null
+	GRXScriptOffer ornull mainOffer = null
+	GRXScriptOffer ornull fallbackOffer = null
+}
+
+
+struct FileStruct_BonusMeter
+{
+	
+	
+	array<int> validPackTypes
+	array<ItemFlavor> includedPacks
+	array<ItemFlavor> excludedPacks
+
+		BonusMeterInfo& bonusMeterInfo
+		table<ItemFlavor, int> rewardsToDisplay
+		array<void functionref()> onMeterProgressPotentiallyChangedCallbacks
+
+}
+
+FileStruct_BonusMeter& fileLevel
+
+void function Sh_BonusMeter_Init()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return
+	}
+	AddCallback_RegisterRootItemFlavors( void function()
+	{
+		fileLevel.validPackTypes.clear()
+		fileLevel.includedPacks.clear()
+		fileLevel.excludedPacks.clear()
+		int activeMeterCount = 0
+		foreach ( asset activationConfig in GetBaseItemFlavorsFromArray( "bonusMeterConfigs" ) )
+		{
+
+			ItemFlavor ornull flavor = RegisterItemFlavorFromSettingsAsset( activationConfig )
+			int startTime = expect int( DateTimeStringToUnixTimestamp( GetGlobalSettingsString( activationConfig, "defaultStartTime" ) ) )
+			int endTime = expect int( DateTimeStringToUnixTimestamp( GetGlobalSettingsString( activationConfig, "defaultFinishTime" ) ) )
+			int now = GetUnixTimestamp()
+			if ( startTime <= now && now < endTime )
+			{
+				Assert( activeMeterCount == 0, "Found two active bonus meter activations." )
+				activeMeterCount++
+				foreach( int index, var block in IterateSettingsArray( GetSettingsBlockArray( GetSettingsBlockForAsset( activationConfig ), "qualifyingPackTypes" ) ) )
+				{
+					fileLevel.validPackTypes.append( ItemFlavor_ConvertPackTypeStringToEnum( GetSettingsBlockString( block, "packType" ) ) )
+				}
+				foreach( int index, var block in IterateSettingsArray( GetSettingsBlockArray( GetSettingsBlockForAsset( activationConfig ), "includedPacks" ) ) )
+				{
+					fileLevel.includedPacks.append( GetItemFlavorByAsset( GetSettingsBlockAsset( block, "packFlav" ) ) )
+				}
+				foreach( int index, var block in IterateSettingsArray( GetSettingsBlockArray( GetSettingsBlockForAsset( activationConfig ), "excludedPacks" ) ) )
+				{
+					fileLevel.excludedPacks.append( GetItemFlavorByAsset( GetSettingsBlockAsset( block, "packFlav" ) ) )
+				}
+			}
+		}
+	} )
+
+		AddCallback_OnGRXOffersRefreshed( BonusMeter_OnGRXOffersRefreshed )
+
+}
+
+
+const string OFFER_TYPE_KEY = "rewardtype"
+void function BonusMeter_OnGRXOffersRefreshed()
+{
+	array<GRXScriptOffer> bonusMeterOffers = GRX_GetLocationOffers( BONUS_METER_OFFER_LOCATION )
+	
+	
+	fileLevel.bonusMeterInfo.mainOffer = null
+	fileLevel.bonusMeterInfo.fallbackOffer = null
+	foreach( GRXScriptOffer offer in bonusMeterOffers )
+	{
+		if ( !( OFFER_TYPE_KEY in offer.attributes )  )
+		{
+			Assert( false, "Misconfigured bonus meter offer. All offers should have a rewardType attribute." )
+			continue
+		}
+		switch( offer.attributes[OFFER_TYPE_KEY] )
+		{
+			case "main":
+			{
+				fileLevel.bonusMeterInfo.mainOffer = offer
+				fileLevel.bonusMeterInfo.expireTime = offer.expireTime
+				ItemFlavor ornull rewardItem = GetRewardItemFromOffer( offer )
+				if ( rewardItem == null )
+				{
+					Warning( "Misconfigured bonus meter main reward offer contained no reward item." )
+				}
+				fileLevel.bonusMeterInfo.mainRewardFlav = rewardItem
+				break
+			}
+			case "backup":
+			{
+				fileLevel.bonusMeterInfo.fallbackOffer = offer
+				ItemFlavor ornull rewardItem = GetRewardItemFromOffer( offer )
+				if ( rewardItem == null )
+				{
+					Warning( "Misconfigured bonus meter fallback reward offer contained no reward item." )
+				}
+				fileLevel.bonusMeterInfo.fallbackRewardFlav = rewardItem
+				break
+			}
+			default:
+			{
+				Assert( false, "Misconfigured bonus meter offer. rewardType attribute had a value other than 'main' or 'backup'." )
+				continue
+			}
+		}
+	}
+
+	
+	
+	
+	foreach ( void functionref() cb in fileLevel.onMeterProgressPotentiallyChangedCallbacks )
+	{
+		cb()
+	}
+}
+
+ItemFlavor ornull function GetRewardItemFromOffer( GRXScriptOffer offer )
+{
+	ItemFlavor ornull rewardItem = null
+	int numRewardItems = 0
+	foreach( GRXStoreOfferItem reward in offer.items )
+	{
+		ItemFlavor rewardFlav = GetItemFlavorByGRXIndex( reward.itemIdx )
+		if ( ItemFlavor_GetGUID( rewardFlav ) ==  ItemFlavor_GetGUID( GRX_CURRENCIES[GRX_CURRENCY_BONUS_METER_COMPLETION] ) )
+		{
+			continue
+		}
+		rewardItem = rewardFlav
+		numRewardItems++
+	}
+	Assert( numRewardItems == 1, format( "Bonus Meter offers should contain exactly 1 reward item. Found %d items instead.", numRewardItems ) )
+	return rewardItem
+}
+
+
+SettingsAssetGUID function BonusMeter_GetDisplayRewardFlavGUID()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return ASSET_SETTINGS_UNIQUE_ID_INVALID
+	}
+
+	GRXScriptOffer ornull mainOfferOrNull = fileLevel.bonusMeterInfo.mainOffer
+	if ( mainOfferOrNull != null )
+	{
+		GRXScriptOffer mainOffer = expect GRXScriptOffer( mainOfferOrNull )
+		if ( GRXOffer_GetOfferStatus( mainOffer, false ) == eOfferStatus.PURCHASE_LIMIT_REACHED )
+		{
+			ItemFlavor ornull rewardFlav = GetRewardItemFromOffer( mainOffer )
+			if ( rewardFlav != null )
+			{
+				return ItemFlavor_GetGUID( expect ItemFlavor( rewardFlav ) )
+			}
+		}
+	}
+
+	GRXScriptOffer ornull fallbackOfferOrNull = fileLevel.bonusMeterInfo.fallbackOffer
+	if ( fallbackOfferOrNull != null )
+	{
+		GRXScriptOffer fallbackOffer = expect GRXScriptOffer( fallbackOfferOrNull )
+		if ( GRXOffer_GetOfferStatus( fallbackOffer, false ) == eOfferStatus.PURCHASE_LIMIT_REACHED )
+		{
+			ItemFlavor ornull rewardFlav = GetRewardItemFromOffer( fallbackOffer )
+			if ( rewardFlav != null )
+			{
+				return ItemFlavor_GetGUID( expect ItemFlavor( rewardFlav ) )
+			}
+		}
+	}
+
+	return BonusMeter_GetEligibleRewardFlavGUID()
+}
+
+SettingsAssetGUID function BonusMeter_GetEligibleRewardFlavGUID()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return ASSET_SETTINGS_UNIQUE_ID_INVALID
+	}
+
+	GRXScriptOffer ornull eligibleOffer = BonusMeter_GetEligibleRewardOffer()
+	if ( eligibleOffer == null )
+	{
+		return ASSET_SETTINGS_UNIQUE_ID_INVALID
+	}
+
+	expect GRXScriptOffer( eligibleOffer )
+
+	ItemFlavor ornull eligibleReward = GetRewardItemFromOffer( eligibleOffer )
+	if ( eligibleReward == null )
+	{
+		printf( "Eligible offer %s had no reward flavs.", eligibleOffer.offerAlias )
+		return ASSET_SETTINGS_UNIQUE_ID_INVALID
+	}
+
+	return ItemFlavor_GetGUID( expect ItemFlavor( eligibleReward ) )
+}
+
+GRXScriptOffer ornull function BonusMeter_GetEligibleRewardOffer()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return null
+	}
+
+	GRXScriptOffer ornull mainOffer = fileLevel.bonusMeterInfo.mainOffer
+	if ( mainOffer == null )
+	{
+		return null
+	}
+
+	expect GRXScriptOffer( mainOffer )
+	
+	
+	if ( mainOffer.expireTime < GetUnixTimestamp() )
+	{
+		printf( "No eligible bonus meter offers are available. Active bonus meter offers exist but have expired. mainOffer=%s , expireTime=%d , currentTime=%d", mainOffer.offerAlias, mainOffer.expireTime, GetUnixTimestamp() )
+		return null
+	}
+
+	if (  mainOffer.ineligibilityCode == 0 )
+	{
+		return mainOffer
+	}
+
+	printf( "Bonus Meter main offer %s is ineligible for purchase. Ineligibility code %d.", mainOffer.offerAlias, mainOffer.ineligibilityCode )
+
+	GRXScriptOffer ornull fallbackOffer = fileLevel.bonusMeterInfo.fallbackOffer
+	if ( fallbackOffer == null )
+	{
+		return null
+	}
+
+	expect GRXScriptOffer( fallbackOffer )
+	if (  fallbackOffer.ineligibilityCode == 0 )
+	{
+		return fallbackOffer
+	}
+
+	printf( "Bonus Meter fallback offer %s is ineligible for purchase. Ineligibility code %d.", fallbackOffer.offerAlias, fallbackOffer.ineligibilityCode )
+
+	return null
+}
+
+int function BonusMeter_GetMeterProgress()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return -1
+	}
+	if ( !GRX_IsInventoryReady() )
+	{
+		return 0
+	}
+
+	
+	GRXScriptOffer ornull mainOffer = fileLevel.bonusMeterInfo.mainOffer
+	if ( mainOffer != null && GRXOffer_GetOfferStatus( expect GRXScriptOffer( mainOffer ) ) == eOfferStatus.PURCHASE_LIMIT_REACHED )
+	{
+		return fileLevel.bonusMeterInfo.goalVal
+	}
+
+	GRXScriptOffer ornull fallbackOffer = fileLevel.bonusMeterInfo.fallbackOffer
+	if ( fallbackOffer != null && GRXOffer_GetOfferStatus( expect GRXScriptOffer( fallbackOffer ) ) == eOfferStatus.PURCHASE_LIMIT_REACHED )
+	{
+		return fileLevel.bonusMeterInfo.goalVal
+	}
+
+	return GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_BONUS_METER] )
+}
+
+int function BonusMeter_GetMeterGoal()
+{
+	return fileLevel.bonusMeterInfo.goalVal
+}
+
+
+int function BonusMeter_GetTimeRemainingForMeter()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return -1
+	}
+	if ( fileLevel.bonusMeterInfo.expireTime == -1 )
+	{
+		printt("Attempted to get the active bonus meter expire time before it was set.")
+		return -1
+	}
+	return fileLevel.bonusMeterInfo.expireTime - GetUnixTimestamp()
+}
+
+int function BonusMeter_GetExpireTimeForMeter()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return -1
+	}
+	if ( fileLevel.bonusMeterInfo.expireTime == -1 )
+	{
+		printt("Attempted to get the active bonus meter expire time before it was set.")
+		return -1
+	}
+	return fileLevel.bonusMeterInfo.expireTime
+}
+
+void function BonusMeter_TryPurchaseRewardOffer_Thread()
+{
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+	while ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+	{
+		WaitFrame()
+	}
+	BonusMeter_TryPurchaseRewardOffer()
+}
+
+void function BonusMeter_TryPurchaseRewardOffer()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return
+	}
+
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+	{
+		return
+	}
+
+	if ( GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_BONUS_METER] ) < fileLevel.bonusMeterInfo.goalVal )
+	{
+		return
+	}
+
+	GRXScriptOffer ornull offerToPurchase = BonusMeter_GetEligibleRewardOffer()
+
+	if ( offerToPurchase == null )
+	{
+		printt( "No eligible bonus meter reward offer to grant the player." )
+		return
+	}
+
+	expect GRXScriptOffer( offerToPurchase )
+
+	ItemFlavor ornull bonusRewardFlav = GetRewardItemFromOffer( offerToPurchase )
+
+	if ( bonusRewardFlav == null )
+	{
+		printt( "Reward offer has no valid reward items." )
+		return
+	}
+
+	int numOfferPrices = offerToPurchase.prices.len()
+	Assert( numOfferPrices == 1, format( "Bonus Meter Reward Offer has %d prices when it should only have 1.", numOfferPrices ) )
+	if ( numOfferPrices != 1 )
+		return
+	ItemFlavorBag price = offerToPurchase.prices[0]
+
+	ScriptGRXOperationInfo operation
+	int queryGoal = GRX_HTTPQUERYGOAL_PURCHASE_STORE_OFFER
+	operation.expectedQueryGoal = queryGoal
+	operation.doOperationFunc = ( void function( int opId ) : (queryGoal, offerToPurchase, price ) {
+		GRX_PurchaseOffer( opId, queryGoal, offerToPurchase, price, 1, null )
+	})
+
+	operation.onDoneCallback = ( void function( int status ) : ( offerToPurchase, price, bonusRewardFlav )
+	{
+		if ( status == eScriptGRXOperationStatus.DONE_SUCCESS )
+		{
+			foreach( GRXStoreOfferItem reward in offerToPurchase.items )
+			{
+				ItemFlavor rewardFlav = GetItemFlavorByGRXIndex( reward.itemIdx )
+				
+				if ( rewardFlav == bonusRewardFlav )
+				{
+					if ( rewardFlav in fileLevel.rewardsToDisplay )
+					{
+						fileLevel.rewardsToDisplay[rewardFlav] += reward.itemQuantity
+					}
+					else
+					{
+						fileLevel.rewardsToDisplay[rewardFlav] <- reward.itemQuantity
+					}
+				}
+			}
+			thread BonusMeter_TryShowRewards_Thread()
+		}
+	})
+	QueueGRXOperation( GetLocalClientPlayer(), operation )
+}
+
+
+void function BonusMeter_TryShowRewards_Thread()
+{
+	EndSignal( uiGlobal.signalDummy, "LevelShutdown" )
+	EndSignal( uiGlobal.signalDummy, "CleanupInGameMenus" )
+
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return
+	}
+
+	if ( fileLevel.rewardsToDisplay.len() == 0 )
+		return
+
+	
+	
+	while ( PromoDialog_IsViewingDialog() )
+	{
+		WaitFrame()
+	}
+
+	
+	if ( fileLevel.rewardsToDisplay.len() == 0 )
+		return
+
+	array<BattlePassReward> rewardsList
+	table<ItemFlavor, int> rewardsToDisplay = clone fileLevel.rewardsToDisplay
+	foreach( ItemFlavor rewardFlav, int quantity in rewardsToDisplay )
+	{
+		BattlePassReward reward
+		reward.flav = rewardFlav
+		reward.quantity = quantity
+		rewardsList.append( reward )
+		delete fileLevel.rewardsToDisplay[rewardFlav]
+	}
+	
+	
+	ItemFlavor displayFlav = rewardsList[0].flav
+	thread WaitShowRewardCeremonyDialog(
+		"#BONUS_METER_REWARD_CEREMONY_HEADER",
+		"#GENERIC_REWARD_RECEIVED",
+		ItemFlavor_GetLongName( displayFlav ),
+		rewardsList,
+		false,	
+		false,	
+		false,	
+		true,	
+		false	
+	)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function ShouldPackProgressBonusMeter( ItemFlavor packFlav )
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return false
+	}
+
+	if ( ItemFlavor_GetType( packFlav ) != eItemType.account_pack )
+	{
+		printt( "Attempted to progress bonus meter with non-pack item." )
+		return false
+	}
+
+	if ( fileLevel.excludedPacks.contains( packFlav ) )
+	{
+		return false
+	}
+
+	if ( fileLevel.includedPacks.contains( packFlav ) )
+	{
+		return true
+	}
+
+	return fileLevel.validPackTypes.contains( ItemFlavor_GetAccountPackType( packFlav ) )
+
+}
+
+
+#if DEV
+void function BonusMeter_Print()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		printt("Whoops. You tried to print Bonus Meter info but mtx_bonus_meter_enabled is 0.")
+		return
+	}
+	printt("---------Bonus Meter Info Start-----------")
+
+	printt( "Current unix timestamp: ", GetUnixTimestamp() )
+
+	string packTypes = "Valid Pack Types: "
+	foreach ( int packType in fileLevel.validPackTypes )
+	{
+		packTypes += format("%d, ", packType)
+	}
+	printt( packTypes )
+
+	string includedPacks = "Included Packs: "
+	foreach ( ItemFlavor pack in fileLevel.includedPacks )
+	{
+		includedPacks += format("%s, ", ItemFlavor_GetGRXAlias( pack ) )
+	}
+	printt( includedPacks )
+
+	string excludedPacks = "Excluded Packs: "
+	foreach ( ItemFlavor pack in fileLevel.excludedPacks )
+	{
+		excludedPacks += format("%s, ", ItemFlavor_GetGRXAlias( pack ) )
+	}
+	printt( excludedPacks )
+
+
+		ItemFlavor ornull mainReward = fileLevel.bonusMeterInfo.mainRewardFlav
+		if ( mainReward != null )
+			printt( format( "Main Reward: %s", ItemFlavor_GetGRXAlias( expect ItemFlavor( mainReward ) ) ) )
+
+		GRXScriptOffer ornull mainOffer = fileLevel.bonusMeterInfo.mainOffer
+		if ( mainOffer != null )
+		{
+			expect GRXScriptOffer( mainOffer )
+			printt( format( "Main Bonus Offer Alias: %s", mainOffer.offerAlias ) )
+			printt( "- expire time is ", mainOffer.expireTime )
+		}
+
+		GRXScriptOffer ornull fallbackOffer = fileLevel.bonusMeterInfo.fallbackOffer
+		if ( fallbackOffer != null )
+		{
+			expect GRXScriptOffer( fallbackOffer )
+			printt( format( "Fallback Bonus Offer Alias: %s", fallbackOffer.offerAlias ) )
+			printt( "- expire time is ", fallbackOffer.expireTime )
+		}
+
+	printt("---------Bonus Meter Info End-----------")
+}
+#endif
+
+
+
+bool function BonusMeter_IsCompleted()
+{
+	return BonusMeter_GetMeterProgress() == BonusMeter_GetMeterGoal()
+}
+
+
+
+bool function BonusMeter_IsActive()
+{
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		return false
+	}
+
+	return fileLevel.bonusMeterInfo.mainOffer != null
+}
+
+
+
+void function AddCallback_BonusMeter_OnMeterProgressPotentiallyChanged( void functionref() cb )
+{
+	Assert( !fileLevel.onMeterProgressPotentiallyChangedCallbacks.contains( cb ) )
+	fileLevel.onMeterProgressPotentiallyChangedCallbacks.append( cb )
+}
+
+
+
+void function RemoveCallback_BonusMeter_OnMeterProgressPotentiallyChanged( void functionref() cb )
+{
+	Assert( fileLevel.onMeterProgressPotentiallyChangedCallbacks.contains( cb ) )
+	fileLevel.onMeterProgressPotentiallyChangedCallbacks.fastremovebyvalue( cb )
+}
+

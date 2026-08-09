@@ -1,0 +1,67 @@
+global function RTKArmoryKnockFXScreen_OnInitialize
+global function RTKArmoryKnockFXScreen_OnDestroy
+global function InitRTKKnockFXPanel
+
+global struct RTKArmoryKnockFXScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+}
+
+const string KNOCK_FX_PANEL = "KnockFXPanel"
+
+void function RTKArmoryKnockFXScreen_OnInitialize( rtk_behavior self )
+{
+	UI_SetPresentationType( ePresentationType.WEAPON_CATEGORY )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) }
+	)
+
+	ItemFlavor weaponFlav = expect ItemFlavor( CategoryWeaponPanel_GetActiveWeapon() )
+	LoadoutEntry loadoutEntry = Loadout_WeaponAddOn( weaponFlav )
+
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ loadoutEntry ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.getItemFlavListFuncOverride = array<ItemFlavor> function() : ( loadoutEntry, weaponFlav ) { return GetKnockFXItemsSorted( loadoutEntry, weaponFlav ) }
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+
+	var panel = Hud_GetChild( CategoryWeaponPanel_GetActivePanel(), KNOCK_FX_PANEL )
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel )
+}
+
+void function RTKArmoryKnockFXScreen_OnDestroy( rtk_behavior self )
+{
+	var panel = Hud_GetChild( CategoryWeaponPanel_GetActivePanel(), KNOCK_FX_PANEL )
+	ClearPanelFooterOptions( panel )
+}
+
+array<ItemFlavor> function GetKnockFXItemsSorted( LoadoutEntry loadoutEntry, ItemFlavor weaponFlav )
+{
+	array<ItemFlavor> itemFlavList = clone loadoutEntry.validItemFlavorList
+	ItemFlavor itemInCurrentSlot = LoadoutSlot_GetItemFlavor( LocalClientEHI(), loadoutEntry )
+
+	itemFlavList.sort( int function( ItemFlavor a, ItemFlavor b ) : ( itemInCurrentSlot ) {
+		if ( a == itemInCurrentSlot )
+			return -1
+		if ( b == itemInCurrentSlot )
+			return 1
+
+		return 0
+	} )
+
+	return itemFlavList
+}
+
+void function InitRTKKnockFXPanel( var panel )
+{
+	SetPanelTabTitle( panel, "#KNOCK_FX" )
+}

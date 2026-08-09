@@ -1,0 +1,59 @@
+global function RTKCharacterSelect_OnInitialize
+
+
+
+
+
+global struct RTKCharacterSelect_Properties
+{
+	rtk_behavior tabbedPaginationBehavior
+}
+
+
+
+
+
+
+void function RTKCharacterSelect_OnInitialize( rtk_behavior self )
+{
+	RTKCharacterSelect_DoPaginationChecks( self )
+}
+
+void function RTKCharacterSelect_DoPaginationChecks( rtk_behavior self )
+{
+	array< string > pageNames = []
+
+	rtk_behavior paginationBehavior = self.PropGetBehavior( "tabbedPaginationBehavior" )
+	rtk_array pageNamesArray = paginationBehavior.PropGetArray( "pageNames" )
+
+	
+	bool upgradesAreEnabled = UpgradeCore_IsEnabled() && !UpgradeCore_AreUpgradesLocked() 
+
+	RTKLegendUpgradeTree_SetUpgradeTabVisibility( upgradesAreEnabled )
+
+	if ( upgradesAreEnabled )
+		pageNames.push( "#Upgrades" )
+
+	
+	bool skillsAreEnabled = Survival_AbilitiesEnabled()
+
+	RTKLegendUpgradeTree_SetSkillsTabVisibility( skillsAreEnabled )
+
+	if ( skillsAreEnabled )
+		pageNames.push( "#Abilities" )
+
+	
+	RTKArray_SetValue( pageNamesArray, pageNames )
+	paginationBehavior.PropSetInt( "pages", pageNames.len() )
+
+	
+
+	
+	if ( pageNames.len() == 1 )
+	{
+		paginationBehavior.PropSetBool( "forceHideNavHint", true )
+	}
+
+	
+	RTKPagination_RefreshNavButtons( paginationBehavior )
+}

@@ -1,0 +1,44 @@
+
+
+
+global function RTKLabelShrinkWrap_OnInitialize
+global function RTKLabelShrinkWrap_OnVisualChange
+global function RTKLabelShrinkWrap_InitMetaData
+
+struct PrivateData
+{
+	rtk_behavior label
+}
+
+void function RTKLabelShrinkWrap_InitMetaData( string behaviorType, string structType )
+{
+	RTKMetaData_BehaviorRequiresBehaviorType( behaviorType, "Label" )
+}
+
+void function RTKLabelShrinkWrap_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	p.label = self.GetPanel().FindBehaviorByTypeName( "Label" )
+}
+
+void function RTKLabelShrinkWrap_OnVisualChange( rtk_behavior self )
+{
+	if ( !self.IsActiveSelf() )
+		return
+
+	PrivateData p
+	self.Private( p )
+
+	int horizontalMode = RTKStruct_GetEnum( p.label.GetProperties(), "horizontalMode" )
+	string text = Localize( RTKStruct_GetString( p.label.GetProperties(), "text" ) )
+
+	if ( horizontalMode == 2 && text.find( " " ) < 0 )
+	{
+		RTKStruct_SetEnum( p.label.GetProperties(), "horizontalMode", 4 ) 
+	}
+	else if ( horizontalMode == 4 && text.find( " " ) >= 0 )
+	{
+		RTKStruct_SetEnum( p.label.GetProperties(), "horizontalMode", 2 ) 
+	}
+}

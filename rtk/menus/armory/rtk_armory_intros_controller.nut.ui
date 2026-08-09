@@ -1,0 +1,335 @@
+global function RTKArmoryCharacterIntrosScreen_OnInitialize
+global function RTKArmoryCharacterIntrosScreen_OnDestroy
+
+global struct RTKArmoryCharacterIntrosScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+}
+
+global struct RTKIntrosScreenModel
+{
+	string requirementDescription
+	bool requirementMet
+	bool restricted
+}
+
+struct PrivateData
+{
+	void functionref( var ) callbackOnTopLevelCustomizeContextChanged
+}
+
+const string INTROS_PANEL = "RTKIntrosPanel"
+
+void function RTKArmoryCharacterIntrosScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	UI_SetPresentationType( ePresentationType.CHARACTER_CARD )
+
+	RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "introRestrictionInfo", "RTKIntrosScreenModel", ["characterIntros"] )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKArmoryCharacterIntrosScreen_OnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		null,
+		void function( int guid ) : ( cosmeticEquip ) { RTKArmoryCharacterIntrosScreen_OnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKArmoryCharacterIntrosScreen_OnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	RTKArmoryCharacterIntrosScreen_InitItemList( cosmeticEquip )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip )
+	{
+		RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip )
+		ArmoryCharacterIntrosPanel_Update( cosmeticEquip )
+	} )
+
+	var panel = GetPanel( INTROS_PANEL )
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel, null, bool function () : ( cosmeticEquip ) { return IntrosPanel_IsItemEquippable( cosmeticEquip ) } )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK_LEGEND", "#X_BUTTON_UNLOCK_LEGEND", null, bool function () : ( cosmeticEquip ) { return IntrosPanel_IsFocusedItemParentItemLocked( cosmeticEquip ) } )
+	UpdateFooterOptions()
+
+	p.callbackOnTopLevelCustomizeContextChanged = void function( var panel ) : ( cosmeticEquip )
+	{
+		RTKArmoryCharacterIntrosScreen_InitItemList( cosmeticEquip )
+	}
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+}
+
+
+void function RTKArmoryCharacterIntrosScreen_InitItemList( rtk_behavior cosmeticEquip )
+{
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ Loadout_CharacterSelect( GetTopLevelCustomizeContext() ) ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.getItemFlavListFuncOverride = GetCharacterSelectsListForCharacterLoadout
+	initSettings.getCurrentEquipGUIDOverride = GetCurrentEquipItemGUID
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+	ArmoryCharacterIntrosPanel_Update( cosmeticEquip )
+}
+
+void function RTKArmoryCharacterIntrosScreen_OnDestroy( rtk_behavior self )
+{
+	var panel = GetPanel( INTROS_PANEL )
+
+	PrivateData p
+	self.Private( p )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+	p.callbackOnTopLevelCustomizeContextChanged = null
+
+	ClearPanelFooterOptions( panel )
+}
+
+bool function IntrosPanel_IsItemEquippable( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	RTKCosmeticListItemModel ornull itemModel = RTKCosmeticEquip_GetCurrentItemModel( cosmeticEquip )
+	if ( itemModel == null ) return false
+
+	expect RTKCosmeticListItemModel( itemModel )
+	bool isRestricted
+	isRestricted = itemModel.state == eUICosmeticItemState.RESTRICTED || itemModel.state == eUICosmeticItemState.SELECTED_AND_RESTRICTED
+
+	return !isRestricted && RTKCosmeticEquipScreen_GenericIsItemEquippable( cosmeticEquip )
+}
+
+bool function IntrosPanel_IsFocusedItemParentItemLocked( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ItemFlavor parentFlav = GetTopLevelCustomizeContext()
+
+	return !Character_IsUnlockableInNewPlayerPass( parentFlav ) && !Character_IsCharacterOwnedByPlayer( parentFlav, null )
+}
+
+void function RTKArmoryCharacterIntrosScreen_OnItemPreview( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, flavGUID )
+	UpdateRequirementDescription( cosmeticEquip, flavGUID )
+}
+
+void function RTKArmoryCharacterIntrosScreen_OnItemTryUnlock( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	ItemFlavor character = GetTopLevelCustomizeContext()
+
+	if ( Character_IsCharacterOwnedByPlayer( character, null ) )
+	{
+		return
+	}
+	else if ( Character_IsUnlockableInNewPlayerPass( character ) )
+	{
+		OpenPromoLink( "newplayerpass", "" )
+		return
+	}
+
+	PurchaseDialogConfig pdc
+	pdc.flav = character
+	pdc.quantity = 1
+	pdc.markAsNew = false
+	pdc.onPurchaseResultCallback = void function( bool wasPurchaseSuccessful ) : ( cosmeticEquip ) {
+		RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip )
+		ArmoryCharacterIntrosPanel_Update( cosmeticEquip )
+	}
+
+	PurchaseDialog( pdc )
+}
+
+void function ArmoryCharacterIntrosPanel_Update( rtk_behavior cosmeticEquip )
+{
+	if ( IsPanelActive( GetPanel( "CharacterAnimationsPanel" ) ) )
+	{
+		array<RTKCosmeticListItemModel> itemList = RTKCosmeticEquipScreen_GetItemListModel( cosmeticEquip )
+		if ( itemList.len() == 0 ) return
+
+		int equippedIndex = 0
+		EHI playerEHI = LocalClientEHI()
+		ItemFlavor character = GetTopLevelCustomizeContext()
+		LoadoutEntry loadoutEntry = Loadout_CharacterSelect( character )
+		ItemFlavor skinEquipped = LoadoutSlot_GetItemFlavor( playerEHI, Loadout_CharacterSkin( character ) )
+		bool restrictNonEquipped
+		ItemFlavor equippedCharacterSelect
+
+		if ( CharacterSkin_HasCustomCharacterSelect( skinEquipped ) )
+		{
+			equippedCharacterSelect = CharacterSkin_GetCustomSelect( skinEquipped )
+			restrictNonEquipped = true
+		}
+		else
+		{
+			equippedCharacterSelect = LoadoutSlot_GetItemFlavor( playerEHI, loadoutEntry, true )
+			restrictNonEquipped = false
+		}
+
+		foreach ( int index, item in itemList )
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( item.flavGUID )
+
+			if ( CharacterSelect_IsLockedToOPSkin( flav ) )
+			{
+				if ( equippedCharacterSelect == flav )
+				{
+					equippedIndex = index
+					item.state    = eUICosmeticItemState.EQUIPPED
+				}
+				else
+				{
+					item.state    = eUICosmeticItemState.RESTRICTED
+				}
+			}
+			else if ( !IsItemFlavorUnlockedForLoadoutSlot( playerEHI, loadoutEntry, flav, false, true ) )
+			{
+				item.state = eUICosmeticItemState.LOCKED
+			}
+			else if ( restrictNonEquipped )
+			{
+				item.state = eUICosmeticItemState.RESTRICTED
+			}
+		}
+
+		RTKCosmeticEquipScreen_SetItemListModel( cosmeticEquip, itemList )
+		UpdateRequirementDescription( cosmeticEquip, itemList[equippedIndex].flavGUID )
+	}
+}
+
+void function UpdateRequirementDescription( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	RTKCosmeticListItemModel ornull itemModel = RTKCosmeticEquip_GetItemModelByFlavGUID( cosmeticEquip, flavGUID )
+	if ( itemModel == null ) return
+	expect RTKCosmeticListItemModel( itemModel )
+
+	bool requirementMet           = false
+	bool restricted               = false
+	string requirementDescription = ""
+
+	ItemFlavor intro              = GetItemFlavorByGUID( flavGUID )
+	ItemFlavor character          = GetTopLevelCustomizeContext()
+
+	if ( CharacterSelect_IsLockedToOPSkin( intro )  )
+	{
+		ItemFlavor skinEquipped = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_CharacterSkin( character ) )
+		array<ItemFlavor> skins = CharacterSelect_GetOPSkins( intro )
+
+		foreach ( ItemFlavor skin in skins )
+		{
+			if ( skin == skinEquipped)
+			{
+				requirementMet = true
+				requirementDescription = Localize( "#SKIN_EQUIPPED", Localize ( ItemFlavor_GetLongName( skinEquipped ) ) )
+				break
+			}
+		}
+
+		if ( !requirementMet )
+		{
+			switch ( skins.len() )
+			{
+				case 0:
+						break
+				case 1:
+						requirementDescription = Localize ( "#SKIN_REQUIRED", Localize ( ItemFlavor_GetLongName( skins[0] ) ) )
+						break
+				case 2:
+						requirementDescription = Localize ( "#SKINS_REQUIRED" ) + "\n" +
+						Localize ( "#COMMA_SEPARATED_LIST_TWO_ITEMS",
+						Localize ( ItemFlavor_GetLongName( skins[0] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[1] ) ) )
+						break
+				case 3:
+						requirementDescription = Localize ( "#SKINS_REQUIRED" ) + "\n" +
+						Localize ( "#COMMA_SEPARATED_LIST_THREE_ITEMS",
+						Localize ( ItemFlavor_GetLongName( skins[0] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[1] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[2] ) ) )
+						break
+				case 4:
+						requirementDescription = Localize ( "#SKINS_REQUIRED" ) + "\n" +
+						Localize ( "#COMMA_SEPARATED_LIST_FOUR_ITEMS",
+						Localize ( ItemFlavor_GetLongName( skins[0] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[1] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[2] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[3] ) ) )
+					break
+				case 5:
+						requirementDescription = Localize ( "#SKINS_REQUIRED" ) + "\n" +
+						Localize ( "#COMMA_SEPARATED_LIST_FIVE_ITEMS",
+						Localize ( ItemFlavor_GetLongName( skins[0] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[1] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[2] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[3] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[4] ) ) )
+						break
+				default:
+						requirementDescription = Localize ( "#SKINS_REQUIRED" ) + "\n" +
+						Localize ( "#COMMA_SEPARATED_LIST_FIVE_ITEMS",
+						Localize ( ItemFlavor_GetLongName( skins[0] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[1] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[2] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[3] ) ),
+						Localize ( ItemFlavor_GetLongName( skins[4] ) ) )
+#if DEV
+						printt("UpdateRequirementDescription: Could not list all required skins for animation")
+#endif
+					break
+			}
+		}
+	}
+	else if ( itemModel.state == eUICosmeticItemState.RESTRICTED || itemModel.state == eUICosmeticItemState.SELECTED_AND_RESTRICTED )
+	{
+		requirementDescription = Localize( "#ANIMATION_RESTRICTED")
+		RTKCosmeticEquipScreen_SetPrimaryButtonVisible( cosmeticEquip, false )
+		restricted = true
+	}
+
+	rtk_struct introRestrictionInfoStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "introRestrictionInfo", "RTKIntrosScreenModel", ["characterIntros"] )
+	RTKStruct_SetString( introRestrictionInfoStruct, "requirementDescription", requirementDescription )
+	RTKStruct_SetBool( introRestrictionInfoStruct, "requirementMet", requirementMet )
+	RTKStruct_SetBool( introRestrictionInfoStruct, "restricted", restricted )
+}
+
+array<ItemFlavor> function GetCharacterSelectsListForCharacterLoadout()
+{
+	LoadoutEntry loadoutEntry = Loadout_CharacterSelect( GetTopLevelCustomizeContext() )
+	array<ItemFlavor> list = GetLoadoutItemsSortedForMenu( [loadoutEntry], CharacterSelect_GetSortOrdinal, null, [] )
+	EHI playerEHI = LocalClientEHI()
+
+	for ( int i = list.len() - 1 ; i >= 0 ; i-- )
+	{
+		if ( !GRX_IsItemOwnedByPlayer( list[i] ) )
+		{
+			list.fastremove( i )
+		}
+	}
+
+	return list
+}
+
+int function GetCurrentEquipItemGUID()
+{
+	EHI playerEHI = LocalClientEHI()
+	ItemFlavor character = GetTopLevelCustomizeContext()
+	LoadoutEntry loadoutEntry = Loadout_CharacterSelect( character )
+	ItemFlavor skinEquipped = LoadoutSlot_GetItemFlavor( playerEHI, Loadout_CharacterSkin( character ) )
+
+	if ( CharacterSkin_HasCustomCharacterSelect( skinEquipped ) )
+	{
+		return ItemFlavor_GetGUID( CharacterSkin_GetCustomSelect( skinEquipped ) )
+	}
+
+	return ItemFlavor_GetGUID( LoadoutSlot_GetItemFlavor( playerEHI, loadoutEntry, true ) )
+}

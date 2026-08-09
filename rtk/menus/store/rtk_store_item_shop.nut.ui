@@ -1,0 +1,2593 @@
+global function InitStoreItemShop
+global function ShouldShowGiftingFooter
+
+global function RTKStoreItemShop_OnInitialize
+global function RTKStoreItemShop_OnDestroy
+global function RTKStoreGridSection_OnInitialize
+global function RTKStoreGridItem_OnInitialize
+global function RTKStoreGridItem_SetItemSize
+
+global function RTKStore_RegisterOffer
+global function RTKStore_GetOfferFromIndex
+global function RTKStore_SetOverrideStartingSection
+global function RTKStore_SetStartingSection
+global function RTKStore_InspectOffer
+global function RTKStore_InspectOffer_SaveTelemetryData
+global function RTKStore_OpenInspectPage
+global function RTKStore_GetSectionFromOffers
+
+global function StoreTelemetry_SendOferPageViewEvent
+global function StoreTelemetry_SaveDeepLink
+
+global function RTKMutator_GetLoadAssetFromGridItemType
+global function RTKMutator_GetGradientAssetFromGridItemType
+
+const asset DEFAULT_BG_ASSET = $"ui_image/rui/menu/store/backgrounds/store_background_default.rpak"
+const asset MYTHIC_BG_ASSET = $"ui_image/rui/menu/store/backgrounds/store_background_mythic.rpak"
+
+global const string SPECIAL_OFFERS_MORE_INFO = "specialOffersMoreInfo"
+
+global enum eStoreGridItemType
+{
+	OFFER_1_1 		= 0,
+	OFFER_2_1 		= 1,
+	OFFER_1_2 		= 2,
+	OFFER_2_2 		= 3,
+	DIVIDER			= 4,
+	DIVIDER_ARROW	= 5,
+	INFO_PANEL		= 6,
+	INFO_MED 		= 7,
+	BLANK			= 8,
+	INFO_LRG 		= 9,
+	INFO_XLG		= 10,
+	OFFER_PERSONAL	= 11,
+	OFFER_3_2		= 12,
+	HEIRLOOM		= 13,
+	PRESTIGE		= 14,
+	ARTIFACT_SET 	= 15,
+	ARTIFACT		= 16,
+	EXOTIC			= 17,
+	INFO_SML		= 18,
+	UNIVERSAL_SET	= 19,
+	UNIVERSAL		= 20,
+	DIVIDER_LOCK	= 21,
+	WEAPON_SET		= 22,
+	WEAPON			= 23,
+	BONUS_METER     = 24
+	CHAINED_OFFER_1_2 = 25,
+	CHAINED_OFFER_2_2 = 26,
+	DIVIDER_OWNED	  = 27,
+	INFO_WIDE		= 28,
+	BULK_OFFERS_ID	= 29
+}
+
+const array<string> STORE_SECTION_KEY_ART_LIST =
+[
+	"#STEELED_DEMON_STORE",
+	"#SUN_WARRIOR_STORE",
+	"#NEON_OMEN_STORE",
+	"#LIFELINE_REVIVED_STORE",
+]
+
+global struct RTKStoreGridItem_Properties
+{
+	int 			gridItemType
+	rtk_behavior 	gridContainerElement
+}
+
+global struct RTKStoreGridSection_Properties
+{
+	string			sectionName
+	rtk_behavior	paginationBehavior
+	rtk_behavior 	paginationAnimBehavior
+}
+
+global struct RTKStoreItemShop_Properties
+{
+	rtk_behavior 	paginationBehavior
+	rtk_behavior 	paginationAnimBehavior
+	rtk_behavior 	backgroundImageFader
+
+	rtk_panel		contentPanel
+	rtk_behavior 	moreInfoButton
+}
+
+global struct RTKStoreGridItemModel
+{
+	
+	int 	slotIndex
+	int 	gridItemType
+	asset 	mainImage
+	string 	mainText 		
+	string 	subText			
+	string 	miscText1		
+	string 	miscText2		
+	string 	miscText3		
+	bool	miscBool		
+	string  telemetryId		
+	string  bindingPath = "*"
+
+	
+	int 	offerIndex = -1
+	string  imageRef
+	int 	rarity
+	bool 	newPriceShow
+	string 	discount
+	vector 	priceColor
+	vector 	newPriceColor
+	bool 	isOnlyGiftable
+	bool 	locked
+	asset 	sourceIcon
+	bool 	isAddOn
+	bool 	isBaseItem
+	int 	setItemIndex
+	string 	setItemLevel
+
+	
+	asset 	legendIcon
+	asset 	finishIcon
+	asset 	trailIcon
+	array<RTKAutoCrossfaderImageModel> crossfaderImages
+
+	
+	asset	binkRef
+
+	
+	int		endTime = -1
+
+	bool    isWishlistEnabled
+}
+
+global struct RTKStoreSectionModel
+{
+	int								sectionEnum = -1
+	int                             sectionId = 0
+	string                          sectionName
+	string                          sectionPINId = ""
+	string                          sectionCurrency
+	string                          sectionCount
+	int                             endTime
+	int                             secondaryEndTime
+	string                          endTimeFormat = "#STORE_V2_TIME_REMAINING"
+	string                          secondaryEndTimeFormat = "#STORE_V2_TIME_REMAINING"
+	int								startPageIndex
+	array<RTKStoreGridItemModel> 	itemsArray
+	asset                           bgAsset = DEFAULT_BG_ASSET
+	vector							bgTint = <1.0, 1.0, 1.0>
+	bool                            sectionVisible
+	int                             totalOffers
+	bool   							forceHideNav
+	bool 						showWishlistButton
+}
+
+global struct RTKStoreModel
+{
+	array<RTKStoreSectionModel>	sections
+	string 						prevSection
+	string						nextSection
+	int							startPageIndex
+	bool						showMoreInfoButton
+}
+
+struct PrivateData
+{
+	int         menuGUID = -1
+	rtk_struct	storeItemShopModel
+	string 		panelName
+}
+
+struct InstanceData
+{
+	bool overrideStartingSection = true
+	string startingSectionOverride = ""
+	int startingPageOverride = 0
+}
+
+struct
+{
+	RTKStoreModel &fullStoreModel
+	int personalizedSectionIndex
+	table< string, array< GRXScriptOffer > > allCurrentOffers
+	string activePanel
+	table< string, InstanceData > instanceData 
+
+	bool isNewSession = true
+} file
+
+struct
+{
+	string pageName
+	string prevPage
+	int prevPageDuration
+	int prevPageTimeStamp
+	int pageNum
+	int sectionNum
+	string linkName
+	string clickType
+
+	string offerName
+	int offerPriority
+	string slotType
+	int totalOffers
+	int expirationTime
+} fileTelemetry
+
+const string SECTIONS 		= "sections"
+const string PREV_SECTION 	= "prevSection"
+const string NEXT_SECTION 	= "nextSection"
+
+void function RTKStoreItemShop_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	if ( file.fullStoreModel.sections.len() <= 0 )
+		return
+
+	
+	int sectionIndex = RTKPagination_GetCurrentPage( self.PropGetBehavior( "paginationBehavior" ) )
+	rtk_panel contentPanel = self.PropGetPanel( "contentPanel" )
+	if ( sectionIndex >= contentPanel.GetChildren().len() )
+		return
+
+	rtk_behavior sectionBehavior = contentPanel.GetChildren()[sectionIndex].FindBehaviorByTypeName( "StoreGridSection" )
+	string lastViewedSectionName = file.fullStoreModel.sections[sectionIndex].sectionName
+	int lastViewedSectionPage = RTKStoreGridSection_GetCurrentPage( sectionBehavior )
+	RTKStore_SetStartingSection( lastViewedSectionName, lastViewedSectionPage )
+	if ( IsFullyConnected() )
+	{
+		UpdateSmartMerchandisingData()
+	}
+
+	
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, p.panelName )
+
+	if ( p.panelName in file.allCurrentOffers )
+		delete file.allCurrentOffers[ p.panelName ]
+
+	if ( GetActiveMenu() != null )
+	{
+		var menu = GetActiveMenu()
+		MenuDisableDpad( menu, false)
+	}
+}
+
+void function RTKStoreItemShop_OnInitialize( rtk_behavior self )
+{
+	var menu = GetActiveMenu()
+	MenuDisableDpad( menu, true )
+
+	PrivateData p
+	self.Private( p )
+
+	
+	file.activePanel = self.GetPanel().GetSystemDisplayName()
+	InitPanelInstanceData( file.activePanel )
+
+	
+	p.panelName = file.activePanel
+	file.allCurrentOffers[ p.panelName ] <- []
+
+	string modelPath = "&menus." + p.panelName
+	if ( RTKDataModel_HasDataModel( modelPath ) )
+	{
+		RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, p.panelName )
+	}
+	p.storeItemShopModel = RTKDataModel_CreateStruct( RTK_MODELTYPE_MENUS, p.panelName, "RTKStoreModel" )
+	self.GetPanel().SetBindingRootPath( modelPath )
+
+	
+	if ( file.activePanel == STORE_SPECIAL_OFFERS )
+		RTKStoreItemShop_InitStoreSpecialOffers( self )
+	else
+	if ( file.activePanel == STORE_SET_ITEM_SHOP )
+		RTKStoreItemShop_InitSetData( self )
+	else if ( file.activePanel == STORE_MYTHIC_SHOP )
+	{
+		RTKStoreItemShop_InitMythicData( self )
+		thread OpenMythicLootBox_Thread()
+	}
+	else if ( file.activePanel == RTK_APEX_PACKS_PANEL )
+		RTKStoreItemShop_InitApexPackData( self )
+	else
+		RTKStoreItemShop_InitStoreData( self )
+
+	
+	if ( file.fullStoreModel.sections.len() <= 0 )
+	{
+		rtk_behavior backgroundFader = self.PropGetBehavior( "backgroundImageFader" )
+		RTKImageCrossfader_SetImage( backgroundFader, DEFAULT_BG_ASSET )
+		return
+	}
+
+	GoToStartingSection( self )
+
+	
+	rtk_behavior pagination = self.PropGetBehavior( "paginationBehavior" )
+	self.AutoSubscribe( pagination, "onScrollStarted", function () : ( self ) {
+		RTKStoreItemShop_OnScrollStarted( self )
+	} )
+	self.AutoSubscribe( pagination, "onScrollFinished", function () : ( self ) {
+		RTKStoreItemShop_OnScrollFinished( self )
+	} )
+
+	
+	int currentPageIndex = RTKStruct_GetInt( p.storeItemShopModel, "startPageIndex" )
+	asset backgroundAsset = GetBackgroundAssetFromSectionIndex( currentPageIndex )
+	vector backgroundTint = GetBackgroundTintFromSectionIndex( currentPageIndex )
+	rtk_behavior backgroundFader = self.PropGetBehavior( "backgroundImageFader" )
+	RTKImageCrossfader_SetImage( backgroundFader, backgroundAsset, backgroundTint )
+}
+
+void function RTKStoreItemShop_InitStoreData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKStoreModel storeModel
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+
+	if ( GRX_IsDynamicStoreEnabled() )
+	{
+		array<GRXStoreSection> activeStoreTabSections = GRX_GetActiveStoreTabSections()
+
+		if ( activeStoreTabSections.len() == 0 )
+			Warning("In RTKStoreItemShop_InitStoreData and there are no active store sections!!!")
+
+		
+		foreach( GRXStoreSection activeSection in activeStoreTabSections )
+		{
+			if ( GRX_IsOfferRestricted() && activeSection.isRestricted )
+				continue
+
+			RTKStoreSectionModel section = GetRTKStoreSectionFromGRXStoreSection( activeSection )
+
+			
+			
+			if ( GRX_IsOfferRestricted() && section.sectionName == "#STORE_V2_SECTION_LEGENDPASS" )
+				continue
+
+			if ( section.itemsArray.len() <= 0 )
+				continue
+
+			storeModel.sections.append( section )
+
+			rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+			RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+			RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+			RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+			RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+			RTKStruct_SetString( rtkSection, "sectionCurrency", section.sectionCurrency )
+
+			if ( file.isNewSession )
+			{
+				if ( SectionShouldBeMarkedAsNew( activeSection.markedAsNewDate ) )
+					ClearHighestPageSeenForSection( activeSection.id )
+			}
+		}
+
+		if ( file.isNewSession )
+			file.isNewSession = false
+	}
+#if DEV
+	else
+	{
+		storeModel = DEV_InitStoreDataIfDynamicStoreIsDisabled( storeSectionsArray )
+	}
+#endif
+	
+	RTKStruct_SetBool( p.storeItemShopModel, "showMoreInfoButton", false )
+
+	file.fullStoreModel = storeModel
+}
+
+#if DEV
+RTKStoreModel function DEV_InitStoreDataIfDynamicStoreIsDisabled( rtk_array storeSectionsArray )
+{
+	RTKStoreModel storeModel
+	table<int, StoreSectionInfo> storeData = GetSortedStoreSectionData()
+
+	if ( file.isNewSession )
+	{
+		foreach ( sectionInfo in storeData )
+		{
+			if ( SectionShouldBeMarkedAsNew( sectionInfo.markedAsNewDate ) )
+				ClearHighestPageSeenForSection( sectionInfo.sectionId )
+		}
+		file.isNewSession = false
+	}
+
+	for ( int sectionEnum = 0; sectionEnum < eStoreSections._COUNT; sectionEnum++ )
+	{
+		RTKStoreSectionModel section
+		StoreSectionInfo sectionInfo
+		if ( sectionEnum in storeData )
+			sectionInfo = storeData[sectionEnum]
+
+		switch( sectionEnum )
+		{
+			case eStoreSections.Event:
+				if ( sectionEnum in storeData )
+					section = GetEventSection( sectionInfo.offers )
+				else if ( GetActiveEventTabMilestoneEvent( GetUnixTimestamp() ) != null || GetActiveCollectionEvent( GetUnixTimestamp() ) != null )
+				{
+					section = GetEventSection( [] )
+				}
+				else if ( GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() ).len() > 0 )
+					{
+						section = GetStoreEventSection( [] )
+					}
+				break
+
+			case eStoreSections.Flex1:
+				
+				if ( GetActiveEventTabMilestoneEvent( GetUnixTimestamp() ) != null || GetActiveCollectionEvent( GetUnixTimestamp() ) != null )
+				{
+					
+					if ( GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() ).len() > 0 )
+					{
+						if ( sectionEnum in storeData )
+							section = GetStoreEventSection( sectionInfo.offers )
+						else
+						{
+							section = GetStoreEventSection( [] )
+						}
+						break
+					}
+				}
+			case eStoreSections.Flex2:
+			case eStoreSections.Flex3:
+				if ( sectionEnum in storeData )
+					section = GetFlexSection( sectionInfo.offers, sectionInfo.sectionName )
+				break
+
+			case eStoreSections.Recolor:
+				if ( sectionEnum in storeData )
+					section = GetRecolorSection( sectionInfo.offers )
+				break
+
+			case eStoreSections.Exotic:
+				if ( sectionEnum in storeData )
+					section = GetExoticSection( sectionInfo.offers )
+				break
+
+			case eStoreSections.LegendPass:
+				if ( sectionEnum in storeData )
+					section = GetLegendPassSection( sectionInfo.offers )
+				break
+
+			default:
+				if ( sectionEnum in storeData )
+					section = RTKStore_GetSectionFromOffers( sectionInfo.offers )
+				break
+		}
+
+		if ( section.itemsArray.len() <= 0 )
+			continue
+
+		section.sectionEnum = sectionEnum
+		if ( sectionEnum in storeData )
+		{
+			section.sectionId   = sectionInfo.sectionId
+			section.sectionName = sectionInfo.sectionName
+		}
+
+		storeModel.sections.append( section )
+
+		rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+		RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+		RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+		RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+		RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+		RTKStruct_SetString( rtkSection, "sectionCurrency", section.sectionCurrency )
+	}
+
+	return storeModel
+}
+#endif
+
+void function RTKStoreItemShop_InitStoreSpecialOffers( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKStoreModel storeModel
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+
+	for ( int sectionEnum = 0; sectionEnum < eSpecialOffersSections._COUNT; sectionEnum++ )
+	{
+		RTKStoreSectionModel section
+
+		switch( sectionEnum )
+		{
+			case eSpecialOffersSections.CHAINED_OFFERS:
+				section = GetChainedOffersSection()
+				break
+		}
+
+		if ( section.itemsArray.len() <= 0 )
+			continue
+
+		section.sectionEnum = sectionEnum
+
+		storeModel.sections.append( section )
+
+		rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+		RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+		RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+		RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+		RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+		RTKStruct_SetString( rtkSection, "sectionCount", section.sectionCount )
+	}
+
+	
+	rtk_behavior ornull moreInfoButton = self.PropGetBehavior( "moreInfoButton" )
+	if ( moreInfoButton != null )
+	{
+		expect rtk_behavior( moreInfoButton )
+		AddCallback_UI_FeatureTutorialDialog_SetTitle( RTKStoreItemShop_PopulateSpecialOffersAboutTitle, SPECIAL_OFFERS_MORE_INFO )
+		AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( RTKStoreItemShop_PopulateSpecialOffersAboutText, SPECIAL_OFFERS_MORE_INFO )
+
+		self.AutoSubscribe( moreInfoButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			UI_OpenFeatureTutorialDialog( SPECIAL_OFFERS_MORE_INFO )
+		} )
+
+		RTKStruct_SetBool( p.storeItemShopModel, "showMoreInfoButton", true )
+	}
+
+	file.fullStoreModel = storeModel
+}
+
+string function RTKStoreItemShop_PopulateSpecialOffersAboutTitle()
+{
+	return "#STORE_CHAINED_OFFERS_ABOUT_TITLE"
+}
+
+array<featureTutorialTab> function RTKStoreItemShop_PopulateSpecialOffersAboutText()
+{
+	array<featureTutorialTab> tabs
+	featureTutorialTab tab1
+	array<featureTutorialData> tab1Rules
+
+	tab1.tabName = 	"#STORE_CHAINED_OFFERS_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#STORE_CHAINED_OFFERS_ABOUT_TITLE_1", "#STORE_CHAINED_OFFERS_ABOUT_DESC_1", $"rui/menu/store/chained_offers/modal/chained_offer_about_01" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#STORE_CHAINED_OFFERS_ABOUT_TITLE_2", "#STORE_CHAINED_OFFERS_ABOUT_DESC_2", $"rui/menu/store/chained_offers/modal/chained_offer_about_02" ) )
+	tab1.rules = tab1Rules
+	tab1.footerNote = "#STORE_CHAINED_OFFERS_ABOUT_DISCLAIMER"
+
+	tabs.append( tab1 )
+	return tabs
+}
+
+RTKStoreSectionModel function GetChainedOffersSection()
+{
+	RTKStoreSectionModel section
+	int sectionExpireTime = INT_MAX
+	int numItems
+	int chainedOffersProgress
+
+	array<GRXScriptOffer> offers = ChainedOffer_GetSortedChainedOffers()
+
+	numItems = offers.len()
+	chainedOffersProgress = ChainedOffer_GetChainedOfferProgress()
+
+	foreach ( int index, offer in offers )
+	{
+		
+		if ( index > 0 && index < numItems )
+		{
+			RTKStoreGridItemModel dividerItem
+			if ( chainedOffersProgress < index )
+			{
+				dividerItem.gridItemType = eStoreGridItemType.DIVIDER_ARROW
+				dividerItem.mainImage =  $"ui_image/rui/menu/common/vertical_trapezoid_separator_arrow.rpak"
+			}
+			else
+			{
+				dividerItem.gridItemType = eStoreGridItemType.DIVIDER_OWNED
+				dividerItem.mainImage = $"ui_image/rui/menu/store/common/chained_offer_arrow.rpak"
+			}
+
+			section.itemsArray.append( dividerItem )
+		}
+
+		
+		int type = int( offer.attributes["storecolumn"] ) == 2 ? eStoreGridItemType.CHAINED_OFFER_2_2 : eStoreGridItemType.CHAINED_OFFER_1_2
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, type )
+
+		if ( offer.expireTime < sectionExpireTime && offer.expireTime != 0 )
+		{
+			sectionExpireTime = offer.expireTime
+		}
+		section.itemsArray.append( itemModel )
+	}
+
+	section.sectionName = "#STORE_SPECIAL_OFFERS_SECTION_CHAINED_OFFERS"
+	section.endTime = sectionExpireTime
+	section.endTimeFormat = "#STORE_V2_OFFERS_ENDS"
+	section.sectionCount = Localize( "#OWNED_N_N", chainedOffersProgress, numItems ).toupper()
+	section.totalOffers = numItems
+
+	return section
+}
+
+RTKStoreSectionModel function GetRTKStoreSectionFromGRXStoreSection( GRXStoreSection activeSection )
+{
+	RTKStoreSectionModel rtkSection
+	rtkSection.sectionId = activeSection.id
+	rtkSection.sectionName = activeSection.localization
+
+	if ( activeSection.displayEndDateOverride != 0 )
+	{
+		rtkSection.endTime = activeSection.displayEndDateOverride
+	}
+	else
+	{
+		rtkSection.endTime = activeSection.endDate
+	}
+
+	int totalOffers = 0
+
+	bool insertBlankItemAtFront = false
+
+	if ( activeSection.imageRef != "" )
+		rtkSection.bgAsset = GetKeyValueAsAsset( { kn = activeSection.imageRef }, "kn" )
+
+	foreach ( GRXStoreScenario scenario in activeSection.scenarios )
+	{
+		switch ( scenario.field )
+		{
+			case "imageRef":
+				asset ornull scenarioBackground = Kepler_GetAssetForScenarioKey( GetLocalClientPlayer(), scenario.key )
+				if ( scenarioBackground != null )
+				{
+					rtkSection.bgAsset = expect asset( scenarioBackground )
+				}
+				break
+			case "frontBlank":
+				foreach ( string name, string data in scenario.variants )
+				{
+					if ( Kepler_IsPlayerInVariant( GetLocalClientPlayer(), Kepler_GetScenarioFromKey( scenario.key ), name ) )
+					{
+						insertBlankItemAtFront = true
+						break
+					}
+				}
+				break
+			default:
+				Warning("Unhandled scenario field = " + scenario.field )
+				break
+		}
+	}
+
+	if ( Length( activeSection.tint ) > 0.0 )
+		rtkSection.bgTint = activeSection.tint
+
+	
+	int offerSlotIndex = 0
+	bool sectionHasOfferPrereqs = false
+	foreach ( GRXStoreItem item in activeSection.items )
+	{
+		switch ( item.type )
+		{
+			case eStoreGridItemType.OFFER_1_1:
+			case eStoreGridItemType.OFFER_1_2:
+			case eStoreGridItemType.OFFER_2_1:
+			case eStoreGridItemType.OFFER_2_2:
+			case eStoreGridItemType.OFFER_3_2:
+				if ( item.offerAlias == "" )
+				{
+					Warning("GRXStoreItem expected to have an offer alias but none was found")
+					continue
+				}
+
+				GRXScriptOffer ornull scriptOffer = GRX_GetScriptOfferFromOfferAlias( item.offerAlias )
+				if ( scriptOffer == null )
+				{
+					Warning("GRXStoreItem has an offer alias = " + item.offerAlias + " but no such offer exists")
+					continue
+				}
+
+				expect GRXScriptOffer( scriptOffer )
+
+				
+				
+				if ( "storerow" in scriptOffer.attributes && "storecolumn" in scriptOffer.attributes )
+				{
+					item.type = GetGridItemTypeFromRowColumn( int( scriptOffer.attributes["storerow"] ), int( scriptOffer.attributes["storecolumn"] ) )
+				}
+
+				RTKStoreGridItemModel itemModel = GetItemModelFromOffer( scriptOffer, offerSlotIndex++, item.type )
+
+				
+				bool offerHasPrereq = scriptOffer.prereq != null
+				sectionHasOfferPrereqs = offerHasPrereq || sectionHasOfferPrereqs
+				if ( sectionHasOfferPrereqs )
+				{
+					ItemFlavor baseItemFlav = offerHasPrereq ? expect ItemFlavor( scriptOffer.prereq ) : scriptOffer.output.flavors[0]
+					bool isBaseItemOwned = GRX_IsItemOwnedByPlayer( baseItemFlav )
+
+					itemModel.sourceIcon = $""
+					itemModel.subText = offerHasPrereq ?
+					( isBaseItemOwned ? "#STORE_V2_RECOLOR_UNLOCKED" : "#STORE_V2_RECOLOR_LOCKED" ) :
+					( isBaseItemOwned ? "#STORE_V2_BASE_SKIN_UNLOCKED" : "#STORE_V2_BASE_SKIN_LOCKED" )
+				}
+
+				
+				if ( item.mainLocalization != "" )
+					itemModel.mainText = item.mainLocalization
+
+				if ( item.subLocalization != "" )
+					itemModel.subText = item.subLocalization
+				totalOffers++
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.DIVIDER:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = eStoreGridItemType.DIVIDER
+				itemModel.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator.rpak"
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.DIVIDER_ARROW:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = eStoreGridItemType.DIVIDER_ARROW
+				itemModel.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_arrow.rpak"
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.DIVIDER_LOCK:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = eStoreGridItemType.DIVIDER_LOCK
+				itemModel.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_lock.rpak"
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.DIVIDER_OWNED:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = eStoreGridItemType.DIVIDER_OWNED
+				itemModel.mainImage = $"ui_image/rui/menu/store/common/chained_offer_arrow.rpak"
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.INFO_MED:
+			case eStoreGridItemType.INFO_LRG:
+			case eStoreGridItemType.INFO_XLG:
+			case eStoreGridItemType.INFO_SML:
+			case eStoreGridItemType.INFO_WIDE:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = item.type
+
+				if ( item.imageRef != "" )
+					itemModel.mainImage = GetKeyValueAsAsset( { kn = item.imageRef }, "kn" )
+
+				
+				if ( item.type == eStoreGridItemType.INFO_SML )
+				{
+					itemModel.miscBool      = true 
+					itemModel.priceColor    = <1.0, 1.0, 1.0>
+					itemModel.newPriceColor = <0.6, 0.6, 0.6>
+				}
+				else
+				{
+					itemModel.miscBool = item.misc
+
+					if ( Length( item.primaryTint ) > 0.0  )
+					{
+						itemModel.priceColor = item.primaryTint
+					}
+
+					if ( Length( item.secondaryTint ) > 0.0  )
+					{
+						itemModel.newPriceColor = item.secondaryTint
+					}
+				}
+
+				itemModel.mainText = item.mainLocalization
+				itemModel.subText = item.subLocalization
+
+				itemModel.miscText1 = item.linkType
+				itemModel.miscText2 = item.link
+
+				if ( item.telemetryId != "" )
+					itemModel.telemetryId = item.telemetryId
+
+			if ( Wishlist_IsEnabled() )
+			{
+				if ( item.isWishlisted && GRX_IsOfferRestricted() )
+					continue
+				itemModel.isWishlistEnabled = item.isWishlisted
+			}
+
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.BLANK:
+				RTKStoreGridItemModel itemModel
+				itemModel.gridItemType = eStoreGridItemType.BLANK
+				rtkSection.itemsArray.append( itemModel )
+				break
+			case eStoreGridItemType.HEIRLOOM:
+			case eStoreGridItemType.PRESTIGE:
+			case eStoreGridItemType.EXOTIC:
+				if ( item.offerAlias == "" )
+				{
+					Warning("GRXStoreItem expected to have an offer alias but none was found")
+					continue
+				}
+
+				GRXScriptOffer ornull scriptOffer = GRX_GetScriptOfferFromOfferAlias( item.offerAlias )
+				if ( scriptOffer == null )
+				{
+					Warning("GRXStoreItem has an offer alias = " + item.offerAlias + " but no such offer exists")
+					continue
+				}
+
+				expect GRXScriptOffer( scriptOffer )
+				RTKStoreGridItemModel itemModel = GetItemModelFromOffer( scriptOffer, offerSlotIndex++, item.type )
+				totalOffers++
+				rtkSection.itemsArray.append( itemModel )
+
+				if ( item.type == eStoreGridItemType.EXOTIC )
+					rtkSection.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_EXOTIC )
+				else
+					rtkSection.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+				break
+			case eStoreGridItemType.BULK_OFFERS_ID:
+				if ( item.bulkOffersId == "" )
+				{
+					Warning("GRXStoreItem has a blank bulk offers ID")
+					continue
+				}
+
+				
+				
+				array<GRXScriptOffer> bulkOffers = GRX_GetLocationOffers( item.bulkOffersId )
+
+				if ( bulkOffers.len() == 0 )
+				{
+					Warning("Did not find any bulk offers with ID = " + item.bulkOffersId )
+					continue
+				}
+				bulkOffers.sort( SortScriptOffer )
+
+				foreach ( GRXScriptOffer scriptOffer in bulkOffers )
+				{
+					
+					int itemType = eStoreGridItemType.OFFER_1_2
+					if ( "storerow" in scriptOffer.attributes && "storecolumn" in scriptOffer.attributes )
+					{
+						itemType = GetGridItemTypeFromRowColumn( int( scriptOffer.attributes["storerow"] ), int( scriptOffer.attributes["storecolumn"] ) )
+					}
+
+					RTKStoreGridItemModel itemModel = GetItemModelFromOffer( scriptOffer, offerSlotIndex++, itemType )
+
+					
+					bool offerHasPrereq = scriptOffer.prereq != null
+					sectionHasOfferPrereqs = offerHasPrereq || sectionHasOfferPrereqs
+					if ( sectionHasOfferPrereqs )
+					{
+						ItemFlavor baseItemFlav = offerHasPrereq ? expect ItemFlavor( scriptOffer.prereq ) : scriptOffer.output.flavors[0]
+						bool isBaseItemOwned = GRX_IsItemOwnedByPlayer( baseItemFlav )
+
+						itemModel.sourceIcon = $""
+						itemModel.subText = offerHasPrereq ?
+								( isBaseItemOwned ? "#STORE_V2_RECOLOR_UNLOCKED" : "#STORE_V2_RECOLOR_LOCKED" ) :
+								( isBaseItemOwned ? "#STORE_V2_BASE_SKIN_UNLOCKED" : "#STORE_V2_BASE_SKIN_LOCKED" )
+					}
+
+					totalOffers++
+					rtkSection.itemsArray.append( itemModel )
+				}
+				break
+			default:
+				Warning("Found unhandled eStoreGridItemType " + item.type + " in dynamic store")
+				break
+		}
+	}
+
+	if ( insertBlankItemAtFront )
+	{
+		RTKStoreGridItemModel gridItem
+		gridItem.gridItemType = eStoreGridItemType.BLANK
+		rtkSection.itemsArray.insert( 0, gridItem )
+	}
+
+	rtkSection.totalOffers = totalOffers
+
+	return rtkSection
+}
+
+void function RTKStoreItemShop_InitMythicData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKStoreModel storeModel
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+
+	for ( int sectionEnum = 0; sectionEnum < eMythicSections._COUNT; sectionEnum++ )
+	{
+		RTKStoreSectionModel section
+
+		switch( sectionEnum )
+		{
+			case eMythicSections.HEIRLOOMS:
+				section = GetHeirloomSection()
+				break
+
+			case eMythicSections.PRESTIGE_SKINS:
+				section = GetPrestigeSkinSection()
+				break
+
+			case eMythicSections.ARTIFACTS:
+				section = GetArtifactSection()
+				break
+
+			case eMythicSections.UNIVERSALS:
+				section = GetUniversalSection()
+				break
+
+			case eMythicSections.WEAPONS:
+				section = GetWeaponSection()
+				break
+		}
+
+		if ( section.itemsArray.len() <= 0 )
+			continue
+
+		section.sectionEnum = sectionEnum
+		section.bgAsset = MYTHIC_BG_ASSET
+
+		storeModel.sections.append( section )
+
+		rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+		RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+		RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+		RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+		RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+		RTKStruct_SetString( rtkSection, "sectionCurrency", section.sectionCurrency )
+	}
+
+	
+	rtk_behavior ornull moreInfoButton = self.PropGetBehavior( "moreInfoButton" )
+	if ( moreInfoButton != null )
+	{
+		expect rtk_behavior( moreInfoButton )
+		self.AutoSubscribe( moreInfoButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			ConfirmDialogData dialogData
+			dialogData.headerText = "#CURRENCY_HEIRLOOM_NAME_SHORT_ICON"
+			dialogData.messageText = Localize( "#CURRENCY_HEIRLOOM_DESC_LONG" )
+			OpenOKDialogFromData( dialogData )
+		} )
+
+		RTKStruct_SetBool( p.storeItemShopModel, "showMoreInfoButton", true )
+	}
+
+	file.fullStoreModel = storeModel
+}
+
+void function RTKStoreItemShop_InitApexPackData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKStoreModel storeModel
+
+	for ( int sectionEnum = 0; sectionEnum < eApexPacksSections._COUNT; sectionEnum++ )
+	{
+		RTKStoreSectionModel section
+
+		switch( sectionEnum )
+		{
+			case eApexPacksSections.APEX_PACKS :
+				section = GetApexPacksOfferSection()
+				break
+
+			case eApexPacksSections.LIMITED_TIME:
+				section = GetLimitedTimeApexPacksOfferSection()
+				break
+		}
+
+		if ( section.itemsArray.len() <= 0 )
+			continue
+
+		storeModel.sections.append( section )
+
+		rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+		rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+		RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+		RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+		RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+		RTKStruct_SetString( rtkSection, "secondaryEndTimeFormat", section.secondaryEndTimeFormat )
+		RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+		RTKStruct_SetString( rtkSection, "sectionCurrency", section.sectionCurrency )
+		RTKStruct_SetString( rtkSection, "sectionCount", section.sectionCount )
+		RTKStruct_SetBool( rtkSection, "showWishlistButton", section.showWishlistButton )
+		RTKStruct_SetBool( rtkSection, "forceHideNav", section.forceHideNav )
+	}
+
+	
+	rtk_behavior ornull moreInfoButton = self.PropGetBehavior( "moreInfoButton" )
+	if ( moreInfoButton != null )
+	{
+		expect rtk_behavior( moreInfoButton )
+		self.AutoSubscribe( moreInfoButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			OpenPackInfoDialog( null )
+		} )
+
+		RTKStruct_SetBool( p.storeItemShopModel, "showMoreInfoButton", true )
+	}
+
+	
+	RTKStruct_SetBool( p.storeItemShopModel, "showPacksInventoryButton", true )
+
+	file.fullStoreModel = storeModel
+}
+
+void function RTKStoreItemShop_InitSetData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKStoreModel storeModel
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+
+	RTKStoreSectionModel section
+	switch( RTKStore_GetGridItemType() )
+	{
+		case eStoreGridItemType.ARTIFACT_SET:
+			section = GetArtifactSetSection()
+			break
+		case eStoreGridItemType.UNIVERSAL_SET:
+			section = GetUniversalSetSection()
+			break
+		case eStoreGridItemType.WEAPON_SET:
+			section = GetWeaponSetSection()
+			break
+		default:
+			Assert( false, "Not a valid eStoreGridItemType" )
+	}
+
+	section.bgAsset = MYTHIC_BG_ASSET
+	storeModel.sections.append( section )
+
+	rtk_struct rtkSection = RTKArray_PushNewStruct( storeSectionsArray )
+	RTKStruct_SetInt( rtkSection, "endTime", section.endTime )
+	RTKStruct_SetInt( rtkSection, "secondaryEndTime", section.secondaryEndTime )
+	RTKStruct_SetString( rtkSection, "endTimeFormat", section.endTimeFormat )
+	RTKStruct_SetString( rtkSection, "sectionName", section.sectionName )
+	RTKStruct_SetString( rtkSection, "sectionCount", section.sectionCount )
+
+	
+	RTKStruct_SetBool( p.storeItemShopModel, "showMoreInfoButton", false )
+
+	file.fullStoreModel = storeModel
+}
+
+void function RTKStore_SetOverrideStartingSection( string panelName = "" )
+{
+	
+	if ( panelName == "" )
+		panelName = file.activePanel
+
+	
+	InitPanelInstanceData( panelName )
+
+	file.instanceData[panelName].overrideStartingSection = true
+}
+
+void function RTKStore_SetStartingSection( string sectionName, int startingPage, string panelName = "" )
+{
+	
+	if ( panelName == "" )
+		panelName = file.activePanel
+
+	
+	InitPanelInstanceData( panelName )
+
+	file.instanceData[panelName].startingSectionOverride = sectionName
+	file.instanceData[panelName].startingPageOverride = startingPage
+}
+
+void function RTKStore_InspectOffer( int offerIndex, int slotIndex )
+{
+	EmitUISound( "UI_Menu_Accept" )
+	GRXScriptOffer offer = RTKStore_GetOfferFromIndex( offerIndex )
+	if ( offer.output.flavors.len() <= 0 )
+		return
+
+	ItemFlavor item = offer.output.flavors[0]
+
+	
+	RTKStore_OpenInspectPage( item, offer )
+	RTKStore_SetOverrideStartingSection()
+
+	
+	RTKStore_InspectOffer_SaveTelemetryData( offer, slotIndex )
+	StoreTelemetry_SendOferPageViewEvent()
+}
+
+void function RTKStore_OpenInspectPage( ItemFlavor item, GRXScriptOffer offer )
+{
+	if ( Mythics_IsItemFlavorMythicSkin( item ) )
+	{
+		StoreMythicInspectMenu_AttemptOpenWithOffer( offer )
+	}
+	else if ( Artifacts_IsItemFlavorArtifact( item ) && !UniversalMelee_IsItemFlavorUniversalMelee( item ) )
+	{
+		ArtifactsInspectMenu_AttemptOpenWithOffer( offer )
+	}
+	else if ( UniversalMelee_IsItemFlavorUniversalMelee( item ) )
+	{
+		RTKUniversalMeleeInspectScreen_InspectOffer( offer )
+	}
+	else if ( WeaponSkin_IsMythicWeapon( item ) )
+	{
+		RTKMythicWeaponInspectScreen_InspectOffer( offer )
+	}
+	else
+	{
+		StoreInspectMenu_AttemptOpenWithOffer( offer )
+	}
+}
+
+void function RTKStore_InspectOffer_SaveTelemetryData( GRXScriptOffer offer, int slotIndex )
+{
+	fileTelemetry.prevPageDuration = int( UITime() ) - fileTelemetry.prevPageTimeStamp
+	fileTelemetry.prevPageTimeStamp = int ( UITime() )
+	fileTelemetry.offerName = offer.offerAlias
+	fileTelemetry.offerPriority = slotIndex
+	fileTelemetry.expirationTime = offer.expireTime
+}
+
+void function GoToStartingSection( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	int startingSectionIndex = RTKStoreItemShop_GetStartingSectionIndex( self )
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+	rtk_struct storeSection = RTKArray_GetStruct( storeSectionsArray, startingSectionIndex )
+	int startingSectionPage = file.instanceData[file.activePanel].startingPageOverride 
+
+	RTKStruct_SetInt( p.storeItemShopModel, "startPageIndex", startingSectionIndex )
+	RTKStruct_SetInt( storeSection, "startPageIndex", startingSectionPage )
+	RTKStoreItemShop_SetCurrentSectionsInfo( self, startingSectionIndex )
+	SetOnlySectionVisible( self, startingSectionIndex )
+
+	
+	RTKStoreItemShop_UpdateSmartMerchandisingData( self, startingSectionIndex, startingSectionPage + 1 )
+
+	
+	fileTelemetry.sectionNum = startingSectionIndex
+	int pageNum = startingSectionPage
+	string pageName = file.fullStoreModel.sections[startingSectionIndex].sectionName
+
+	fileTelemetry.prevPage = fileTelemetry.pageName
+	fileTelemetry.pageName = pageName + "_" + string( pageNum )
+	fileTelemetry.prevPageDuration = int( UITime() ) - fileTelemetry.prevPageTimeStamp
+	fileTelemetry.prevPageTimeStamp = int ( UITime() )
+	fileTelemetry.pageNum = pageNum
+	fileTelemetry.totalOffers = file.fullStoreModel.sections[startingSectionIndex].totalOffers
+	fileTelemetry.expirationTime = file.fullStoreModel.sections[startingSectionIndex].endTime
+
+	if ( fileTelemetry.linkName != "" )
+		fileTelemetry.clickType = "deeplink"
+	StoreTelemetry_SendStorePageViewEvent()
+	fileTelemetry.linkName = ""
+}
+
+int function RTKStoreItemShop_GetStartingSectionIndex( rtk_behavior self )
+{
+	int startingSectionIndex = 0
+
+	
+	if ( file.instanceData[file.activePanel].overrideStartingSection )
+	{
+		foreach ( int index, section in file.fullStoreModel.sections )
+		{
+			if ( section.sectionName == file.instanceData[file.activePanel].startingSectionOverride )
+				startingSectionIndex = index
+		}
+
+		file.instanceData[file.activePanel].overrideStartingSection = false
+		return startingSectionIndex
+	}
+
+	
+	file.instanceData[file.activePanel].startingPageOverride = 0
+
+	
+	array<int> unseenSections
+	foreach ( int index, section in file.fullStoreModel.sections )
+	{
+		if ( !HasSectionBeenSeen( section.sectionId ) )
+			unseenSections.append( index )
+	}
+
+	
+	if ( unseenSections.len() >= file.fullStoreModel.sections.len() )
+		return startingSectionIndex
+
+
+	
+	if ( unseenSections.len() > 0 )
+	{
+		int randResult = RandomIntRange( 0, unseenSections.len() )
+		startingSectionIndex = unseenSections[randResult]
+	}
+	else
+	{
+		int lastViewedSectionId  = GetMostRecentlySeenSection()
+		foreach ( int index, section in file.fullStoreModel.sections )
+		{
+			if ( section.sectionId == lastViewedSectionId )
+			{
+				startingSectionIndex = index
+				break
+			}
+		}
+	}
+
+	return startingSectionIndex
+}
+
+void function RTKStoreItemShop_OnScrollStarted( rtk_behavior self )
+{
+	
+	rtk_behavior paginationBehavior = self.PropGetBehavior( "paginationBehavior" )
+	int currentPageIndex = RTKPagination_GetCurrentPage( paginationBehavior )
+	int targetPageIndex = RTKPagination_GetTargetPage( paginationBehavior )
+	if ( targetPageIndex != currentPageIndex )
+	{
+		asset backgroundAsset = GetBackgroundAssetFromSectionIndex( targetPageIndex )
+		vector backgroundTint = GetBackgroundTintFromSectionIndex( targetPageIndex )
+		rtk_behavior backgroundFader = self.PropGetBehavior( "backgroundImageFader" )
+		RTKImageCrossfader_FadeScrollNewImage( backgroundFader, backgroundAsset, backgroundTint, 0.35, targetPageIndex < currentPageIndex )
+	}
+
+	RTKStoreItemShop_SetCurrentSectionsInfo( self, targetPageIndex )
+	SetSectionVisible( self, targetPageIndex, true )
+}
+
+void function RTKStoreItemShop_OnScrollFinished( rtk_behavior self )
+{
+	rtk_behavior pagination = self.PropGetBehavior( "paginationBehavior" )
+	int pageIndex = RTKPagination_GetCurrentPage( pagination )
+	SetOnlySectionVisible( self, pageIndex )
+
+	
+	RTKStoreItemShop_UpdateSmartMerchandisingData( self )
+
+	
+	fileTelemetry.clickType = RTKPagination_GetLastNavType( pagination )
+	fileTelemetry.linkName = ""
+	fileTelemetry.totalOffers = file.fullStoreModel.sections[pageIndex].totalOffers
+	fileTelemetry.expirationTime = file.fullStoreModel.sections[pageIndex].endTime
+	RTKStoreItemShop_SaveTelemetryData( self )
+	StoreTelemetry_SendStorePageViewEvent()
+}
+
+void function RTKStoreItemShop_UpdateSmartMerchandisingData( rtk_behavior self, int currentSectionIndex = -1, int currentSectionPage = -1 )
+{
+	rtk_behavior pagination = self.PropGetBehavior( "paginationBehavior" )
+
+	if ( currentSectionIndex == -1 )
+	{
+		currentSectionIndex = RTKPagination_GetCurrentPage( pagination )
+	}
+
+	if ( currentSectionPage == -1 )
+	{
+		rtk_behavior sectionBehavior = self.PropGetPanel( "contentPanel" ).GetChildByIndex( currentSectionIndex ).FindBehaviorByTypeName( "StoreGridSection" )
+		currentSectionPage = RTKPagination_GetCurrentPage( sectionBehavior.PropGetBehavior( "paginationBehavior" ) ) + 1
+	}
+
+	int sectionId = file.fullStoreModel.sections[currentSectionIndex].sectionId
+	SetLastSectionVisited( sectionId )
+
+	if ( currentSectionPage > GetHighestPageForSection( sectionId ) )
+	{
+		SetHighestPageSeenForSection( sectionId, currentSectionPage )
+	}
+	RTKArray_SetValue( pagination.PropGetArray( "pipMiscBools" ), RTKStoreItemShop_GetSectionNewness( self ) )
+}
+
+void function RTKStoreItemShop_SaveTelemetryData( rtk_behavior self )
+{
+	int pageIndex                = RTKPagination_GetCurrentPage( self.PropGetBehavior( "paginationBehavior" ) )
+	rtk_behavior sectionBehavior = self.PropGetPanel( "contentPanel" ).GetChildByIndex( pageIndex ).FindBehaviorByTypeName( "StoreGridSection" )
+
+	fileTelemetry.sectionNum = pageIndex
+	RTKStoreGridSection_SaveTelemetryData( sectionBehavior )
+}
+
+void function RTKStoreItemShop_SetCurrentSectionsInfo( rtk_behavior self, int pageIndex )
+{
+	PrivateData p
+	self.Private( p )
+
+	int sectionCount             = file.fullStoreModel.sections.len()
+	int prevSectionIndex         = pageIndex <= 0 ? sectionCount - 1 : pageIndex - 1
+	int nextSectionIndex         = pageIndex + 1 >= sectionCount ? 0 : pageIndex + 1
+
+	RTKStruct_SetString( p.storeItemShopModel, PREV_SECTION, file.fullStoreModel.sections[prevSectionIndex].sectionName )
+	RTKStruct_SetString( p.storeItemShopModel, NEXT_SECTION, file.fullStoreModel.sections[nextSectionIndex].sectionName )
+}
+
+array<bool> function RTKStoreItemShop_GetSectionNewness( rtk_behavior self )
+{
+	array<bool> sectionNewness
+
+	foreach ( section in file.fullStoreModel.sections )
+	{
+		sectionNewness.append( !HasSectionBeenSeen( section.sectionId ) )
+	}
+
+	return sectionNewness
+}
+
+asset function GetBackgroundAssetFromSectionIndex( int index )
+{
+	if ( index < 0 || index >= file.fullStoreModel.sections.len() )
+		return DEFAULT_BG_ASSET
+
+	return file.fullStoreModel.sections[index].bgAsset
+}
+
+vector function GetBackgroundTintFromSectionIndex( int index )
+{
+	if ( index < 0 || index >= file.fullStoreModel.sections.len() )
+		return <1.0, 1.0, 1.0>
+
+	return file.fullStoreModel.sections[index].bgTint
+}
+
+void function RTKStoreGridSection_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior pagination = self.PropGetBehavior( "paginationBehavior" )
+	self.AutoSubscribe( pagination, "onScrollFinished", function () : ( self ) {
+		RTKStoreGridSection_OnScrollFinished( self )
+	} )
+}
+
+void function RTKStoreGridSection_OnScrollFinished( rtk_behavior self )
+{
+	rtk_behavior pagination = self.PropGetBehavior( "paginationBehavior" )
+
+	int sectionId = GetMostRecentlySeenSection()
+	int currentPage = RTKPagination_GetCurrentPage( pagination ) + 1
+	if ( GetHighestPageForSection( sectionId ) > currentPage )
+	{
+		SetHighestPageSeenForSection( sectionId, currentPage )
+	}
+
+	fileTelemetry.clickType = RTKPagination_GetLastNavType( pagination )
+	fileTelemetry.linkName = ""
+	RTKStoreGridSection_SaveTelemetryData( self )
+	StoreTelemetry_SendStorePageViewEvent()
+}
+
+void function RTKStoreGridSection_SaveTelemetryData( rtk_behavior self )
+{
+	int pageNum = RTKPagination_GetCurrentPage( self.PropGetBehavior( "paginationBehavior" ) )
+
+	int pageIndex = fileTelemetry.sectionNum
+	string pageName = file.fullStoreModel.sections[pageIndex].sectionPINId
+	if ( pageName == "" )
+		pageName = self.PropGetString( "sectionName" )
+
+	fileTelemetry.prevPage = fileTelemetry.pageName
+	fileTelemetry.pageName = pageName + "_" + string( pageNum )
+	fileTelemetry.prevPageDuration = int( UITime() ) - fileTelemetry.prevPageTimeStamp
+	fileTelemetry.prevPageTimeStamp = int ( UITime() )
+	fileTelemetry.pageNum = pageNum
+}
+
+int function RTKStoreGridSection_GetCurrentPage( rtk_behavior self )
+{
+	rtk_behavior ornull paginationBehavior = self.PropGetBehavior( "paginationBehavior" )
+	if ( paginationBehavior == null )
+		return 0
+
+	expect rtk_behavior( paginationBehavior )
+
+	return RTKPagination_GetCurrentPage( paginationBehavior )
+}
+
+void function RTKStoreGridItem_OnInitialize( rtk_behavior self )
+{
+	RTKStruct_AddPropertyListener( self.GetProperties(), "gridItemType", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		RTKStoreGridItem_SetItemSize( self )
+	} )
+}
+
+void function RTKStoreGridItem_SetItemSize( rtk_behavior self )
+{
+	rtk_struct panelProps = self.GetPanel().GetProperties()
+	int gridItemType = self.PropGetInt( "gridItemType" )
+	rtk_behavior gridContainerElement = self.PropGetBehavior( "gridContainerElement" )
+
+	gridContainerElement.PropSetBool( "hasCustomSize", IsGridItemCustomSize( gridItemType ) )
+	gridContainerElement.PropSetInt( "spanCellsHorizontal", GetGridItemSpanHorizontalFromType( gridItemType ) )
+	gridContainerElement.PropSetInt( "spanCellsVertical", GetGridItemSpanVerticalFromType( gridItemType ) )
+
+	RTKStruct_SetFloat( panelProps, "width", GetGridItemWidthFromType( gridItemType ) )
+	RTKStruct_SetFloat( panelProps, "height", GetGridItemHeightFromType( gridItemType ) )
+
+#if SUPPORTS_COMPACT_UI
+		if ( gridItemType == eStoreGridItemType.BONUS_METER )
+		{
+			rtk_behavior prefabInstantiator = self.GetPanel().FindBehaviorByTypeName( "PrefabInstantiator" )
+			if ( prefabInstantiator != null )
+			{
+				self.AutoSubscribe( prefabInstantiator, "onPrefabInstantiated", function ( int index, rtk_panel newInstance ) : ( gridItemType ) {
+					newInstance.SetDynamicPropertyValueAsFloat2( "defaultSize", <GetGridItemWidthFromType( gridItemType ), GetGridItemHeightFromType( gridItemType ), 0> )
+				} )
+			}
+		}
+#endif
+}
+
+void function InitStoreItemShop( var panel )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, true, "#X_GIFT_INFO_TITLE", "#GIFT_INFO_TITLE", OpenGiftInfoPopUpWithEventTabTelemetry, ShouldShowGiftingFooter )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, true, "#X_BUTTON_OPEN_APEX_PACKS", "#OPEN_APEX_PACKS", RTKViewPacksInventoryButton_OpenPacksInventory, ShouldShowOpenApexPacksFooter )
+	AddPanelFooterOption( panel, LEFT, BUTTON_Y, true, "#Y_BUTTON_REDEEM_CODE", "#REDEEM_CODE_TEXT", void function( var button ) : () {
+		AdvanceMenu( GetMenu( "CodeRedemptionDialog" ) )
+	} )
+}
+
+bool function ShouldShowGiftingFooter()
+{
+	return file.activePanel == STORE_OFFER_SHOP && IsGiftingEnabled()
+}
+
+bool function ShouldShowOpenApexPacksFooter()
+{
+	return file.activePanel == RTK_APEX_PACKS_PANEL
+}
+
+int function RTKStore_RegisterOffer( GRXScriptOffer offer )
+{
+	file.allCurrentOffers[ file.activePanel ].append( offer )
+
+	return file.allCurrentOffers[ file.activePanel ].len() - 1
+}
+
+GRXScriptOffer function RTKStore_GetOfferFromIndex( int index )
+{
+	if ( index < 0 || index >= file.allCurrentOffers[ file.activePanel ].len() )
+	{
+		GRXScriptOffer blank
+		return blank
+	}
+
+	return file.allCurrentOffers[ file.activePanel ][ index ]
+}
+
+RTKStoreGridItemModel function GetItemModelFromOffer( GRXScriptOffer offer, int slotIndex, int gridItemType = -1, bool miscBool = false )
+{
+	RTKStoreGridItemModel itemModel
+	RTKOfferButtonModel offerButtonModel = RTKStore_CreateOfferButtonModel( offer )
+
+	if ( gridItemType == -1 )
+		itemModel.gridItemType = GetGridItemTypeFromRowColumn( int( offer.attributes["storerow"] ), int( offer.attributes["storecolumn"] ) )
+	else
+		itemModel.gridItemType = gridItemType
+
+	itemModel.slotIndex		= slotIndex
+	itemModel.mainImage 	= offerButtonModel.offerImage
+	itemModel.mainText 		= offerButtonModel.offerName
+	itemModel.subText 		= offerButtonModel.offerType
+	itemModel.miscText1 	= offerButtonModel.price
+	itemModel.miscText2 	= offerButtonModel.newPrice
+	itemModel.miscText3		= offerButtonModel.purchaseLimit
+	itemModel.miscBool		= miscBool
+
+	itemModel.offerIndex 		= offerButtonModel.offerIndex
+	itemModel.imageRef			= offerButtonModel.imageRef
+	itemModel.binkRef			= offerButtonModel.binkRef
+	itemModel.newPriceShow 		= offerButtonModel.newPriceShow
+	itemModel.rarity       		= offerButtonModel.rarity
+	itemModel.discount  		= offerButtonModel.discount
+	itemModel.priceColor    	= offerButtonModel.priceColor
+	itemModel.newPriceColor 	= offerButtonModel.newPriceColor
+	itemModel.isOnlyGiftable    = offerButtonModel.isOnlyGiftable
+	itemModel.locked    		= offerButtonModel.locked
+	itemModel.isAddOn    		= offerButtonModel.isAddOn
+	itemModel.isBaseItem    	= offerButtonModel.isBaseItem
+	itemModel.setItemIndex    	= offerButtonModel.setItemIndex
+	itemModel.setItemLevel    	= offerButtonModel.setItemLevel
+
+	itemModel.sourceIcon		= offerButtonModel.sourceIcon
+	itemModel.legendIcon		= offerButtonModel.legendIcon
+	itemModel.finishIcon		= offerButtonModel.finishIcon
+	itemModel.trailIcon			= offerButtonModel.trailIcon
+	itemModel.crossfaderImages	= offerButtonModel.crossfaderImages
+
+	return itemModel
+}
+
+bool function PopulateItemModelFromSet( RTKStoreGridItemModel itemModel, int setIndex, int gridItemType )
+{
+	RTKOfferButtonModel offerButtonModel
+
+	bool success = false
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.ARTIFACT_SET:
+			success = RTKStore_PopulateOfferArtifactSetButtonModel( offerButtonModel, setIndex )
+			break
+		case eStoreGridItemType.UNIVERSAL_SET:
+			success = RTKStore_PopulateOfferUniversalSetButtonModel( offerButtonModel, setIndex )
+			break
+		case eStoreGridItemType.WEAPON_SET:
+			success = RTKStore_PopulateOfferWeaponSetButtonModel( offerButtonModel, setIndex )
+			break
+	}
+
+
+	if ( !success )
+		return false
+
+	itemModel.offerIndex 	= setIndex
+	itemModel.gridItemType 	= gridItemType
+	itemModel.mainImage		= offerButtonModel.offerImage
+	itemModel.imageRef 		= offerButtonModel.imageRef
+	itemModel.mainText 		= offerButtonModel.offerName
+	itemModel.subText 		= offerButtonModel.offerType
+	itemModel.miscText1		= offerButtonModel.purchaseLimit
+	itemModel.miscText3 	= offerButtonModel.price
+	itemModel.rarity       	= offerButtonModel.rarity
+	itemModel.sourceIcon	= offerButtonModel.sourceIcon
+	itemModel.priceColor   	= offerButtonModel.priceColor
+	itemModel.locked   		= offerButtonModel.locked
+	itemModel.binkRef   	= offerButtonModel.binkRef
+
+	return true
+}
+
+RTKStoreSectionModel function RTKStore_GetSectionFromOffers( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section
+	int sectionExpireTime = INT_MAX
+
+	foreach ( int index, offer in offers )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index )
+		if ( offer.expireTime < sectionExpireTime && offer.expireTime != 0 )
+		{
+			sectionExpireTime = offer.expireTime
+		}
+		section.itemsArray.append( itemModel )
+	}
+
+	section.endTime = sectionExpireTime
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetEventSection( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section = RTKStore_GetSectionFromOffers( offers )
+
+	ItemFlavor ornull activeCollectionEvent = GetActiveCollectionEvent( GetUnixTimestamp() )
+	if ( activeCollectionEvent != null )
+	{
+		expect ItemFlavor( activeCollectionEvent )
+
+		RTKStoreGridItemModel gridItem
+		gridItem.gridItemType = eStoreGridItemType.INFO_MED
+		gridItem.mainImage     = CollectionEvent_GetStoreEventSectionMainImage( activeCollectionEvent )
+		gridItem.mainText      = CollectionEvent_GetStoreEventSectionMainText( activeCollectionEvent )
+		gridItem.subText       = CollectionEvent_GetStoreEventSectionSubText( activeCollectionEvent )
+		gridItem.priceColor    = <1.0, 1.0, 1.0>
+		gridItem.newPriceColor = <1.0, 1.0, 1.0>
+		gridItem.miscText1     = "collectionevent"
+		section.itemsArray.insert( 0, gridItem )
+	}
+
+	ItemFlavor ornull activeMilestoneEvent = GetActiveEventTabMilestoneEvent( GetUnixTimestamp() )
+	if ( activeMilestoneEvent != null )
+	{
+		expect ItemFlavor( activeMilestoneEvent )
+
+		section.sectionId = 0
+		section.sectionName = GetCurrentEventSectionName()
+		section.endTime = CalEvent_GetFinishUnixTime( activeMilestoneEvent )
+
+		RTKStoreGridItemModel gridItem
+		gridItem.gridItemType  = eStoreGridItemType.INFO_MED
+		gridItem.mainImage     = MilestoneEvent_GetStoreEventSectionMainImage( activeMilestoneEvent )
+		gridItem.mainText      = MilestoneEvent_GetStoreEventSectionMainText( activeMilestoneEvent )
+		gridItem.subText       = MilestoneEvent_GetStoreEventSectionSubText( activeMilestoneEvent )
+		gridItem.priceColor    = <1.0, 1.0, 1.0>
+		gridItem.newPriceColor = <1.0, 1.0, 1.0>
+		gridItem.miscText1     = "milestoneevent"
+		section.itemsArray.insert( 0, gridItem )
+	}
+
+	if ( activeCollectionEvent == null && activeMilestoneEvent == null && GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() ).len() > 0 )
+	{
+		section = GetStoreEventSection( offers )
+	}
+
+	return section
+}
+
+RTKStoreSectionModel function GetStoreEventSection( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section = RTKStore_GetSectionFromOffers( offers )
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	array< RTKStoreGridItemModel > finalRowTiles
+
+	array< ItemFlavor > storeMilestoneEvents = CalEvent_SortByFinishTime( GetActiveStoreOnlyMilestoneEvents( GetUnixTimestamp() ) )
+	if ( storeMilestoneEvents.len() > 0 )
+	{
+		bool isSingleEvent = storeMilestoneEvents.len() == 1
+
+		int eventIndex = 0
+		int tilesAdded = 0
+
+		
+		foreach ( ItemFlavor event in storeMilestoneEvents )
+		{
+			
+			section.sectionId = 0
+			section.sectionName = storeMilestoneEvents.len() > 1 ? "#MILESTONE_STORE_TAB_TITLE_PLURAL" :  "#MILESTONE_STORE_TAB_TITLE"
+
+			RTKStoreGridItemModel gridItem
+
+			if ( section.itemsArray.len() > 0 )
+				gridItem.gridItemType = eStoreGridItemType.INFO_MED
+			else
+				gridItem.gridItemType  = isSingleEvent ? eStoreGridItemType.INFO_XLG : eStoreGridItemType.INFO_LRG
+
+			gridItem.mainImage     = MilestoneEvent_GetStoreEventSectionMainImage( event )
+			gridItem.mainText      = MilestoneEvent_GetStoreEventSectionMainText( event )
+			gridItem.subText       = MilestoneEvent_GetStoreEventSectionSubText( event )
+			gridItem.priceColor    = <1.0, 1.0, 1.0>
+			gridItem.newPriceColor = <1.0, 1.0, 1.0>
+			gridItem.endTime	   = CalEvent_GetFinishUnixTime( event )
+
+			gridItem.miscText1    = "storemilestoneevent"
+			gridItem.miscText2	  = MilestoneEvent_GetEventId( event )
+			gridItem.telemetryId  = section.sectionName + "_" + eventIndex
+			gridItem.slotIndex	  = tilesAdded
+			finalRowTiles.push( gridItem )
+
+			eventIndex++
+			tilesAdded++
+
+			array< RTKStoreGridItemModel > eventItems
+			
+			
+			foreach ( RTKStoreGridItemModel item in section.itemsArray )
+			{
+				GRXScriptOffer offer = RTKStore_GetOfferFromIndex( item.offerIndex )
+				if ( offer.output.flavors.len() <= 0 )
+					continue
+
+				ItemFlavor itemFlav = offer.output.flavors[0]
+				if ( MilestoneEvent_IsItemEventItem( event, itemFlav.grxIndex ) )
+				{
+					eventItems.append( item )
+				}
+			}
+
+			
+			
+			eventItems.sort( int function( RTKStoreGridItemModel itemA, RTKStoreGridItemModel itemB ) {
+				if ( itemA.slotIndex < itemB.slotIndex )
+					return 1
+				else if ( itemA.slotIndex > itemB.slotIndex )
+					return -1
+
+				return 0
+			})
+
+			
+			foreach ( RTKStoreGridItemModel item in eventItems )
+			{
+				
+				item.slotIndex = tilesAdded
+
+				
+				finalRowTiles.push( item )
+
+				
+				section.itemsArray.fastremovebyvalue( item )
+
+				tilesAdded++
+			}
+		}
+
+		
+		if ( section.itemsArray.len() > 0 )
+		{
+			
+			section.itemsArray.sort( int function( RTKStoreGridItemModel itemA, RTKStoreGridItemModel itemB ) {
+				if ( itemA.slotIndex < itemB.slotIndex )
+					return 1
+				else if ( itemA.slotIndex > itemB.slotIndex )
+					return -1
+
+				return 0
+			})
+
+			foreach ( RTKStoreGridItemModel item in section.itemsArray )
+			{
+				
+				item.slotIndex = tilesAdded
+
+				
+				finalRowTiles.push( item )
+
+				tilesAdded++
+			}
+
+			
+			section.itemsArray.clear()
+		}
+
+
+		
+		section.itemsArray = finalRowTiles
+
+		
+		section.endTime = section.itemsArray[0].endTime
+	}
+
+	return section
+}
+
+
+RTKStoreSectionModel function GetFlexSection( array<GRXScriptOffer> offers, string sectionName )
+{
+	RTKStoreSectionModel section = RTKStore_GetSectionFromOffers( offers )
+
+	bool hasKeyArt = STORE_SECTION_KEY_ART_LIST.contains( sectionName )
+
+	if ( hasKeyArt )
+	{
+		RTKStoreGridItemModel gridItem
+		gridItem.gridItemType = eStoreGridItemType.BLANK
+		section.itemsArray.insert( 0, gridItem )
+	}
+
+	return section
+}
+
+RTKStoreSectionModel function GetRecolorSection( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section = RTKStore_GetSectionFromOffers( offers )
+
+	for ( int index = offers.len() - 1; index >= 0; index-- )
+	{
+		bool isRecolor = offers[index].prereq != null
+		ItemFlavor baseItemFlav = isRecolor ? expect ItemFlavor( offers[index].prereq ) : offers[index].output.flavors[0]
+		bool isBaseItemOwned = GRX_IsItemOwnedByPlayer( baseItemFlav )
+
+		section.itemsArray[index].sourceIcon = $""
+		section.itemsArray[index].subText = isRecolor ?
+				( isBaseItemOwned ? "#STORE_V2_RECOLOR_UNLOCKED" : "#STORE_V2_RECOLOR_LOCKED" ) :
+				( isBaseItemOwned ? "#STORE_V2_BASE_SKIN_UNLOCKED" : "#STORE_V2_BASE_SKIN_LOCKED" )
+
+		if ( isRecolor && index > 0 )
+		{
+			RTKStoreGridItemModel gridItem
+			gridItem.gridItemType = eStoreGridItemType.DIVIDER
+			gridItem.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator.rpak"
+			section.itemsArray.insert( index, gridItem )
+		}
+	}
+
+	return section
+}
+
+RTKStoreSectionModel function GetExoticSection( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section
+
+	foreach ( int index, offer in offers )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.EXOTIC )
+		section.itemsArray.append( itemModel )
+	}
+
+	section.endTime = 0
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_EXOTIC )
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetLegendPassSection( array<GRXScriptOffer> offers )
+{
+	RTKStoreSectionModel section
+
+	if ( GRX_IsOfferRestricted() )
+		return section
+
+	RTKStoreGridItemModel infoButton
+	infoButton.gridItemType  = eStoreGridItemType.INFO_SML
+	infoButton.mainImage     = $"ui_image/rui/menu/store/common/store_offer_pass_bg.rpak"
+	infoButton.mainText      = "#FOOTER_MORE_INFO_MOUSE"
+	infoButton.subText       = "#LEGENDPASS_MORE_INFO_BUTTON_DESC"
+	infoButton.priceColor    = <1.0, 1.0, 1.0>
+	infoButton.newPriceColor = <0.6, 0.6, 0.6>
+	infoButton.miscText1     = "legendpassinfo"
+	infoButton.miscBool      = true 
+	section.itemsArray.insert( 0, infoButton )
+
+	foreach ( int index, offer in offers )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.OFFER_1_2 )
+		section.itemsArray.append( itemModel )
+	}
+
+	section.endTime = 0
+
+	return section
+}
+
+string function GetCurrencyBalanceString( int currency )
+{
+	ItemFlavor currencyFlav = GRX_CURRENCIES[currency]
+	asset currencyIcon = ItemFlavor_GetIcon( currencyFlav )
+	int currencyAmount = GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), currencyFlav )
+	return "%$" + currencyIcon + "% " + FormatAndLocalizeNumber( "1", float( currencyAmount ), true )
+}
+
+RTKStoreSectionModel function GetApexPacksOfferSection()
+{
+	RTKStoreSectionModel section
+
+	if ( GetLootTickPurchaseOffers() != null )
+	{
+		array<GRXScriptOffer> offers = expect array<GRXScriptOffer>( GetLootTickPurchaseOffers() )
+
+		RTKStoreGridItemModel gridItem
+		gridItem.gridItemType = eStoreGridItemType.BONUS_METER
+		gridItem.bindingPath  = "" 
+		section.itemsArray.insert( 0, gridItem )
+		bool offerContainsWishlistRelatedPack = false
+		foreach ( int index, offer in offers )
+		{
+			int gridItemType = eStoreGridItemType.OFFER_1_2
+			switch ( index )
+			{
+				case 0:
+				case 1:
+					gridItemType = eStoreGridItemType.OFFER_1_1
+					break
+			}
+
+			RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, gridItemType )
+			section.itemsArray.append( itemModel )
+
+			if ( GRXOffer_ContainsWishlistRelatedPack( offer ) )
+				offerContainsWishlistRelatedPack = true
+		}
+
+		section.endTime = 0
+		section.sectionName = "#APEX_PACKS"
+		section.totalOffers = offers.len()
+		if ( !Wishlist_IsCompleted() )
+		{
+			section.sectionCount = Localize( "#WISHLIST_STORE_UPGRADABLE" )
+			section.showWishlistButton = offerContainsWishlistRelatedPack
+		}
+	}
+
+	return section
+}
+
+RTKStoreSectionModel function GetLimitedTimeApexPacksOfferSection()
+{
+	RTKStoreSectionModel section
+
+	if ( GetLimitedTimeApexPacksOffers() != null )
+	{
+		array<GRXScriptOffer> offers = expect array<GRXScriptOffer>( GetLimitedTimeApexPacksOffers() )
+		int weeklyOfferIndex = offers.len() - 1
+		int sectionExpireTime = INT_MAX
+
+		bool offerContainsWishlistRelatedPack = false
+
+		foreach ( int index, offer in offers )
+		{
+			RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.OFFER_1_2 )
+			section.itemsArray.append( itemModel )
+
+			if ( offer.expireTime < sectionExpireTime && offer.expireTime != 0 )
+			{
+				sectionExpireTime = offer.expireTime
+			}
+			if ( GRXOffer_ContainsWishlistRelatedPack( offer ) )
+				offerContainsWishlistRelatedPack = true
+		}
+
+		section.endTime = sectionExpireTime
+		section.endTimeFormat = "#STORE_V2_TIME_REMAINING"
+		section.sectionName = "#LIMITED_TIME"
+		section.totalOffers = offers.len()
+
+		section.showWishlistButton = offerContainsWishlistRelatedPack
+	}
+
+	return section
+}
+
+RTKStoreSectionModel function GetHeirloomSection()
+{
+	RTKStoreSectionModel section
+	array<GRXScriptOffer> offers = GRX_GetLocationOffers( "heirloom_set_shop" )
+
+	offers.sort( SortOffersBySlot )
+
+	foreach ( int index, offer in offers )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.HEIRLOOM )
+		section.itemsArray.append( itemModel )
+	}
+
+	section.endTime = 0
+	section.sectionName = "#MENU_STORE_PANEL_HEIRLOOM_SHOP"
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetPrestigeSkinSection()
+{
+	RTKStoreSectionModel section
+	array<GRXScriptOffer> offers =  GRX_GetLocationOffers( "prestige_set_shop" )
+
+	offers.sort( SortOffersBySlot )
+
+	foreach ( int index, offer in offers )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.PRESTIGE )
+		section.itemsArray.append( itemModel )
+	}
+
+	section.endTime = 0
+	section.sectionName = "#MYTHIC_SKINS"
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetArtifactSection()
+{
+	RTKStoreSectionModel section
+
+	
+	array< ItemFlavor > setItems = Artifacts_GetSetItems( eArtifactSetIndex.MOB )
+	array<GRXScriptOffer> baseArtifactOffers = GRX_GetItemDedicatedStoreOffers( setItems[0], "artifact_set_shop" )
+	if ( baseArtifactOffers.len() > 0 )
+	{
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( baseArtifactOffers[0], 0, eStoreGridItemType.ARTIFACT, GRXOffer_GetHeirloomPriceQuantity(  baseArtifactOffers[0] ) > 0 )
+		section.itemsArray.append( itemModel )
+	}
+
+	
+	for ( int i = 0; i < eArtifactSetIndex.COUNT; i++ )
+	{
+		RTKStoreGridItemModel itemSetModel
+		if ( PopulateItemModelFromSet( itemSetModel, Artifacts_GetSetIndexOrdered( i ), eStoreGridItemType.ARTIFACT_SET ) )
+			section.itemsArray.append( itemSetModel )
+	}
+
+	section.endTime = 0
+	section.sectionName = "#STORE_V2_SECTION_ARTIFACTS"
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+	section.sectionCurrency += "    " +  GetCurrencyBalanceString( GRX_CURRENCY_EXOTIC )
+	section.totalOffers = section.itemsArray.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetArtifactSetSection()
+{
+	RTKStoreSectionModel section
+
+	int selectedSetIndex = RTKStore_GetSelectedOfferSet()
+
+	array<GRXScriptOffer> bundles =  GRX_GetLocationOffers( "artifact_bund_shop" )
+	foreach ( int index, bundle in bundles )
+	{
+		
+		array<ItemFlavor> offerFlavors = bundle.output.flavors
+		if ( offerFlavors.len() == 0 || Artifacts_GetSetIndex( offerFlavors[0] ) != selectedSetIndex )
+			continue
+
+		
+		if ( bundle.prereq != null && !GRX_IsItemOwnedByPlayer( expect ItemFlavor( bundle.prereq ) ) )
+			continue
+
+		
+		if ( GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( bundle ) )
+			continue
+
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( bundle, index, eStoreGridItemType.OFFER_2_2 )
+		section.itemsArray.append( itemModel )
+
+		
+		RTKStoreGridItemModel dividerItem
+		dividerItem.gridItemType = eStoreGridItemType.DIVIDER
+		dividerItem.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator.rpak"
+		section.itemsArray.append( dividerItem )
+	}
+
+	array<GRXScriptOffer> offers =  GRX_GetLocationOffers( "artifact_set_shop" )
+	offers.sort( SortOffersBySlot )
+
+	int numTotal = 0
+	int numOwned = 0
+
+	foreach ( int index, offer in offers )
+	{
+		
+		array<ItemFlavor> offerFlavors = offer.output.flavors
+		if ( offerFlavors.len() == 0 || Artifacts_GetSetIndex( offerFlavors[0] ) != selectedSetIndex )
+			continue
+
+		
+		int numItems = section.itemsArray.len()
+		if ( numItems > 0 && section.itemsArray[ numItems - 1 ].gridItemType != eStoreGridItemType.DIVIDER )
+		{
+			RTKStoreGridItemModel dividerItem
+			dividerItem.gridItemType = eStoreGridItemType.DIVIDER_ARROW
+			dividerItem.mainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_arrow.rpak"
+			section.itemsArray.append( dividerItem )
+		}
+
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, eStoreGridItemType.ARTIFACT, GRXOffer_GetHeirloomPriceQuantity( offer ) > 0 )
+		section.itemsArray.append( itemModel )
+
+		numTotal++
+		if ( GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( offer ) )
+			numOwned++
+	}
+
+	section.endTime = 0
+	section.sectionName = Localize( Artifacts_GetSetUIData( selectedSetIndex ).name )
+	section.sectionPINId = Artifacts_GetSetUIData( selectedSetIndex ).name
+	section.sectionCount = Localize( "#OWNED_COLLECTED", numOwned, numTotal )
+	section.totalOffers = numTotal
+
+	return section
+}
+
+RTKStoreSectionModel function GetUniversalSection()
+{
+	RTKStoreSectionModel section
+
+	array<GRXScriptOffer> bundles =  GRX_GetLocationOffers( "universal_bund_shop" )
+	bundles.sort( SortOffersBySlot )
+
+	foreach ( index, bundle in bundles )
+	{
+		if ( bundle.output.flavors.len() == 0 )
+			continue
+
+		RTKStoreGridItemModel itemSetModel
+		if ( PopulateItemModelFromSet( itemSetModel, UniversalMelee_GetTheme( UniversalMelee_GetBaseSkin(bundle.output.flavors[ 0 ] ) ), eStoreGridItemType.UNIVERSAL_SET ) )
+		{
+			section.itemsArray.append( itemSetModel )
+		}
+	}
+
+	section.endTime = 0
+	section.sectionName = Localize( "#UNIVERSAL_MELEES" )
+	section.sectionPINId = "#UNIVERSAL_MELEES"
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+	section.sectionCurrency += "    " +  GetCurrencyBalanceString( GRX_CURRENCY_EXOTIC )
+	section.totalOffers = section.itemsArray.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetUniversalSetSection()
+{
+	RTKStoreSectionModel section
+
+	int selectedSetIndex = RTKStore_GetSelectedOfferSet()
+	array<GRXScriptOffer> offers =  GRX_GetLocationOffers( "universal_set_shop" )
+	offers.sort( SortOffersBySlot )
+
+	int numTotal = 0
+	int numOwned = 0
+	string sectionName = ""
+
+	foreach ( int index, offer in offers )
+	{
+		
+		array<ItemFlavor> offerFlavors = offer.output.flavors
+		int offerFlavorTheme = UniversalMelee_GetTheme( offerFlavors[0] )
+		if ( offerFlavors.len() == 0 || !UniversalMelee_GetStoreSetIndex( selectedSetIndex ).contains( offerFlavorTheme ) )
+			continue
+
+		
+		if ( sectionName == "" )
+		{
+			int baseSkinTheme = UniversalMelee_GetTheme( UniversalMelee_GetBaseSkin( offerFlavors[0] ) )
+			sectionName = Localize( Artifacts_GetSetUIData( UniversalMelee_GetArtifactTheme( baseSkinTheme ) ).name )
+		}
+
+		
+		int numItems = section.itemsArray.len()
+		bool shouldAddDivider = numItems > 0
+		int dividerType = eStoreGridItemType.DIVIDER_ARROW
+		asset dividerMainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_arrow.rpak"
+
+		if ( !UniversalMelee_IsHookswordTheme( offerFlavorTheme ) )
+		{
+			int baseItemsCount = UniversalMelee_GetNumberOfBaseItems( UniversalMelee_GetBaseSkin( offerFlavors[0] ) )
+			shouldAddDivider = numItems > 0 && numItems <= baseItemsCount + 1
+
+			if ( numItems >= baseItemsCount )
+			{
+				dividerType = eStoreGridItemType.DIVIDER_LOCK
+				dividerMainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_lock.rpak"
+			}
+		}
+
+		if ( shouldAddDivider && section.itemsArray[ numItems - 1 ].gridItemType != eStoreGridItemType.DIVIDER )
+		{
+			RTKStoreGridItemModel dividerItem
+			dividerItem.gridItemType = dividerType
+			dividerItem.mainImage = dividerMainImage
+			section.itemsArray.append( dividerItem )
+		}
+
+		int storeGridItemType = offerFlavors.len() > 1 ? eStoreGridItemType.OFFER_2_2 : eStoreGridItemType.UNIVERSAL
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, storeGridItemType, GRXOffer_GetHeirloomPriceQuantity( offer ) > 0 )
+		section.itemsArray.append( itemModel )
+
+		numTotal += offerFlavors.len()
+		if ( GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( offer ) )
+			numOwned += offerFlavors.len()
+	}
+
+	section.endTime = 0
+	section.sectionName = sectionName
+	section.sectionCount = Localize( "#OWNED_COLLECTED", numOwned, numTotal )
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetWeaponSection()
+{
+	RTKStoreSectionModel section
+
+	array<GRXScriptOffer> bundles =  GRX_GetLocationOffers( "weapon_bund_shop" )
+	bundles.sort( SortOffersBySlot )
+
+	foreach ( index, bundle in bundles )
+	{
+		if ( bundle.output.flavors.len() == 0 )
+			continue
+
+		RTKStoreGridItemModel itemSetModel
+		if ( PopulateItemModelFromSet( itemSetModel, index, eStoreGridItemType.WEAPON_SET ) )
+		{
+			section.itemsArray.append( itemSetModel )
+		}
+	}
+
+	section.endTime = 0
+	section.sectionName = Localize( "#MYTHIC_WEAPONS" )
+	section.sectionPINId = "#MYTHIC_WEAPONS"
+	section.sectionCurrency = GetCurrencyBalanceString( GRX_CURRENCY_HEIRLOOM )
+	section.sectionCurrency += "    " +  GetCurrencyBalanceString( GRX_CURRENCY_EXOTIC )
+	section.totalOffers = section.itemsArray.len()
+
+	return section
+}
+
+RTKStoreSectionModel function GetWeaponSetSection()
+{
+	RTKStoreSectionModel section
+
+	int selectedSetIndex = RTKStore_GetSelectedOfferSet()
+	array<GRXScriptOffer> offers = GRX_GetOffersFromABundleLocation( "weapon_set_shop", "weapon_bund_shop", selectedSetIndex )
+
+	int numTotal = 0
+	int numOwned = 0
+
+	foreach ( int index, offer in offers )
+	{
+		
+		array<ItemFlavor> offerFlavors = offer.output.flavors
+
+		if ( offerFlavors.len() == 0 )
+			continue
+
+		
+		int numItems = section.itemsArray.len()
+		bool shouldAddDivider = numItems > 0 && numItems < 8
+		int dividerType = eStoreGridItemType.DIVIDER_ARROW
+		asset dividerMainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_arrow.rpak"
+
+		if ( shouldAddDivider && section.itemsArray[ numItems - 1 ].gridItemType != eStoreGridItemType.DIVIDER )
+		{
+			if ( numItems > 5 && numItems < 8 )
+			{
+				dividerType = eStoreGridItemType.DIVIDER_LOCK
+				dividerMainImage = $"ui_image/rui/menu/common/vertical_trapezoid_separator_lock.rpak"
+			}
+
+			RTKStoreGridItemModel dividerItem
+			dividerItem.gridItemType = dividerType
+			dividerItem.mainImage = dividerMainImage
+			section.itemsArray.append( dividerItem )
+		}
+
+		int storeGridItemType = offerFlavors.len() > 1 ? eStoreGridItemType.OFFER_2_2 : eStoreGridItemType.WEAPON
+		RTKStoreGridItemModel itemModel = GetItemModelFromOffer( offer, index, storeGridItemType, GRXOffer_GetHeirloomPriceQuantity( offer ) > 0 )
+		section.itemsArray.append( itemModel )
+
+		numTotal += offerFlavors.len()
+		if ( GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( offer ) )
+			numOwned += offerFlavors.len()
+	}
+
+	GRXScriptOffer ornull bundle = GRX_GetBundleFromLocation( "weapon_bund_shop", selectedSetIndex )
+
+	if ( bundle != null )
+	{	
+		expect GRXScriptOffer( bundle )
+		section.sectionName = bundle.titleText
+	}
+
+	section.endTime = 0
+	section.sectionCount = Localize( "#OWNED_COLLECTED", numOwned, numTotal )
+	section.totalOffers = offers.len()
+
+	return section
+}
+
+void function SetOnlySectionVisible( rtk_behavior self, int pageIndex )
+{
+	int sectionCount = file.fullStoreModel.sections.len()
+
+	for ( int i = 0; i < sectionCount; i++ )
+	{
+		SetSectionVisible( self, i, i == pageIndex )
+	}
+}
+
+void function SetSectionVisible( rtk_behavior self, int pageIndex, bool visible )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_array storeSectionsArray = RTKStruct_GetArray( p.storeItemShopModel, SECTIONS )
+	rtk_struct section = RTKArray_GetStruct( storeSectionsArray, pageIndex )
+
+	if ( visible == RTKStruct_GetBool( section, "sectionVisible" ) )
+		return
+
+	array<RTKStoreGridItemModel> blank
+	rtk_array itemsArray = RTKStruct_GetArray( section, "itemsArray" )
+	RTKArray_SetValue( itemsArray, visible ? file.fullStoreModel.sections[pageIndex].itemsArray : blank )
+	RTKStruct_SetBool( section, "sectionVisible", visible )
+}
+
+void function InitPanelInstanceData( string panelName )
+{
+	if ( !(panelName in file.instanceData) )
+	{
+		InstanceData blankData
+		file.instanceData[panelName] <- blankData
+	}
+}
+
+void function StoreTelemetry_SaveDeepLink( string link )
+{
+	fileTelemetry.linkName = link
+}
+
+void function StoreTelemetry_SendStorePageViewEvent()
+{
+	PIN_PageView_Store( fileTelemetry.pageName, fileTelemetry.prevPage, fileTelemetry.prevPageDuration,
+		fileTelemetry.sectionNum, fileTelemetry.pageNum, fileTelemetry.linkName, fileTelemetry.clickType, fileTelemetry.totalOffers, fileTelemetry.expirationTime )
+}
+
+void function StoreTelemetry_SendOferPageViewEvent()
+{
+	PIN_PageView_Offer( fileTelemetry.pageName, fileTelemetry.prevPage, fileTelemetry.prevPageDuration,
+		fileTelemetry.sectionNum, fileTelemetry.pageNum, fileTelemetry.linkName, fileTelemetry.clickType,
+		fileTelemetry.offerName, fileTelemetry.offerPriority, fileTelemetry.slotType, fileTelemetry.totalOffers, fileTelemetry.expirationTime )
+}
+
+asset function RTKMutator_GetLoadAssetFromGridItemType( int input )
+{
+	switch ( input )
+	{
+		case eStoreGridItemType.OFFER_1_1:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_square.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_2_1:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_wide.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_1_2:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_vertical.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_2_2:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_large.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_3_2:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_large.rpak"
+			break
+
+		default:
+			return $"ui_image/rui/menu/image_download/image_load_failed_store_vertical.rpak"
+			break
+	}
+
+	unreachable
+}
+
+asset function RTKMutator_GetGradientAssetFromGridItemType( int input )
+{
+	switch ( input )
+	{
+		case eStoreGridItemType.OFFER_1_1:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_short.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_2_1:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_short.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_1_2:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_tall.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_2_2:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_tall.rpak"
+			break
+
+		case eStoreGridItemType.OFFER_3_2:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_tall.rpak"
+			break
+
+		default:
+			return $"ui_image/rui/menu/store/common/store_offer_gradient_tall.rpak"
+			break
+	}
+
+	unreachable
+}
+
+int function GetGridItemTypeFromRowColumn( int row, int column )
+{
+	if ( row == 1 && column == 1 )
+		return eStoreGridItemType.OFFER_1_1
+
+	if ( row == 2 && column == 1 )
+		return eStoreGridItemType.OFFER_1_2
+
+	if ( row == 1 && column == 2 )
+		return eStoreGridItemType.OFFER_2_1
+
+	if ( row == 2 && column == 2 )
+		return eStoreGridItemType.OFFER_2_2
+
+	if ( row == 2 && column == 3 )
+		return eStoreGridItemType.OFFER_3_2
+
+	return 0
+}
+
+int function GetGridItemSpanHorizontalFromType( int gridItemType )
+{
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.OFFER_1_1:
+		case eStoreGridItemType.OFFER_1_2:
+		case eStoreGridItemType.DIVIDER:
+		case eStoreGridItemType.DIVIDER_ARROW:
+		case eStoreGridItemType.DIVIDER_LOCK:
+		case eStoreGridItemType.INFO_XLG:
+		case eStoreGridItemType.INFO_LRG:
+		case eStoreGridItemType.OFFER_3_2:
+		case eStoreGridItemType.HEIRLOOM:
+		case eStoreGridItemType.ARTIFACT:
+		case eStoreGridItemType.INFO_SML:
+		case eStoreGridItemType.UNIVERSAL:
+		case eStoreGridItemType.WEAPON:
+		case eStoreGridItemType.CHAINED_OFFER_1_2:
+		case eStoreGridItemType.DIVIDER_OWNED:
+			return 1
+		case eStoreGridItemType.OFFER_2_1:
+		case eStoreGridItemType.OFFER_2_2:
+		case eStoreGridItemType.INFO_PANEL:
+		case eStoreGridItemType.INFO_MED:
+		case eStoreGridItemType.INFO_WIDE:
+		case eStoreGridItemType.BLANK:
+		case eStoreGridItemType.PRESTIGE:
+		case eStoreGridItemType.ARTIFACT_SET:
+		case eStoreGridItemType.EXOTIC:
+		case eStoreGridItemType.UNIVERSAL_SET:
+		case eStoreGridItemType.WEAPON_SET:
+		case eStoreGridItemType.BONUS_METER:
+		case eStoreGridItemType.CHAINED_OFFER_2_2:
+			return 2
+	}
+
+	unreachable
+}
+
+int function GetGridItemSpanVerticalFromType( int gridItemType )
+{
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.OFFER_1_1:
+		case eStoreGridItemType.OFFER_2_1:
+		case eStoreGridItemType.BONUS_METER:
+		case eStoreGridItemType.INFO_WIDE:
+			return 1
+		case eStoreGridItemType.OFFER_1_2:
+		case eStoreGridItemType.OFFER_2_2:
+		case eStoreGridItemType.DIVIDER:
+		case eStoreGridItemType.DIVIDER_ARROW:
+		case eStoreGridItemType.DIVIDER_LOCK:
+		case eStoreGridItemType.INFO_PANEL:
+		case eStoreGridItemType.INFO_MED:
+		case eStoreGridItemType.BLANK:
+		case eStoreGridItemType.INFO_XLG:
+		case eStoreGridItemType.INFO_LRG:
+		case eStoreGridItemType.OFFER_3_2:
+		case eStoreGridItemType.HEIRLOOM:
+		case eStoreGridItemType.PRESTIGE:
+		case eStoreGridItemType.ARTIFACT_SET:
+		case eStoreGridItemType.ARTIFACT:
+		case eStoreGridItemType.EXOTIC:
+		case eStoreGridItemType.INFO_SML:
+		case eStoreGridItemType.UNIVERSAL_SET:
+		case eStoreGridItemType.UNIVERSAL:
+		case eStoreGridItemType.WEAPON_SET:
+		case eStoreGridItemType.WEAPON:
+		case eStoreGridItemType.CHAINED_OFFER_1_2:
+		case eStoreGridItemType.CHAINED_OFFER_2_2:
+		case eStoreGridItemType.DIVIDER_OWNED:
+			return 2
+	}
+
+	unreachable
+}
+
+float function GetGridItemWidthFromType( int gridItemType )
+{
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.DIVIDER:
+			return 2
+		case eStoreGridItemType.DIVIDER_ARROW:
+		case eStoreGridItemType.DIVIDER_LOCK:
+		case eStoreGridItemType.DIVIDER_OWNED:
+			return 20
+		case eStoreGridItemType.OFFER_1_1:
+		case eStoreGridItemType.OFFER_1_2:
+		case eStoreGridItemType.HEIRLOOM:
+		case eStoreGridItemType.INFO_SML:
+		case eStoreGridItemType.CHAINED_OFFER_1_2:
+			return 320
+		case eStoreGridItemType.ARTIFACT:
+		case eStoreGridItemType.UNIVERSAL:
+		case eStoreGridItemType.WEAPON:
+			return 398
+		case eStoreGridItemType.OFFER_2_1:
+		case eStoreGridItemType.OFFER_2_2:
+		case eStoreGridItemType.INFO_PANEL:
+		case eStoreGridItemType.INFO_MED:
+		case eStoreGridItemType.INFO_WIDE:
+		case eStoreGridItemType.BLANK:
+		case eStoreGridItemType.PRESTIGE:
+		case eStoreGridItemType.ARTIFACT_SET:
+		case eStoreGridItemType.EXOTIC:
+		case eStoreGridItemType.UNIVERSAL_SET:
+		case eStoreGridItemType.WEAPON_SET:
+		case eStoreGridItemType.BONUS_METER:
+		case eStoreGridItemType.CHAINED_OFFER_2_2:
+			return 664
+		case eStoreGridItemType.INFO_LRG:
+		case eStoreGridItemType.OFFER_3_2:
+			return 836
+		case eStoreGridItemType.INFO_XLG:
+			return 1696
+	}
+
+	unreachable
+}
+
+float function GetGridItemHeightFromType( int gridItemType )
+{
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.DIVIDER_ARROW:
+		case eStoreGridItemType.DIVIDER_LOCK:
+		case eStoreGridItemType.DIVIDER_OWNED:
+			return 486
+		case eStoreGridItemType.OFFER_1_1:
+		case eStoreGridItemType.OFFER_2_1:
+		case eStoreGridItemType.BONUS_METER:
+		case eStoreGridItemType.INFO_WIDE:
+			return 288
+		case eStoreGridItemType.DIVIDER:
+			return 500
+		case eStoreGridItemType.OFFER_1_2:
+		case eStoreGridItemType.OFFER_2_2:
+		case eStoreGridItemType.OFFER_3_2:
+		case eStoreGridItemType.INFO_PANEL:
+		case eStoreGridItemType.INFO_MED:
+		case eStoreGridItemType.BLANK:
+		case eStoreGridItemType.INFO_XLG:
+		case eStoreGridItemType.INFO_LRG:
+		case eStoreGridItemType.HEIRLOOM:
+		case eStoreGridItemType.PRESTIGE:
+		case eStoreGridItemType.ARTIFACT_SET:
+		case eStoreGridItemType.ARTIFACT:
+		case eStoreGridItemType.EXOTIC:
+		case eStoreGridItemType.INFO_SML:
+		case eStoreGridItemType.UNIVERSAL_SET:
+		case eStoreGridItemType.UNIVERSAL:
+		case eStoreGridItemType.WEAPON_SET:
+		case eStoreGridItemType.WEAPON:
+		case eStoreGridItemType.CHAINED_OFFER_1_2:
+		case eStoreGridItemType.CHAINED_OFFER_2_2:
+			return 600
+	}
+
+	unreachable
+}
+
+bool function IsGridItemCustomSize( int gridItemType )
+{
+	switch ( gridItemType )
+	{
+		case eStoreGridItemType.DIVIDER:
+		case eStoreGridItemType.DIVIDER_ARROW:
+		case eStoreGridItemType.DIVIDER_LOCK:
+		case eStoreGridItemType.DIVIDER_OWNED:
+		case eStoreGridItemType.INFO_XLG:
+		case eStoreGridItemType.INFO_LRG:
+		case eStoreGridItemType.OFFER_3_2:
+		case eStoreGridItemType.ARTIFACT:
+		case eStoreGridItemType.UNIVERSAL:
+		case eStoreGridItemType.WEAPON:
+			return true
+	}
+
+	return false
+}

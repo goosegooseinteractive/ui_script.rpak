@@ -1,0 +1,139 @@
+global function RTKViewPacksInventoryButton_OnInitialize
+global function RTKViewPacksInventoryButton_OnDestroy
+global function RTKViewPacksInventoryButton_OpenPacksInventory
+
+const string MODEL_PATH_NAME = "viewPacksInventoryButton"
+
+global struct RTKViewPacksInventoryButton_Properties
+{
+	rtk_behavior buttonBehavior
+}
+
+global struct RTKViewPacksInventoryButtonInfo
+{
+	bool hasBonusMeterActive
+	bool hasBonusMeterComplete
+	int endTime
+	int totalPacks
+	int currentRewardProgress
+	int totalPacksToEarnReward
+	asset rewardIconAsset = $""
+	int quality
+	bool isOwned
+	bool isBonusActiveAndNotCompleted
+	string rewardProgress
+}
+
+struct PrivateData
+{
+	void functionref() onUpdatePackInfo
+	void functionref() onUpdatePackInfoAndVisible
+}
+
+struct
+{
+	var menu
+	rtk_struct viewPacksInventoryButtonInfoModel
+} file
+
+void function RTKViewPacksInventoryButton_OnInitialize( rtk_behavior self )
+{
+	rtk_struct viewPacksInventoryButtonInfo = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKViewPacksInventoryButtonInfo" )
+	string modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+
+	self.GetPanel().SetBindingRootPath( modelPath )
+	self.GetPanel().SetVisible( false )
+
+	rtk_behavior viewTutorialButton = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( viewTutorialButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKViewPacksInventoryButton_OpenPacksInventory( null )
+	} )
+
+	PrivateData p
+	self.Private( p )
+	p.onUpdatePackInfo = ( void function() : ( self ) {
+		if ( !GRX_IsInventoryReady() )
+			return
+		RTKViewPacksInventoryButton_UpdateButtonData()
+	} )
+
+	p.onUpdatePackInfoAndVisible = ( void function() : ( self ) {
+		if ( !GRX_IsInventoryReady() )
+			return
+		self.GetPanel().SetVisible( true )
+		RTKViewPacksInventoryButton_UpdateButtonData()
+	} )
+
+	AddCallbackAndCallNow_OnGRXOffersRefreshed( p.onUpdatePackInfoAndVisible )
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( p.onUpdatePackInfo )
+}
+
+void function RTKViewPacksInventoryButton_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	RemoveCallback_OnGRXOffersRefreshed( p.onUpdatePackInfoAndVisible )
+	RemoveCallback_OnGRXInventoryStateChanged( p.onUpdatePackInfo )
+}
+
+void function RTKViewPacksInventoryButton_UpdateButtonData()
+{
+	rtk_struct viewPacksInfoModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKViewPacksInventoryButtonInfo" )
+
+	RTKViewPacksInventoryButtonInfo data
+	data.totalPacks = GRX_GetTotalPackCount()
+
+	if ( !GetConVarBool( "mtx_bonus_meter_enabled" ) )
+	{
+		data.hasBonusMeterActive = false
+		RTKStruct_SetValue( viewPacksInfoModel, data )
+		return
+	}
+
+	SettingsAssetGUID reward = BonusMeter_GetDisplayRewardFlavGUID()
+	if ( !IsValidItemFlavorGUID( reward ) )
+	{
+		data.hasBonusMeterActive = false
+		RTKStruct_SetValue( viewPacksInfoModel, data )
+		return
+	}
+
+	ItemFlavor item = GetItemFlavorByGUID( reward )
+	data.endTime = BonusMeter_GetExpireTimeForMeter()
+	data.hasBonusMeterActive =  BonusMeter_IsActive()
+	data.hasBonusMeterComplete = BonusMeter_IsCompleted()
+	data.totalPacksToEarnReward = BonusMeter_GetMeterGoal()
+	data.currentRewardProgress = BonusMeter_GetMeterProgress()
+	data.rewardProgress = Localize( "#PACKS_INVENTORY_BUTTON_PROGRESS", BonusMeter_GetMeterProgress(), BonusMeter_GetMeterGoal())
+	data.quality = ItemFlavor_GetQuality( item )
+	data.isOwned = BonusMeter_IsCompleted() 
+	data.rewardIconAsset = GRXItem_GetButtonIcon( item )
+	data.isBonusActiveAndNotCompleted = BonusMeter_IsActive() && !BonusMeter_IsCompleted()
+
+	RTKStruct_SetValue( viewPacksInfoModel, data )
+}
+
+void function RTKViewPacksInventoryButton_OpenPacksInventory( var button )
+{
+	entity player = GetLocalClientPlayer()
+
+	if ( !IsValid( player ) )
+		return
+
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	if ( BonusMeter_IsActive() )
+	{
+		bool hasSeenOpenPacksInfoDialog =  bool( player.GetPersistentVar( "hasSeenOpenPacksInfoDialog" ) )
+		if ( hasSeenOpenPacksInfoDialog )
+			OpenPackOpeningSelectionMenu()
+		else
+			UI_OpenFeatureTutorialDialog( OPEN_PACKS_TUTORIAL )
+	}
+	else
+	{
+		OpenPackOpeningSelectionMenu()
+	}
+
+}

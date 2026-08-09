@@ -1,0 +1,184 @@
+global function InitBotRoyaleSettingsGeneralPanel
+global function Callback_BotRoyaleSetting_SetIndex
+
+
+const float DEBOUNCEPERIOD_SELECTORSWITCHES = 0.25
+const float DEBOUNCEPERIOD_RESETBUTTONS = 1.00
+
+global enum eBotRoyaleSettings
+{
+
+	BOT_DIFFCULTY,
+
+	COUNT_
+}
+
+struct
+{
+	var panel
+	var contentPanelParent
+	var contentPanel
+
+	var scrollBar
+	var scrollFrame
+
+	
+	table< int, bool > setting_DebounceLocked
+	table< string, bool > resetButton_DebounceLocked
+
+	bool isOpened = false
+	bool autoUpdateIsOn = false
+} file
+
+void function InitBotRoyaleSettingsGeneralPanel( var panel )
+{
+	file.panel = panel
+
+	file.contentPanelParent = Hud_GetChild( panel, "ModeOptionsPanel" )
+	file.contentPanel = Hud_GetChild( file.contentPanelParent, "ContentPanel" )
+	file.scrollBar = Hud_GetChild( file.contentPanelParent, "ScrollBar" )
+	file.scrollFrame = Hud_GetChild( file.contentPanelParent, "ScrollFrame" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnBotRoyaleSettingsGeneralPanel_Show )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnBotRoyaleSettingsGeneralPanel_Hide )
+
+	
+	
+	
+
+	SetupSettings()
+
+	SettingsPanel_SetContentPanelHeight( file.contentPanel )
+	ScrollPanel_InitPanel( file.contentPanelParent )
+	ScrollPanel_InitScrollBar( file.contentPanelParent, file.scrollBar )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, RIGHT, BUTTON_START, true, "#HINT_SYSTEM_MENU_GAMEPAD", "#HINT_SYSTEM_MENU_KB", TryOpenSystemMenu )
+}
+
+void function SetupSettings()
+{
+	
+	for( int i = 0; i < eBotRoyaleSettings.COUNT_; i++ )
+	{
+		file.setting_DebounceLocked[ i ] <- false
+	}
+
+	var diffcultyButton = Hud_GetChild( file.contentPanel, "BotDifficulty" )
+	SetupSettingsButton( diffcultyButton, "#BOT_DIFF_SETTING", "#BOT_DIFF_SETTING_DESC", $"", false, true  )
+	AddButtonEventHandler( diffcultyButton, UIE_CHANGE, OnBotDifficultyChanged )
+
+}
+
+void function Callback_BotRoyaleSetting_SetIndex( int index )
+{
+	if ( IsLobby() )
+	{
+		return
+	}
+
+	if ( index < 0 || index > 4 )
+		return
+
+	var diffcultyButton = Hud_GetChild( file.contentPanel, "BotDifficulty" )
+	Hud_SetDialogListSelectionIndex( diffcultyButton, index )
+}
+
+void function OnBotDifficultyChanged( var btn )
+{
+	int index = Hud_GetDialogListSelectionIndex( btn )
+
+	if ( index == -1 )
+		return
+
+	if ( IsLobby() )
+	{
+		return
+	}
+
+	
+	
+	switch ( index )
+	{
+		case 0: 
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+			Remote_ServerCallFunction( "ClientCallback_SetBotDifficulty", index )
+			break
+		default:
+			break
+	}
+
+	
+	thread DebounceLock_GeneralSetting_Thread( eBotRoyaleSettings.BOT_DIFFCULTY  )
+}
+
+void function OnBotRoyaleSettingsGeneralPanel_Show( var panel )
+{
+	CustomizeBotRoyaleMenu_Opened()
+
+	if( !file.autoUpdateIsOn )
+	{
+		thread AutoUpdateDetails_Thread()
+		file.autoUpdateIsOn = true
+	}
+
+	ScrollPanel_SetActive( file.contentPanelParent, true )
+
+	SettingsPanel_SetContentPanelHeight( file.contentPanel )
+	ScrollPanel_Refresh( file.contentPanelParent )
+}
+
+void function OnBotRoyaleSettingsGeneralPanel_Hide( var panel )
+{
+
+	ScrollPanel_SetActive( file.contentPanelParent, false )
+	CustomizeBotRoyaleMenu_Closed()
+}
+
+void function CustomizeBotRoyaleMenu_Opened()
+{
+	file.isOpened = true
+}
+
+void function CustomizeBotRoyaleMenu_Closed()
+{
+	file.isOpened = false
+}
+
+
+void function AutoUpdateDetails_Thread()
+{
+	while( true )
+	{
+		if( file.isOpened )
+		{
+			UpdateDetails()
+		}
+		wait( DEBOUNCEPERIOD_SELECTORSWITCHES )
+	}
+}
+
+void function UpdateDetails()
+{
+	var diffcultyButton = Hud_GetChild( file.contentPanel, "BotDifficulty" )
+	Hud_SetEnabled( diffcultyButton, 	AmIPartyLeader() && !file.setting_DebounceLocked[ eBotRoyaleSettings.BOT_DIFFCULTY ])
+}
+
+void function DebounceLock_GeneralSetting_Thread( int setting )
+{
+	file.setting_DebounceLocked[ setting ] <- true
+	wait( DEBOUNCEPERIOD_SELECTORSWITCHES )
+	file.setting_DebounceLocked[ setting ] <- false
+}
+
+
+void function TryOpenSystemMenu( var panel )
+{
+	if ( InputIsButtonDown( BUTTON_START ) )
+		return
+
+	OpenSystemMenu()
+}

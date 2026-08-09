@@ -1,0 +1,298 @@
+global function RTKArmoryCharacterExecutionsScreen_OnInitialize
+global function RTKArmoryCharacterExecutionsScreen_OnDestroy
+
+global struct RTKArmoryCharacterExecutionsScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+}
+
+global struct RTKExecutionsScreenModel
+{
+	string requirementDescription
+	bool requirementMet
+	bool restricted
+}
+
+struct PrivateData
+{
+	void functionref( var ) callbackOnTopLevelCustomizeContextChanged
+}
+
+const string EXECUTIONS_PANEL = "RTKExecutionsPanel"
+const int MYTHIC_FINAL_TIER = 3
+
+void function RTKArmoryCharacterExecutionsScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	UI_SetPresentationType( ePresentationType.CHARACTER_CARD )
+
+	RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "executionsRestrictionInfo", "RTKExecutionsScreenModel", ["characterExecutions"] )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKArmoryCharacterExecutionsScreen_OnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		null,
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	RTKArmoryCharacterExecutionsScreen_InitItemList( cosmeticEquip )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip )
+	{
+		RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip )
+		ArmoryCharacterExecutionsPanel_Update( cosmeticEquip )
+	} )
+
+	var panel = GetPanel( EXECUTIONS_PANEL )
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel, null, bool function () : ( cosmeticEquip ) { return FinishersPanel_IsItemEquippable( cosmeticEquip ) } )
+	RTKCosmeticEquipScreen_AddUnlockFooterOptions( cosmeticEquip, panel, bool function () : ( cosmeticEquip ) { return FinishersPanel_IsItemLocked( cosmeticEquip ) } )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK_LEGEND", "#X_BUTTON_UNLOCK_LEGEND", null, bool function () : ( cosmeticEquip ) { return FinishersPanel_IsFocusedItemParentItemLocked( cosmeticEquip ) } )
+	UpdateFooterOptions()
+
+	p.callbackOnTopLevelCustomizeContextChanged = void function( var panel ) : ( cosmeticEquip )
+	{
+		RTKArmoryCharacterExecutionsScreen_InitItemList( cosmeticEquip )
+	}
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+}
+
+
+void function RTKArmoryCharacterExecutionsScreen_InitItemList( rtk_behavior cosmeticEquip )
+{
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ Loadout_CharacterExecution( GetTopLevelCustomizeContext() ) ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.getItemFlavListFuncOverride = GetExecutionsListForCharacterLoadout
+	initSettings.getCurrentEquipGUIDOverride = GetCurrentEquipItemGUID
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+	ArmoryCharacterExecutionsPanel_Update( cosmeticEquip )
+}
+
+void function RTKArmoryCharacterExecutionsScreen_OnDestroy( rtk_behavior self )
+{
+	var panel = GetPanel( EXECUTIONS_PANEL )
+
+	PrivateData p
+	self.Private( p )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+	p.callbackOnTopLevelCustomizeContextChanged = null
+
+	ClearPanelFooterOptions( panel )
+}
+
+bool function FinishersPanel_IsItemEquippable( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	RTKCosmeticListItemModel ornull itemModel = RTKCosmeticEquip_GetCurrentItemModel( cosmeticEquip )
+	if ( itemModel == null ) return false
+
+	expect RTKCosmeticListItemModel( itemModel )
+	bool isRestricted
+	isRestricted = itemModel.state == eUICosmeticItemState.RESTRICTED || itemModel.state == eUICosmeticItemState.SELECTED_AND_RESTRICTED
+
+	return !isRestricted && RTKCosmeticEquipScreen_GenericIsItemEquippable( cosmeticEquip )
+}
+
+bool function FinishersPanel_IsFocusedItemParentItemLocked( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ItemFlavor parentFlav = GetTopLevelCustomizeContext()
+
+	return !Character_IsUnlockableInNewPlayerPass( parentFlav ) && !Character_IsCharacterOwnedByPlayer( parentFlav, null )
+}
+
+bool function FinishersPanel_IsItemLocked( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ItemFlavor parentFlav = GetTopLevelCustomizeContext()
+
+	return !Character_IsUnlockableInNewPlayerPass( parentFlav ) && Character_IsCharacterOwnedByPlayer( parentFlav, null ) && RTKCosmeticEquipScreen_GenericIsItemUnlockable( cosmeticEquip )
+}
+
+void function RTKArmoryCharacterExecutionsScreen_OnItemPreview( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, flavGUID )
+	UpdateRequirementDescription( cosmeticEquip, flavGUID )
+}
+
+void function ArmoryCharacterExecutionsPanel_Update( rtk_behavior cosmeticEquip )
+{
+	if ( IsPanelActive( GetPanel( "CharacterAnimationsPanel" ) ) )
+	{
+		array<RTKCosmeticListItemModel> itemList = RTKCosmeticEquipScreen_GetItemListModel( cosmeticEquip )
+		if ( itemList.len() == 0 ) return
+
+		ItemFlavor character       = GetTopLevelCustomizeContext()
+		LoadoutEntry entry         = Loadout_CharacterExecution( character )
+		EHI playerEHI              = LocalClientEHI()
+		ItemFlavor skin            = LoadoutSlot_GetItemFlavor( playerEHI, Loadout_CharacterSkin( character ) )
+
+		
+		bool doesSkinAutoEquipFinisher = Mythics_SkinHasCustomExecution( skin ) && CharacterExecution_IsNotEquippable( Mythics_GetCustomExecutionForCharacterOrSkin( skin ) )
+
+		foreach ( int index, item in itemList )
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( item.flavGUID )
+
+			if ( Mythics_IsCustomExecutionInMythicBundle( flav ) )
+			{
+				if ( doesSkinAutoEquipFinisher )
+				{
+					item.state    = eUICosmeticItemState.EQUIPPED
+				}
+				else if ( !( Mythics_GetNumTiersUnlockedForSkin( FromEHI( playerEHI ), skin ) == MYTHIC_FINAL_TIER ) )
+				{
+					item.state = eUICosmeticItemState.LOCKED
+				}
+				else if ( !IsSkinRequiredForExecutionEquipped ( skin, flav ) )
+				{
+					item.state = eUICosmeticItemState.RESTRICTED
+				}
+			}
+			else if ( !IsItemFlavorUnlockedForLoadoutSlot( playerEHI, entry, flav, false, true ) )
+			{
+				item.state = eUICosmeticItemState.LOCKED
+			}
+			else if ( doesSkinAutoEquipFinisher )
+			{
+				item.state = eUICosmeticItemState.RESTRICTED
+			}
+		}
+
+		RTKCosmeticEquipScreen_SetItemListModel( cosmeticEquip, itemList )
+		UpdateRequirementDescription( cosmeticEquip, GetCurrentEquipItemGUID() )
+	}
+}
+
+void function UpdateRequirementDescription( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	bool requirementMet = false
+	bool restricted = false
+	string requirementDescription = ""
+
+	ItemFlavor execution = GetItemFlavorByGUID( flavGUID )
+	RTKCosmeticListItemModel ornull itemModel = RTKCosmeticEquip_GetItemModelByFlavGUID( cosmeticEquip, flavGUID )
+
+	if ( itemModel == null ) return
+	expect RTKCosmeticListItemModel( itemModel )
+
+	if ( Mythics_IsCustomExecutionInMythicBundle( execution ) )
+	{
+		ItemFlavor character = GetTopLevelCustomizeContext()
+		ItemFlavor skinEquipped = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_CharacterSkin( character ) )
+		string skinName = Localize( Mythics_GetSkinBaseNameForCharacter( character ) )
+		bool skinRequiredEquipped = IsSkinRequiredForExecutionEquipped ( skinEquipped, execution )
+		bool executionUnlocked = Mythics_IsCustomExecutionUnlocked( FromEHI( LocalClientEHI() ), skinEquipped )
+		bool executionUsableOnTier1And2 = Mythics_IsExecutionUsableOnTier1AndTier2( CharacterExecution_GetCharacterFlavor( execution ) )
+
+		if ( skinRequiredEquipped )
+		{
+			requirementDescription = Localize( "#SKIN_EQUIPPED", skinName )
+		}
+		else
+		{
+			
+			requirementDescription = Localize( executionUsableOnTier1And2 ? "#PRESTIGE_PLUS_EQUIP_FINISHER" : "#EQUIP_MYTHIC_SKIN_TO_USE", skinName )
+		}
+		if ( !( Mythics_GetNumTiersUnlockedForSkin( FromEHI( LocalClientEHI() ), skinEquipped ) == MYTHIC_FINAL_TIER ) )
+		{
+			requirementDescription += "\n" + Localize( "#PRESTIGE_PLUS_FINISHER_UNLOCK", skinName, skinName )
+		}
+
+		requirementMet = skinRequiredEquipped && executionUnlocked
+		RTKCosmeticEquipScreen_SetSecondaryButtonVisible( cosmeticEquip, false )
+	}
+	else if ( itemModel.state == eUICosmeticItemState.RESTRICTED || itemModel.state == eUICosmeticItemState.SELECTED_AND_RESTRICTED )
+	{
+		requirementDescription = Localize( "#ANIMATION_RESTRICTED")
+		restricted = true
+		RTKCosmeticEquipScreen_SetPrimaryButtonVisible( cosmeticEquip, false )
+	}
+
+	rtk_struct executionsRestrictionInfoStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "executionsRestrictionInfo", "RTKExecutionsScreenModel", ["characterExecutions"] )
+	RTKStruct_SetString( executionsRestrictionInfoStruct, "requirementDescription", requirementDescription )
+	RTKStruct_SetBool( executionsRestrictionInfoStruct, "requirementMet", requirementMet )
+	RTKStruct_SetBool( executionsRestrictionInfoStruct, "restricted", restricted )
+}
+
+bool function IsSkinRequiredForExecutionEquipped( ItemFlavor skinEquipped,  ItemFlavor execution )
+{
+	if ( Mythics_IsExecutionUsableOnTier1AndTier2( CharacterExecution_GetCharacterFlavor( execution ) ) )
+	{
+		array<ItemFlavor> skinsInSet = Mythics_GetAllSkinsFromBase( skinEquipped )
+		foreach ( ItemFlavor skin in skinsInSet )
+		{
+			if ( skinEquipped == skin )
+			{
+				return true
+			}
+		}
+	}
+	else
+	{
+		return ( skinEquipped == Mythics_GetCharacterSkinForCustomExecution( execution ) )
+	}
+
+	return false
+}
+
+array<ItemFlavor> function GetExecutionsListForCharacterLoadout()
+{
+	LoadoutEntry loadoutEntry = Loadout_CharacterExecution( GetTopLevelCustomizeContext() )
+	array<ItemFlavor> list = GetLoadoutItemsSortedForMenu( [loadoutEntry], CharacterExecution_GetSortOrdinal, null, [] )
+
+	
+	for ( int i = list.len() - 1 ; i >= 0 ; i-- )
+	{
+		if ( CharacterExecution_IsNotEquippable( list[i] ) && CharacterExecution_ShouldHideIfNotEquippable( list[i] ) )
+			list.fastremove( i )
+	}
+
+	return list
+}
+
+int function GetCurrentEquipItemGUID()
+{
+	ItemFlavor character       = GetTopLevelCustomizeContext()
+	LoadoutEntry entry         = Loadout_CharacterExecution( character )
+	EHI playerEHI              = LocalClientEHI()
+	ItemFlavor skin            = LoadoutSlot_GetItemFlavor( playerEHI, Loadout_CharacterSkin( character ) )
+
+	
+	bool doesSkinAutoEquipFinisher = Mythics_SkinHasCustomExecution( skin ) && CharacterExecution_IsNotEquippable( Mythics_GetCustomExecutionForCharacterOrSkin( skin ) )
+
+	if ( doesSkinAutoEquipFinisher )
+	{
+		return ItemFlavor_GetGUID( Mythics_GetCustomExecutionForCharacterOrSkin ( skin ) )
+	}
+
+	ItemFlavor currentExecution = LoadoutSlot_GetItemFlavor( playerEHI, entry, true )
+
+	if ( Mythics_IsCustomExecutionInMythicBundle( currentExecution ) && !IsSkinRequiredForExecutionEquipped ( skin, currentExecution ) )
+	{
+		return ItemFlavor_GetGUID( entry.defaultItemFlavor )
+	}
+
+	return ItemFlavor_GetGUID( currentExecution )
+}

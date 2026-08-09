@@ -1,0 +1,1995 @@
+global function ShPlayerPass_LevelInit
+
+global function PlayerPass_IsPassOfType
+global function PlayerPass_GetAllPassesOfType
+global function PlayerPass_GetLatestPassOfType
+global function PlayerPass_GetMaxLevelIndex
+global function PlayerPass_GetFallbackRewardDataTable
+global function PlayerPass_IsPassTypeActive
+global function PlayerPass_GetPassLevel
+global function PlayerPass_GetPassLevelForXP
+global function PlayerPass_GetProgress
+global function PlayerPass_GetLastSeenProgress
+global function PlayerPass_GetCurrentLevelProgress
+global function PlayerPass_GetDaysDuration
+global function PlayerPass_GetExpirationTime
+global function PlayerPass_GetAssignedPass
+global function PlayerPass_GetAssignedPassesOfType
+global function PlayerPass_GetCompleteAcknowledged
+global function PlayerPass_GetLinkedChallengeCollection
+global function PlayerPass_IsFeatureEnabled
+global function PlayerPass_IsFeatureAssignmentEnabled
+global function PlayerPass_IsActive
+
+global function PlayerPass_GetOwnershipState
+global function PlayerPass_IsAssigned
+global function PlayerPass_IsLegendPass
+
+
+global function NPP_IsNPPLegend
+global function NPP_ShouldDisableGRXForNPPLegend
+
+
+global function PlayerPass_IsComplete
+global function UpdatePassLastInfo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function PlayerPass_LocalizeCompletedOfTotalString
+
+global function PlayerPass_GetCompletedText
+
+global function PlayerPass_ManageRPPDialogFlow
+
+
+
+
+
+
+global struct PlayerPassData
+{
+	ItemFlavor& pass
+	int         maxPassLevel
+
+	table< int, table< int, array<ItemFlavor> > > challenges
+}
+
+struct FileStruct
+{
+	table<ItemFlavor, PlayerPassData> passDataMap
+
+	ItemFlavor ornull latestVersionNPP
+	int expirationTimestampNPP
+
+	ItemFlavor ornull latestVersionRPP
+	int expirationTimestampRPP
+
+
+
+
+}
+FileStruct file
+
+
+const string NPP_CARD_PVAR = "stats.npp_cards_earned"
+const string NPP_COMPLETE_ACK_PVAR = "nppCompleteAcknowledged"
+const string NPP_EXPIRATION_TIME_PVAR = "nppExpirationTime"
+const string NPP_IS_ACTIVE_PVAR = "activeNPP"
+
+const NPP_KILLSWITCH_VAR = "npp_enabled"
+const NPP_ASSIGNMENT_KILLSWITCH_VAR = "npp_assignment_enabled"
+
+global const string NPP_REWARDSEQ_NAME = "npp_grxFreeRewardSeq"
+
+const string	NPP_GRANDFATHER_REWARDSEQ_NAME	= "npp_grandfather_rewardseq"
+const int		NPP_GRANDFATHER_REWARDSEQ_START	= 0
+
+const int		NPP_GRANDFATHER_REWARDSEQ_DONE	= 2 
+const int		NPP_GRANDFATHER_S22_LAUNCH_TIME	= 1722963600	
+
+const asset ALL_LEGENDS_BOT_MODE = $"settings/itemflav/account_flag/account_flag_bot_mode_all_legends_playable.rpak"
+
+global const string BATTLE_PASS_PDEF_PREFIX = "battlePasses"
+global const string NEW_PLAYER_PASS_PDEF_PREFIX = "newPlayerPasses"
+
+
+
+
+global const string NEW_PLAYER_PASS_PDEF_PVAR_FORMAT_STRING = NEW_PLAYER_PASS_PDEF_PREFIX + "[%s].%s" 
+global const string PLAYER_PASSES_PDEF_LAST_SEEN_PVAR = "lastSeenEarnedXP"
+global const string PLAYER_PASSES_PDEF_LOBBY_LAST_SEEN_PVAR = "lobbyLastSeenEarnedXP"
+global const string PLAYER_PASSES_PDEF_PREFIX = "playerPasses"
+global const string PLAYER_PASSES_PDEF_XP_PVAR_NAME = "earnedXP"
+global const string PLAYER_PASSES_PDEF_COMPLETE_ACK_PVAR = "completeAcknowledged"
+global const string PLAYER_PASSES_PDEF_ASSIGN_TIME_PVAR = "timestampAssigned"
+global const string PLAYER_PASSES_PDEF_PVAR_FORMAT_STRING = PLAYER_PASSES_PDEF_PREFIX + "[%s].%s" 
+global const string PLAYER_PASSES_REWARD_SEQ_FORMAT_STRING = PLAYER_PASSES_PDEF_PREFIX + "_%s__grxRewardSeq"
+
+
+
+global const int PLAYER_PASSES_XP_PER_LEVEL = STARS_TO_COMPLETE_BP_LEVEL
+
+
+global enum ePassOwnershipState
+{
+	CAN_BUY_FIRST_TIME,
+	CAN_BUY_REPURCHASE, 
+	CANNOT_BUY_LOCKED, 
+}
+
+
+
+
+
+
+
+
+
+
+
+
+const string RPP_EXPIRATION_TIME_PVAR = "rppExpirationTime"
+const string RPP_IS_ACTIVE_PVAR = "activeRPP"
+
+global const int RPP_REQ_DAYS_LAPSED = 180
+const RPP_KILLSWITCH_VAR = "rpp_enabled"
+const RPP_ASSIGNMENT_KILLSWITCH_VAR = "rpp_assignment_enabled"
+
+global const string ACCOUNTPASS_KILLSWITCH_VAR = "accountpass_enabled"
+
+
+const string LEGENDPASS_KILLSWITCH_VAR = "legendpass_enabled"
+const string LEGENDPASS_ASSIGNMENT_KILLSWITCH_VAR = "legendpass_assignment_enabled"
+
+
+
+
+
+#if DEV
+	global bool g_blockSaveDateLoggedIn = false
+#endif
+
+void function ShPlayerPass_LevelInit()
+{
+	AddCallback_RegisterRootItemFlavors( OnRegisterRootItemFlavors )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	AddCallback_OnItemFlavorRegistered( eItemType.battlepass, void function( ItemFlavor pass ) {
+		if ( PlayerPass_IsPassOfType( pass, ePassType.SEASONAL ) )
+		{
+			return 
+		}
+		if ( PlayerPass_IsPassOfType( pass, ePassType.ACCOUNT ) )
+		{
+			return 
+		}
+
+#if CHALLENGE_DEBUG
+			printt( FUNC_NAME() )
+#endif
+
+		PlayerPassData passData
+		passData.pass = pass
+
+		var passDataTable = BattlePass_GetScheduleDatatable( pass )
+		int numRows       = GetDataTableRowCount( passDataTable )
+		int maxLevels     = GetDataTableInt( passDataTable, numRows - 1, GetDataTableColumnByName( passDataTable, "levelIndex" ) ) + 1
+
+		passData.maxPassLevel = maxLevels - 1 
+
+
+		if ( BattlePass_GetType( pass ) == ePassType.LEGEND )
+			PlayerPass_GetLinkedChallengeCollection( pass ) 
+
+
+		file.passDataMap[pass] <- passData
+	} )
+}
+
+void function OnRegisterRootItemFlavors()
+{
+	foreach ( asset battlePassAsset in GetBaseItemFlavorsFromArray( "nonSeasonalPasses" ) )
+	{
+		if ( battlePassAsset == $"" )
+		{
+			continue
+		}
+
+		ItemFlavor ornull battlePass = RegisterItemFlavorFromSettingsAsset( battlePassAsset )
+		if ( battlePass == null )
+		{
+			continue
+		}
+
+		expect ItemFlavor( battlePass )
+		if ( PlayerPass_IsPassOfType( battlePass, ePassType.SEASONAL ) )
+		{
+			continue
+		}
+
+		if ( GetGlobalSettingsBool( ItemFlavor_GetAsset( battlePass ), "latestVersionPass" ) )
+		{
+			if ( PlayerPass_IsPassOfType( battlePass, ePassType.NEWPLAYER ) )
+			{
+				if ( PlayerPass_GetLatestPassOfType( ePassType.NEWPLAYER ) != null )
+				{
+					if ( ItemFlavor_GetGUID( battlePass ) != ItemFlavor_GetGUID( expect ItemFlavor( PlayerPass_GetLatestPassOfType( ePassType.NEWPLAYER ) ) ) )
+					{
+						Assert( false, "Multiple NPPs " + ItemFlavor_GetGUIDString( battlePass ) + " and " + ItemFlavor_GetGUIDString( expect ItemFlavor( PlayerPass_GetLatestPassOfType( ePassType.NEWPLAYER ) ) ) + " are marked as the current NPP. Correct in bakery." )
+					}
+				}
+				else
+				{
+					PlayerPass_SetLatestVersionPassOfType( ePassType.NEWPLAYER, battlePass )
+				}
+			}
+
+			if ( PlayerPass_IsPassOfType( battlePass, ePassType.RETURNING_PLAYER ) )
+			{
+				if ( PlayerPass_GetLatestPassOfType( ePassType.RETURNING_PLAYER ) != null )
+				{
+					if ( ItemFlavor_GetGUID( battlePass ) != ItemFlavor_GetGUID( expect ItemFlavor( PlayerPass_GetLatestPassOfType( ePassType.RETURNING_PLAYER ) ) ) )
+					{
+						Assert( false, "Multiple RPPs " + ItemFlavor_GetGUIDString( battlePass ) + " and " + ItemFlavor_GetGUIDString( expect ItemFlavor( PlayerPass_GetLatestPassOfType( ePassType.RETURNING_PLAYER ) ) ) + " are marked as the current RPP. Correct in bakery." )
+					}
+				}
+				else
+				{
+					PlayerPass_SetLatestVersionPassOfType( ePassType.RETURNING_PLAYER, battlePass )
+				}
+			}
+
+			foreach ( int index, var voucherBlock in IterateSettingsAssetArray( ItemFlavor_GetAsset( battlePass ), "nonStarVouchers" ) )
+			{
+				RegisterItemFlavorFromSettingsAsset( GetSettingsBlockAsset( voucherBlock, "voucherFlav" ) )
+			}
+		}
+	}
+}
+
+
+
+#if DEV
+
+
+
+
+
+
+#endif
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function NPP_IsNPPLegend( ItemFlavor legendFlav )
+{
+	ItemFlavor legendA = GetItemFlavorByAsset( PATHFINDER_ITEMFLAV )
+	ItemFlavor legendB = GetItemFlavorByAsset( GIBRALTAR_ITEMFLAV )
+
+	if ( legendFlav.guid == legendA.guid || legendFlav.guid == legendB.guid )
+	{
+		return true
+	}
+
+	return false
+}
+
+bool function NPP_ShouldDisableGRXForNPPLegend( entity player, ItemFlavor character )
+{
+	if ( NPP_IsNPPLegend( character )
+			&& !Loadout_IsCharacterOwnedByPlayerIgnoringUnlockSources( player, character )
+			&& !Character_IsUnlockedForBattlePassV2( player, character )
+			&& !Character_IsCharacterUnlockedForCalevent( character ) )
+	{
+		return true
+	}
+	return false
+}
+
+
+
+
+
+#if DEV
+
+
+
+
+
+
+#endif
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+#endif
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif
+
+
+
+void function PlayerPass_SetLatestVersionPassOfType( int passType, ItemFlavor ornull pass )
+{
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			file.latestVersionNPP = pass
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			file.latestVersionRPP = pass
+			break
+	}
+}
+
+bool function PlayerPass_IsPassOfType( ItemFlavor pass, int passType )
+{
+	if ( pass.typeIndex != eItemType.battlepass )
+	{
+		Assert( false, "Called PlayerPass_IsPassOfType on non-Battlepass Item Flavor" )
+		return false
+	}
+
+	return ( BattlePass_GetType( pass ) == passType )
+}
+
+array< ItemFlavor > function PlayerPass_GetAllPassesOfType( int passType )
+{
+	array< ItemFlavor > passes
+	foreach ( ItemFlavor pass in GetAllItemFlavorsOfType( eItemType.battlepass ) )
+	{
+		if ( BattlePass_GetType( pass ) == passType )
+		{
+			passes.append( pass )
+		}
+	}
+
+	return passes
+}
+
+ItemFlavor ornull function PlayerPass_GetLatestPassOfType( int passType )
+{
+	ItemFlavor ornull passOrNull = null
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			passOrNull = file.latestVersionNPP
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			passOrNull = file.latestVersionRPP
+			break
+	}
+
+	return passOrNull
+}
+
+int function PlayerPass_GetMaxLevelIndex( ItemFlavor pass )
+{
+	PlayerPassData passData = file.passDataMap[pass]
+	return passData.maxPassLevel
+}
+
+ItemFlavor ornull function PlayerPass_GetLinkedChallengeCollection( ItemFlavor pass )
+{
+	if ( pass.typeIndex != eItemType.battlepass )
+	{
+		Assert( false, "Called PlayerPass_IsPassOfType on non-Battlepass Item Flavor" )
+		return null
+	}
+
+	asset linkedChallengeCollectionAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( pass ), "linkedChallengeCollection" )
+	if ( linkedChallengeCollectionAsset == $"" )
+	{
+		return null
+	}
+
+	if ( IsValidItemFlavorSettingsAsset( linkedChallengeCollectionAsset ) )
+		return GetItemFlavorByAsset( linkedChallengeCollectionAsset )
+
+	return RegisterItemFlavorFromSettingsAsset( linkedChallengeCollectionAsset )
+}
+
+
+bool function PlayerPass_IsComplete( entity player, int passType )
+{
+	bool isComplete = false
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			ItemFlavor ornull npp = PlayerPass_GetAssignedPass( player, ePassType.NEWPLAYER )
+			if ( npp == null )
+			{
+				return false
+			}
+			expect ItemFlavor( npp )
+
+
+			int playerBPLevel =	PlayerPass_GetPassLevel( player, npp )
+			isComplete = playerBPLevel >= ( PlayerPass_GetMaxLevelIndex( npp ) )
+
+
+
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			ItemFlavor ornull rpp = PlayerPass_GetAssignedPass( player, ePassType.RETURNING_PLAYER )
+			if ( rpp == null )
+			{
+				return false
+			}
+			expect ItemFlavor( rpp )
+
+			int playerBPLevel =	PlayerPass_GetPassLevel( player, rpp )
+			isComplete = playerBPLevel >= ( PlayerPass_GetMaxLevelIndex( rpp ) )
+			break
+
+
+
+
+
+
+
+
+
+
+
+
+
+	}
+
+	return isComplete
+}
+
+
+var function PlayerPass_GetFallbackRewardDataTable( ItemFlavor pass )
+{
+	Assert( ItemFlavor_GetType( pass ) == eItemType.battlepass )
+
+	asset rewardScheduleAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( pass ), "nonSeasonalFallbackRewardDatatable" )
+
+	if ( rewardScheduleAsset == $"" )
+	{
+		return rewardScheduleAsset
+	}
+
+	return GetDataTable( rewardScheduleAsset )
+}
+
+int function PlayerPass_GetDaysDuration( ItemFlavor pass )
+{
+	Assert( ItemFlavor_GetType( pass ) == eItemType.battlepass )
+
+	int daysDuration = GetGlobalSettingsInt( ItemFlavor_GetAsset( pass ), "bpv2DaysDuration" )
+
+	if ( PlayerPass_IsPassOfType( pass, ePassType.RETURNING_PLAYER ) )
+	{
+		daysDuration = GetPlaylistVarInt( GetCurrentPlaylistName(), "rpp_days_duration_override", daysDuration )
+	}
+
+	return daysDuration
+}
+
+bool function PlayerPass_IsPassTypeActive( entity player, int passType )
+{
+	bool isTypeEnabled
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			isTypeEnabled = PlayerPass_IsFeatureEnabled( ePassType.NEWPLAYER )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			isTypeEnabled = PlayerPass_IsFeatureEnabled( ePassType.RETURNING_PLAYER )
+			break
+
+		case ePassType.LEGEND:
+			isTypeEnabled = PlayerPass_IsFeatureEnabled( ePassType.LEGEND )
+			break
+
+
+
+
+
+
+		case ePassType.ACCOUNT:
+			isTypeEnabled = PlayerPass_IsFeatureEnabled( ePassType.ACCOUNT )
+			break
+	}
+
+	if ( !isTypeEnabled )
+	{
+		return false
+	}
+
+	if ( !IsValid( player ) )
+	{
+		return false
+	}
+
+
+		if ( !IsFullyConnected() )
+		{
+			return false
+		}
+
+
+
+	bool active
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			active = bool( player.GetPersistentVar( NPP_IS_ACTIVE_PVAR ) )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			active = bool( player.GetPersistentVar( RPP_IS_ACTIVE_PVAR ) )
+			break
+
+
+		case ePassType.LEGEND:
+			
+			for ( int passArrayIdx = 0 ; passArrayIdx < NUM_ACTIVE_PLAYER_PASSES ; passArrayIdx++ )
+			{
+				ItemFlavor ornull pass = PlayerPass_GetPassAtPersistenceSlot( player, passArrayIdx )
+				if ( pass != null )
+				{
+					int persistencePassType = BattlePass_GetType( expect ItemFlavor( pass ) )
+					if ( persistencePassType == ePassType.LEGEND )
+					{
+						active = true
+						break
+					}
+				}
+			}
+			break
+
+
+
+
+
+
+		case ePassType.ACCOUNT:
+			active = isTypeEnabled
+			break
+	}
+
+	return active
+}
+
+int function PlayerPass_GetPassLevel( entity player, ItemFlavor pass )
+{
+	int passLevel
+	switch ( BattlePass_GetType( pass ) )
+	{
+		case ePassType.NEWPLAYER:
+			passLevel = player.GetPersistentVarAsInt( NPP_CARD_PVAR ) / PLAYER_PASSES_XP_PER_LEVEL
+			break
+
+		case ePassType.ACCOUNT:
+			passLevel = GetPlayerAccountLevel( player )
+			break
+
+
+
+
+
+
+
+
+		default:
+			passLevel = player.GetPersistentVarAsInt( format( PLAYER_PASSES_PDEF_PVAR_FORMAT_STRING, ItemFlavor_GetGUIDString( pass ), PLAYER_PASSES_PDEF_XP_PVAR_NAME ) ) / PLAYER_PASSES_XP_PER_LEVEL
+			break
+
+	}
+
+	return passLevel
+}
+
+int function PlayerPass_GetPassLevelForXP( entity player, ItemFlavor pass, int xp )
+{
+	int passLevel
+	switch ( BattlePass_GetType( pass ) )
+	{
+		case ePassType.ACCOUNT:
+			passLevel = GetAccountLevelForXP( xp )
+			break
+
+		default:
+			passLevel = xp / PLAYER_PASSES_XP_PER_LEVEL
+			break
+	}
+
+	return passLevel
+}
+
+int function PlayerPass_GetCurrentLevelProgress( entity player, ItemFlavor pass )
+{
+	int levelProgress
+
+	switch ( BattlePass_GetType( pass ) )
+	{
+		case ePassType.NEWPLAYER:
+			levelProgress = player.GetPersistentVarAsInt( NPP_CARD_PVAR ) % PLAYER_PASSES_XP_PER_LEVEL
+			break
+
+		default:
+			levelProgress = PlayerPass_GetProgress( player, pass ) % PLAYER_PASSES_XP_PER_LEVEL
+			break
+	}
+
+	return levelProgress
+}
+
+int function PlayerPass_GetExpirationTime( entity player, int passType )
+{
+	int expirationTime
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			expirationTime = player.GetPersistentVarAsInt( NPP_EXPIRATION_TIME_PVAR )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			expirationTime = player.GetPersistentVarAsInt( RPP_EXPIRATION_TIME_PVAR)
+	}
+
+	return expirationTime
+}
+
+ItemFlavor ornull function PlayerPass_GetAssignedPass( entity player, int passType )
+{
+
+	Assert( passType != ePassType.LEGEND )
+
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			if ( PlayerPass_IsActive( player, ePassType.NEWPLAYER ) )
+			{
+				return GetItemFlavorOrNullByGUID( player.GetPersistentVarAsInt( "nppAssignedGUID" ) )
+			}
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			if ( PlayerPass_IsActive( player, ePassType.RETURNING_PLAYER ) )
+			{
+				return GetItemFlavorOrNullByGUID( player.GetPersistentVarAsInt( "rppAssignedGUID" ) )
+			}
+			break
+
+		case ePassType.ACCOUNT:
+			if ( PlayerPass_IsActive( player, ePassType.ACCOUNT ) )
+			{
+
+					if ( !IsFullyConnected() )
+						return null
+
+				return GetAccountProgressionPass()
+
+			}
+			break
+	}
+
+	return null
+}
+
+array<ItemFlavor> function PlayerPass_GetAssignedPassesOfType( entity player, int passType )
+{
+	array<ItemFlavor> passes
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			if ( PlayerPass_IsActive( player, ePassType.NEWPLAYER ) )
+			{
+				ItemFlavor ornull npp = GetItemFlavorOrNullByGUID( player.GetPersistentVarAsInt( "nppAssignedGUID" ) )
+				if ( npp != null )
+				{
+					passes.append( expect ItemFlavor( npp ) )
+				}
+			}
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			if ( PlayerPass_IsActive( player, ePassType.RETURNING_PLAYER ) )
+			{
+				ItemFlavor ornull rpp = GetItemFlavorOrNullByGUID( player.GetPersistentVarAsInt( "rppAssignedGUID" ) )
+				if ( rpp != null )
+				{
+					passes.append( expect ItemFlavor( rpp ) )
+				}
+			}
+			break
+
+		case ePassType.LEGEND:
+			if ( PlayerPass_IsActive( player, ePassType.LEGEND ) )
+			{
+				for ( int passArrayIdx = 0 ; passArrayIdx < NUM_ACTIVE_PLAYER_PASSES ; passArrayIdx++ )
+				{
+					ItemFlavor ornull pass = PlayerPass_GetPassAtPersistenceSlot( player, passArrayIdx )
+					if ( pass != null )
+					{
+						passes.append( expect ItemFlavor( pass ) )
+					}
+				}
+			}
+			break
+
+	}
+
+	return passes
+}
+
+bool function PlayerPass_GetCompleteAcknowledged( entity player, ItemFlavor pass )
+{
+	switch ( BattlePass_GetType( pass ) )
+	{
+		case ePassType.NEWPLAYER:
+			return bool( player.GetPersistentVar( NPP_COMPLETE_ACK_PVAR ) )
+
+
+		default:
+			return bool( player.GetPersistentVar( format( PLAYER_PASSES_PDEF_PVAR_FORMAT_STRING, ItemFlavor_GetGUIDString( pass ), PLAYER_PASSES_PDEF_COMPLETE_ACK_PVAR ) ) )
+
+	}
+
+	return false
+}
+
+bool function PlayerPass_IsFeatureEnabled( int passType )
+{
+	bool isEnabled = true
+
+
+	if ( !IsFullyConnected() )
+	{
+		return isEnabled
+	}
+
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			isEnabled = GetCurrentPlaylistVarBool( NPP_KILLSWITCH_VAR, true )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			isEnabled = GetCurrentPlaylistVarBool( RPP_KILLSWITCH_VAR, true )
+			break
+
+
+		case ePassType.LEGEND:
+			isEnabled = GetCurrentPlaylistVarBool( LEGENDPASS_KILLSWITCH_VAR, true )
+			break
+
+
+
+
+
+
+		case ePassType.ACCOUNT:
+			isEnabled = GetCurrentPlaylistVarBool( ACCOUNTPASS_KILLSWITCH_VAR, true )
+			break
+	}
+
+	return isEnabled
+}
+
+bool function PlayerPass_IsFeatureAssignmentEnabled( int passType )
+{
+	bool isEnabled = true
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+#if DEV
+				if ( GetConVarBool( "ftue_npp_assignment_enabled" ) == false )
+				{
+					return false
+				}
+#endif
+
+			isEnabled = GetCurrentPlaylistVarBool( NPP_ASSIGNMENT_KILLSWITCH_VAR, true )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+#if DEV
+				if ( GetConVarBool( "rpp_assignment_enabled" ) == false )
+				{
+					return false
+				}
+#endif
+
+			isEnabled = GetCurrentPlaylistVarBool( RPP_ASSIGNMENT_KILLSWITCH_VAR, true )
+			break
+
+
+			isEnabled = GetCurrentPlaylistVarBool( LEGENDPASS_ASSIGNMENT_KILLSWITCH_VAR, true )
+
+	}
+
+	return isEnabled
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function PlayerPass_GetOwnershipState( ItemFlavor pass, entity player = null )
+{
+	Assert( BattlePass_GetType( pass ) == ePassType.LEGEND ) 
+
+		player = GetLocalClientPlayer()
+		Assert( GRX_IsInventoryReady() && GRX_AreOffersReady() )
+
+
+
+
+
+	ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+	int purchaseTimestamp = player.GetPersistentVarAsInt( format( PLAYER_PASSES_PDEF_PVAR_FORMAT_STRING, ItemFlavor_GetGUIDString( pass ), PLAYER_PASSES_PDEF_ASSIGN_TIME_PVAR ) )
+	ItemFlavor ornull seasonOfPurchase = GetActiveSeason( purchaseTimestamp )
+	if ( purchaseTimestamp != 0 )
+	{
+		if ( seasonOfPurchase == currentSeason )
+			return ePassOwnershipState.CANNOT_BUY_LOCKED
+
+		return ePassOwnershipState.CAN_BUY_REPURCHASE
+	}
+
+	return ePassOwnershipState.CAN_BUY_FIRST_TIME
+}
+
+
+bool function PlayerPass_IsActive( entity player, int passType )
+{
+	bool active = false
+
+	if ( !PlayerPass_IsFeatureEnabled( passType ) )
+	{
+		return false
+	}
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			
+			if ( player.GetPersistentVarAsInt( "installUnixTime" ) == 0 )
+			{
+				active = true
+				break
+			}
+
+			if ( PlayerPass_IsPassTypeActive( player, ePassType.NEWPLAYER ) )
+			{
+				active = true
+				break
+			}
+			break
+
+		case ePassType.RETURNING_PLAYER:
+
+			if ( PlayerPass_IsPassTypeActive( player, ePassType.RETURNING_PLAYER ) )
+			{
+				active = true
+				break
+			}
+			break
+
+
+		case ePassType.LEGEND:
+			if ( PlayerPass_IsPassTypeActive( player, ePassType.LEGEND ) )
+			{
+				active = true
+				break
+			}
+			break
+
+
+		case ePassType.ACCOUNT:
+			if ( PlayerPass_IsPassTypeActive( player, ePassType.ACCOUNT ) )
+				return true 
+	}
+
+	return active
+}
+
+
+
+int function PlayerPass_GetPersistenceSlot( entity player, ItemFlavor passFlav )
+{
+	Assert( ItemFlavor_GetType( passFlav ) == eItemType.battlepass )
+	for ( int passArrayIdx = 0 ; passArrayIdx < NUM_ACTIVE_PLAYER_PASSES ; passArrayIdx++ )
+	{
+		SettingsAssetGUID passGuid = player.GetPersistentVarAsInt( format( PASSES_PVAR_KEY_FSTRING_GUID, passArrayIdx ) )
+		if ( passGuid == passFlav.guid )
+			return passArrayIdx
+	}
+
+	return -1
+}
+
+ItemFlavor ornull function PlayerPass_GetPassAtPersistenceSlot( entity player, int passArrayIdx )
+{
+	SettingsAssetGUID passGuid = player.GetPersistentVarAsInt( format( PASSES_PVAR_KEY_FSTRING_GUID, passArrayIdx ) )
+	if ( passGuid > 0 )
+		return GetItemFlavorOrNullByGUID( passGuid )
+
+	return null
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function PlayerPass_IsAssigned( entity player, ItemFlavor passFlav )
+{
+	return PlayerPass_GetPersistenceSlot( player, passFlav ) >= 0
+}
+
+bool function PlayerPass_IsLegendPass( ItemFlavor flav )
+{
+	return ( ItemFlavor_GetType( flav ) == eItemType.battlepass && BattlePass_GetType( flav ) == ePassType.LEGEND )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function PlayerPass_GetProgress( entity player, ItemFlavor pass )
+{
+	Assert(  BattlePass_GetType( pass ) != ePassType.SEASONAL )
+	int passType = BattlePass_GetType( pass )
+	switch ( passType )
+	{
+ 		case ePassType.NEWPLAYER:
+			return player.GetPersistentVarAsInt( NPP_CARD_PVAR )
+
+		case ePassType.ACCOUNT:
+
+				return expect int( GetDialogFlowTablesValueOrPersistence( "xp", true ) )
+
+
+
+
+
+
+
+
+
+		default:
+			string pvarName = format( PLAYER_PASSES_PDEF_PVAR_FORMAT_STRING, ItemFlavor_GetGUIDString( pass ), PLAYER_PASSES_PDEF_XP_PVAR_NAME )
+			return player.GetPersistentVarAsInt( pvarName )
+	}
+	unreachable
+}
+
+int function PlayerPass_GetLastSeenProgress( entity player, ItemFlavor pass, int source )
+{
+	int passType = BattlePass_GetType( pass )
+	string baseString
+	switch ( passType )
+	{
+		case ePassType.SEASONAL:
+			baseString = format( BATTLE_PASS_PDEF_PREFIX + "[%s]", ItemFlavor_GetGUIDString( pass ) )
+			break
+
+		case ePassType.NEWPLAYER:
+			baseString = format( NEW_PLAYER_PASS_PDEF_PREFIX + "[%s]", ItemFlavor_GetGUIDString( pass ) )
+			break
+
+
+
+
+
+
+
+		case ePassType.ACCOUNT:
+		default:
+			baseString = format( PLAYER_PASSES_PDEF_PREFIX + "[%s]", ItemFlavor_GetGUIDString( pass ) )
+			break
+	}
+
+	switch ( source )
+	{
+		case ePassLastSeenType.LOBBY:
+
+			return expect int( GetDialogFlowTablesValueOrPersistence( baseString + "." + PLAYER_PASSES_PDEF_LOBBY_LAST_SEEN_PVAR, true ) )
+
+
+
+			break
+
+		default:
+
+			return expect int( GetDialogFlowTablesValueOrPersistence( baseString + "." + PLAYER_PASSES_PDEF_LAST_SEEN_PVAR, true ) )
+
+
+
+			break
+	}
+	unreachable
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function SetPersistenceOrDialogFlowTable( entity player, string persistenceVar, var value )
+{
+
+
+
+	SetDialogFlowPersistenceTables( persistenceVar, value )
+
+}
+
+void function UpdatePassLastInfo(  entity player, int source, SettingsAssetGUID assetGuid  )
+{
+	ItemFlavor bpFlav = GetItemFlavorByGUID( assetGuid )
+
+	int passType = BattlePass_GetType( bpFlav )
+	string baseString
+	string bpFlavGuidString =ItemFlavor_GetGUIDString( bpFlav )
+	switch ( passType )
+	{
+		case ePassType.SEASONAL:
+			baseString = format( BATTLE_PASS_PDEF_PREFIX + "[%s]",  bpFlavGuidString)
+			break
+		case ePassType.NEWPLAYER:
+			baseString = format( NEW_PLAYER_PASS_PDEF_PREFIX + "[%s]", bpFlavGuidString )
+			break
+
+
+
+
+
+		default:
+			baseString = format( PLAYER_PASSES_PDEF_PREFIX + "[%s]", bpFlavGuidString )
+			break
+	}
+
+	if ( passType == ePassType.SEASONAL )
+	{
+		EHI playerEHI = ToEHI( player )
+
+		int purchasedXP = GetPlayerBattlePassPurchasedXP( playerEHI, bpFlav )
+		int earnedXP    = GetPlayerBattlePassEarnedXP( playerEHI, bpFlav, false )
+
+		SetPersistenceOrDialogFlowTable( player, baseString + ".lastSeenPurchasedXP", purchasedXP )
+		SetPersistenceOrDialogFlowTable( player, baseString + ".lastSeenPremiumState", DoesPlayerOwnBattlePassTier( player, bpFlav, eBattlePassV2OwnershipTier.PREMIUM ) )
+		SetPersistenceOrDialogFlowTable( player, baseString + ".lastSeenUltimatePlusState", DoesPlayerOwnBattlePassTier( player, bpFlav, eBattlePassV2OwnershipTier.ULTIMATE_PLUS ) )
+
+		switch ( source )
+		{
+			case ePassLastSeenType.LOBBY:
+				SetPersistenceOrDialogFlowTable( player, baseString + "." + PLAYER_PASSES_PDEF_LOBBY_LAST_SEEN_PVAR, earnedXP )
+				break
+
+			case ePassLastSeenType.MATCH:
+				SetPersistenceOrDialogFlowTable( player, baseString + "." + PLAYER_PASSES_PDEF_LAST_SEEN_PVAR, earnedXP )
+				break
+		}
+	}
+	else
+	{
+		int playerProgress = PlayerPass_GetProgress( player, bpFlav )
+		switch ( source )
+		{
+			case ePassLastSeenType.LOBBY:
+				SetPersistenceOrDialogFlowTable( player, baseString + "." + PLAYER_PASSES_PDEF_LOBBY_LAST_SEEN_PVAR, playerProgress )
+				break
+
+			case ePassLastSeenType.MATCH:
+				SetPersistenceOrDialogFlowTable( player, baseString + "." + PLAYER_PASSES_PDEF_LAST_SEEN_PVAR, playerProgress )
+				break
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+string function PlayerPass_LocalizeCompletedOfTotalString( entity player, int passType )
+{
+	ChallengeTile ornull tile
+
+	switch ( passType )
+	{
+		case ePassType.NEWPLAYER:
+			tile = ChallengeTile_GetPlayerPassTile( ePassType.NEWPLAYER )
+			break
+
+		case ePassType.RETURNING_PLAYER:
+			tile = ChallengeTile_GetPlayerPassTile( ePassType.RETURNING_PLAYER )
+			break
+
+
+		case ePassType.LEGEND:
+			tile = ChallengeTile_GetPlayerPassTile( ePassType.LEGEND )
+			break
+
+	}
+
+
+		if ( tile != null)
+		{
+			expect ChallengeTile( tile )
+			int numCompleted = ChallengeTile_GetCompletedChallengeCount( tile, player )
+			int numTotal = tile.totalChallenges
+			return Localize( "#N_SLASH_N", string( numCompleted ), string( numTotal ) )
+		}
+
+	return ""
+}
+
+
+
+
+string function PlayerPass_GetCompletedText()
+{
+	ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+	if ( currentSeason != null )
+	{
+		int secondsRemaining = maxint( 3600, CalEvent_GetFinishUnixTime( expect ItemFlavor( currentSeason ) ) - GetUnixTimestamp() )
+		return Localize( "#STORE_V2_OFFERS_AVAILABLE", Localize( "#TIME_REMAINING_DAYS_HOURS", secondsRemaining / 86400, ( secondsRemaining % 86400 ) / 3600 ) )
+	}
+
+	return Localize( "#COMPLETED" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function PlayerPass_ManageRPPDialogFlow()
+{
+	bool result = !bool( GetPersistentVar( "rppAssignmentAcknowledged" ) ) && bool( GetPersistentVar( RPP_IS_ACTIVE_PVAR ) )
+
+	if ( result )
+	{
+		Remote_ServerCallFunction( "ClientCallback_rppAssignmentAcknowledged" )
+	}
+
+	return result
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

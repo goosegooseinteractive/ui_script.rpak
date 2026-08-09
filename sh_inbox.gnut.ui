@@ -1,0 +1,1086 @@
+
+global function Inbox_LevelInit
+global function Inbox_LevelShutdown
+global function Inbox_IsUMInboxEnabled
+
+
+
+global function GetGiftingInboxMessages
+global function MarkNewGiftedItemsAsNew
+global function AddGiftCacheMessages
+global function RemoveGiftCacheMessage
+
+global function GetInboxMessages
+global function UpdateInboxMessages
+
+global function GetInboxMessagesCount
+
+global function AddInboxMessagesFromUM
+global function AddInboxMessagesFromGifts
+global function AddInboxMessagesFromAnticheatNotification
+
+global function InitInboxPersistenceSlots
+global function ProcessInboxMessages
+global function RemoveInboxMessage
+global function ClearInboxMessages
+global function MarkInboxMessageAsRead
+global function MarkInboxAllMessagesAsRead
+global function GetInboxMessageFromTrackingID
+
+global function UpdateInboxPersistence
+global function GetNextAvailableInboxPersistenceIndex
+
+global function AddCallback_OnInboxMessageUpdated
+global function AddCallback_OnInboxMessageReceived
+global function RemoveCallback_OnInboxMessageUpdated
+global function RemoveCallback_OnInboxMessageReceived
+global function UICodeCallback_InboxMessageUpdated
+global function UICodeCallback_InboxMessageReceived
+
+
+
+
+
+
+
+
+#if DEV
+global function DEV_PrintGiftingInboxMessages
+global function DEV_PrintInboxMessages
+global function DEV_PrintInboxPersistenceSlots
+global function DEV_SortInboxMessages
+global function DEV_GetDummyInboxMessages
+#endif
+
+
+global const int INBOX_MAX_MESSAGE_COUNT = 30
+const string INBOX_MESSAGE_PERSISTENCE_STRUCT = "inboxMessages"
+const string PIN_MESSAGE_TYPE_INBOX = "inbox"
+const int SECONDS_PER_30_DAYS = 86400 * 30
+
+#if DEV
+const bool USE_DUMMY_MESSAGES = false
+#endif
+
+
+
+
+global enum eInboxMessageType
+{
+	INVALID,
+
+	
+	ANTICHEAT,
+	GIFTING,
+	MAKEGOOD,
+
+	
+	TWITCH_DROP,
+	FIRST_PARTY_ENTITLEMENT
+}
+
+global struct GRXInboxMessage
+{
+	int type = eInboxMessageType.INVALID
+
+	GRXContainerInfo& container
+
+	int trackingId = 0
+	int timestamp = -1
+	bool hasRead = false
+
+	string headerText = ""
+	string messageText = ""
+	string deeplink = ""
+	string deeplinkType = ""
+	string imageName = ""
+	asset image = $""
+	bool isUrgent = false
+
+	array<string> grxRefs = []
+	array<string> grxQuantities = []
+
+	int anticheatCount = -1
+}
+
+struct InboxPersistenceSlot
+{
+	int id
+	bool hasRead
+	int timestamp
+}
+
+struct FileStruct
+{
+	array<GRXContainerInfo> giftingMessages
+
+	array<GRXInboxMessage> inboxMessages
+	table<int, bool> oldInboxMessageHasReadMap
+
+	array<InboxPersistenceSlot> inboxPersistenceSlots
+
+	table<int, string> inboxUMTrackingIdMap
+	table<int, bool> inboxUMRemovedMessages
+
+	array<void functionref ()> onInboxMessageUpdated
+	array<void functionref ()> onInboxMessageReceived
+}
+
+FileStruct& file
+
+
+
+void function Inbox_LevelInit()
+{
+
+
+
+
+
+
+
+		file.inboxMessages.clear()
+		file.oldInboxMessageHasReadMap.clear()
+		file.inboxUMTrackingIdMap.clear()
+		file.inboxUMRemovedMessages.clear()
+
+		InitInboxPersistenceSlots()
+
+}
+
+
+
+void function Inbox_LevelShutdown()
+{
+
+	if ( IsLobby() )
+	{
+		UpdateInboxPersistence()
+	}
+
+}
+
+
+
+bool function Inbox_IsUMInboxEnabled()
+{
+	return GetConVarBool( "EADP_um_inbox_message_enabled" )
+}
+
+
+
+array<GRXContainerInfo> function GetGiftingInboxMessages()
+{
+
+		foreach ( GRXContainerInfo message in file.giftingMessages )
+		{
+			for ( int i = 0; i < message.itemIndices.len(); i++ )
+			{
+				if ( !IsValidItemFlavorGRXIndex( message.itemIndices[i] ) )
+				{
+					Warning( "[GRX][%s]: skipping invalid received itemIdex %d", FUNC_NAME(), message.itemIndices[i] )
+					continue
+				}
+
+				ItemFlavor flav = GetItemFlavorByGRXIndex( message.itemIndices[i] )
+				if ( ItemFlavor_GetType( flav ) == eItemType.battlepass && PlayerPass_IsPassOfType( flav, ePassType.LEGEND ) && !PlayerPass_IsAssigned( GetLocalClientPlayer(), flav ) )
+					Remote_ServerCallFunction( "ClientCallback_UpdatePlayerPassAssignment" )
+			}
+		}
+
+
+	return file.giftingMessages
+}
+
+
+
+void function MarkNewGiftedItemsAsNew()
+{
+	if ( !IsLobby() )
+		return
+
+	foreach ( GRXContainerInfo inboxMessage in file.giftingMessages )
+	{
+		if ( inboxMessage.isNew )
+		{
+			foreach ( int itemIndex in inboxMessage.itemIndices )
+			{
+				ItemFlavor itemFlav = GetItemFlavorByGRXIndex( itemIndex )
+				Newness_MarkItemAsNewAndInformServer( itemFlav )
+			}
+		}
+	}
+}
+
+
+
+void function AddGiftCacheMessages( array<GRXContainerInfo> messages )
+{
+	foreach ( GRXContainerInfo message in messages )
+	{
+		file.giftingMessages.append( message )
+	}
+}
+
+
+
+void function RemoveGiftCacheMessage( int timestamp, string nID )
+{
+	for ( int i = 0; i < file.giftingMessages.len(); i++ )
+	{
+		GRXContainerInfo message = file.giftingMessages[i]
+
+		if ( message.senderNucleusPid == nID && message.timestamp == timestamp )
+		{
+			file.giftingMessages.remove( i )
+			return
+		}
+	}
+}
+
+
+
+array<GRXInboxMessage> function GetInboxMessages()
+{
+#if DEV
+		if ( USE_DUMMY_MESSAGES )
+		{
+			return DEV_GetDummyInboxMessages()
+		}
+#endif
+
+	return file.inboxMessages
+}
+
+
+
+int function GetInboxMessagesCount()
+{
+	return file.inboxMessages.len()
+}
+
+
+
+void function AddInboxMessagesFromUM()
+{
+	entity player = GetLocalClientPlayer()
+	Assert( IsValid( player ) )
+
+	UMData um = EADP_UM_GetInboxData()
+
+	foreach ( UMAction action in um.actions )
+	{
+		GRXInboxMessage newMessage
+		newMessage.type = eInboxMessageType.MAKEGOOD
+		newMessage.trackingId = StringHash( action.trackingId )
+
+		if ( newMessage.trackingId in file.inboxUMRemovedMessages )
+		{
+#if DEV
+				GRX_Info( "Found already deleted UM message %d; skipping", newMessage.trackingId )
+#endif
+			continue
+		}
+
+		newMessage.timestamp = GetUnixTimestamp()
+		newMessage.hasRead = false
+		array< int > invalidGRXIndexActions = []
+
+		foreach ( UMItem item in action.items )
+		{
+			if ( item.name == "MAIN_TITLE_TEXT" )
+			{
+				newMessage.headerText = item.value
+			}
+			else if ( item.name == "MAIN_BODY_TEXT" )
+			{
+				newMessage.messageText = item.value
+			}
+			else if ( item.name == "Deeplink" )
+			{
+				newMessage.deeplink = item.value
+
+				foreach ( attr in item.attributes )
+				{
+					if ( attr.key == "Linktype" )
+					{
+						newMessage.deeplinkType = attr.value
+					}
+				}
+			}
+			else if ( item.name == "ImageRef" )
+			{
+				newMessage.imageName = item.value
+				newMessage.image = GetPromoImage( newMessage.imageName )
+			}
+			else if ( item.name == "GrxRefs" )
+			{
+				newMessage.grxRefs = GetTrimmedSplitString( item.value, "," )
+
+				
+				
+				foreach ( int index, string grxRef in newMessage.grxRefs )
+				{
+					if ( IsValidGRXRef( grxRef ) )
+					{
+						newMessage.container.itemIndices.append( GetGRXIndexByGRXRef( grxRef ) )
+					}
+					else
+					{
+						invalidGRXIndexActions.append( index )
+					}
+				}
+			}
+			else if ( item.name == "GrxQuantities" )
+			{
+				newMessage.grxQuantities = GetTrimmedSplitString( item.value, "," )
+
+				foreach ( string grxQuantity in newMessage.grxQuantities )
+				{
+					newMessage.container.itemCounts.append( grxQuantity.tointeger() )
+				}
+			}
+			else if ( item.name == "IsUrgent" )
+			{
+				newMessage.isUrgent = ( item.value == "true" )
+			}
+		}
+
+		if ( invalidGRXIndexActions.len() > 0 )
+		{
+			
+			if ( newMessage.container.itemIndices.len() == 0 )
+			{
+#if DEV
+					printf( "%s: dropped inbox message (%s) due to all GRX refs in message removed due to invalid lookup", FUNC_NAME(), newMessage.headerText )
+#endif
+
+				continue
+			}
+
+			
+			
+			invalidGRXIndexActions.reverse()
+			foreach ( int index in invalidGRXIndexActions )
+			{
+				newMessage.container.itemCounts.remove( index )
+			}
+		}
+
+		
+		if ( newMessage.container.itemIndices.len() != newMessage.container.itemCounts.len() )
+		{
+			Assert( false, format( "%s: mismatch between refs & quantities for message (%s)", FUNC_NAME(), newMessage.headerText ) )
+			continue
+		}
+
+		file.inboxMessages.append( newMessage )
+
+		file.inboxUMTrackingIdMap[ newMessage.trackingId ] <- action.trackingId
+	}
+}
+
+
+
+void function AddInboxMessagesFromGifts( entity player, array<GRXContainerInfo> messages )
+{
+	Assert( IsValid( player ) )
+
+	foreach ( GRXContainerInfo gift in messages )
+	{
+		GRXInboxMessage newMessage
+		newMessage.type = eInboxMessageType.GIFTING
+		newMessage.trackingId = StringHash( gift.containerId )
+		newMessage.timestamp = gift.timestamp
+
+		newMessage.headerText = Localize( "#INBOX_MESSAGE_GIFT_TITLE" ).toupper()
+		newMessage.messageText = Localize( "#INBOX_MESSAGE_GIFT_DESC_N", gift.senderName )
+#if DEV
+		
+		
+		newMessage.timestamp = GetUnixTimestamp()
+#endif
+
+		newMessage.hasRead = false
+
+		newMessage.container = gift
+
+		file.inboxMessages.append( newMessage )
+	}
+}
+
+
+
+void function AddInboxMessagesFromTwitchDrops( entity player, array< GRXContainerInfo > messages )
+{
+	Assert( IsValid( player ) )
+
+	foreach ( GRXContainerInfo drop in messages )
+	{
+		GRXInboxMessage newMessage
+		newMessage.type = eInboxMessageType.TWITCH_DROP
+		newMessage.trackingId = StringHash( drop.containerId )
+		newMessage.timestamp = drop.timestamp
+
+		newMessage.headerText = Localize( "#INBOX_TWITCH_DROP_TITLE" ).toupper()
+		newMessage.messageText = Localize( "#INBOX_TWITCH_DROP_DESC" )
+		newMessage.hasRead = false
+		newMessage.container = drop
+
+#if DEV
+			newMessage.timestamp = GetUnixTimestamp() 
+#endif
+
+		file.inboxMessages.append( newMessage )
+	}
+}
+
+
+
+void function AddInboxMessagesFromEntitlements( entity player, array< GRXContainerInfo > messages )
+{
+	Assert( IsValid( player ) )
+
+	foreach ( GRXContainerInfo message in messages )
+	{
+		GRXInboxMessage newMessage
+		newMessage.type = eInboxMessageType.FIRST_PARTY_ENTITLEMENT
+		newMessage.trackingId = StringHash( message.containerId )
+		newMessage.timestamp = message.timestamp
+
+		newMessage.headerText = Localize( "#PROMO_REWARDS_UNLOCKED" ).toupper()
+
+		if ( message.type == GRX_CONTAINERTYPE_NOTIFICATION_PSPLUS )
+		{
+			newMessage.messageText = Localize( "#INBOX_PLAYSTATION_REWARD_DESC" )
+		}
+		else if ( message.type == GRX_CONTAINERTYPE_NOTIFICATION_XBG )
+		{
+			newMessage.messageText = Localize( "#INBOX_XBOX_REWARD_DESC" )
+		}
+
+		newMessage.hasRead = false
+		newMessage.container = message
+
+#if DEV
+			newMessage.timestamp = GetUnixTimestamp()
+#endif
+
+		file.inboxMessages.append( newMessage )
+	}
+}
+
+
+
+void function AddInboxMessagesFromAnticheatNotification()
+{
+	CommunityUserInfo ornull userInfo = GetUserInfo( GetPlayerHardware(), GetPlayerUID() )
+	if ( userInfo == null )
+	{
+		return
+	}
+
+	expect CommunityUserInfo( userInfo )
+
+	if ( userInfo.reportedActions <= 0 )
+	{
+		return
+	}
+
+	entity player = GetLocalClientPlayer()
+
+	if ( player.GetPersistentVarAsInt( "anticheatLastReportedTimestamp" ) != userInfo.reportedTimestamp )
+	{
+		GRXInboxMessage newMessage
+		newMessage.type = eInboxMessageType.ANTICHEAT
+		newMessage.trackingId = StringHash( userInfo.reportedTimestamp.tostring() )
+		newMessage.timestamp = userInfo.reportedTimestamp
+		newMessage.hasRead = false
+
+		newMessage.anticheatCount = userInfo.reportedActions
+		newMessage.headerText = Localize( "#ANTICHEAT_REPORT_MESSAGING_HEADER" ).toupper()
+		newMessage.messageText = Localize( "#ANTICHEAT_REPORT_MESSAGING_DESCRIPTION", newMessage.anticheatCount )
+
+		file.inboxMessages.append( newMessage )
+	}
+}
+
+
+
+int function SortInboxMessagesByOldest( GRXInboxMessage a, GRXInboxMessage b )
+{
+	if ( a.timestamp < b.timestamp )
+	{
+		return 1
+	}
+	else if ( a.timestamp > b.timestamp )
+	{
+		return -1
+	}
+
+	
+	if ( a.trackingId < b.trackingId )
+	{
+		return 1
+	}
+	else if ( a.trackingId > b.trackingId )
+	{
+		return -1
+	}
+
+	return 0
+}
+
+
+
+void function UpdateInboxMessages( array< GRXContainerInfo > giftingContainers, array< GRXContainerInfo > twitchDropContainers, array< GRXContainerInfo > entitlementContainers )
+{
+	file.giftingMessages.clear()
+	AddGiftCacheMessages( giftingContainers )
+
+
+	ClearInboxMessages()
+
+	if ( Inbox_IsUMInboxEnabled() && IsPersistenceAvailable() )
+	{
+		entity player = GetLocalClientPlayer()
+		Assert( IsValid( player ) )
+
+		InitInboxPersistenceSlots()
+
+		AddInboxMessagesFromUM()
+		AddInboxMessagesFromGifts( player, giftingContainers )
+		AddInboxMessagesFromTwitchDrops( player, twitchDropContainers )
+		AddInboxMessagesFromEntitlements( player, entitlementContainers )
+		AddInboxMessagesFromAnticheatNotification()
+
+		ProcessInboxMessages( player )
+	}
+}
+
+
+
+void function UpdateInboxPersistence()
+{
+	if ( IsPersistenceAvailable() )
+	{
+		for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+		{
+			Remote_ServerCallFunction( "ClientCallback_UpdateInboxMessageInPersistence",
+				i,
+				file.inboxPersistenceSlots[i].id,
+				file.inboxPersistenceSlots[i].timestamp,
+				file.inboxPersistenceSlots[i].hasRead
+			)
+		}
+	}
+}
+
+
+
+int function GetNextAvailableInboxPersistenceIndex( table<int, bool> persistenceSlotInUse )
+{
+	entity player = GetLocalClientPlayer()
+
+	Assert( IsValid( player ) )
+
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		if ( i in persistenceSlotInUse && persistenceSlotInUse[i] == true )
+		{
+			continue
+		}
+
+		string id = string( player.GetPersistentVar( format( "%s[%i].id", INBOX_MESSAGE_PERSISTENCE_STRUCT, i ) ) )
+
+		if ( id.len() == 0 )
+		{
+			return i
+		}
+	}
+
+	return -1
+}
+
+
+
+void function InitInboxPersistenceSlots()
+{
+	if ( !IsPersistenceAvailable() )
+	{
+		return
+	}
+
+	file.inboxPersistenceSlots.clear()
+
+	entity player = GetLocalClientPlayer()
+
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		InboxPersistenceSlot newSlot
+		newSlot.id = string( player.GetPersistentVar( format( "%s[%d].id", INBOX_MESSAGE_PERSISTENCE_STRUCT, i ) ) ).tointeger()
+		newSlot.timestamp = player.GetPersistentVarAsInt( format( "%s[%d].timestamp", INBOX_MESSAGE_PERSISTENCE_STRUCT, i ) )
+		newSlot.hasRead = bool( player.GetPersistentVar( format( "%s[%d].hasRead", INBOX_MESSAGE_PERSISTENCE_STRUCT, i ) ) )
+
+		file.inboxPersistenceSlots.append( newSlot )
+	}
+
+	Assert( file.inboxPersistenceSlots.len() == INBOX_MAX_MESSAGE_COUNT )
+}
+
+
+
+void function ProcessInboxMessages( entity player )
+{
+	
+	for ( int pSlotIndex = 0; pSlotIndex < INBOX_MAX_MESSAGE_COUNT; ++pSlotIndex )
+	{
+		bool found = false;
+
+		for ( int i = 0; i < GetInboxMessagesCount(); ++i )
+		{
+			if ( file.inboxPersistenceSlots[pSlotIndex].id == file.inboxMessages[i].trackingId )
+			{
+				found = true
+			}
+		}
+
+		if ( !found )
+		{
+			file.inboxPersistenceSlots[pSlotIndex].id = 0
+			file.inboxPersistenceSlots[pSlotIndex].timestamp = 0
+			file.inboxPersistenceSlots[pSlotIndex].hasRead = false
+		}
+	}
+
+	
+	for ( int i = 0; i < GetInboxMessagesCount(); ++i )
+	{
+		for ( int pSlotIndex = 0; pSlotIndex < INBOX_MAX_MESSAGE_COUNT; ++pSlotIndex )
+		{
+			if ( file.inboxMessages[i].trackingId == file.inboxPersistenceSlots[pSlotIndex].id )
+			{
+				file.inboxMessages[i].hasRead = file.inboxPersistenceSlots[pSlotIndex].hasRead
+				file.inboxMessages[i].timestamp = file.inboxPersistenceSlots[pSlotIndex].timestamp
+			}
+		}
+
+		if ( file.inboxMessages[i].trackingId in file.oldInboxMessageHasReadMap )
+		{
+			file.inboxMessages[i].hasRead = true
+		}
+	}
+
+	
+	for ( int i = 0; i < file.inboxMessages.len(); ++i )
+	{
+		int timestamp = file.inboxMessages[i].timestamp
+		int expirationTimestamp = timestamp + SECONDS_PER_30_DAYS
+
+		if ( GetUnixTimestamp() > expirationTimestamp )
+		{
+			RemoveInboxMessage( file.inboxMessages[i] )
+		}
+	}
+
+	file.inboxMessages.sort( SortInboxMessagesByOldest )
+
+	
+	if ( GetInboxMessagesCount() > INBOX_MAX_MESSAGE_COUNT )
+	{
+		int offset = file.inboxMessages.len() - INBOX_MAX_MESSAGE_COUNT
+
+		for ( int i = 0; i < offset; ++i )
+		{
+			RemoveInboxMessage( file.inboxMessages[ INBOX_MAX_MESSAGE_COUNT ] )
+		}
+
+		file.inboxMessages.resize( INBOX_MAX_MESSAGE_COUNT ) 
+	}
+
+	
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		if ( i < file.inboxMessages.len() )
+		{
+			file.inboxPersistenceSlots[i].id        = file.inboxMessages[i].trackingId
+			file.inboxPersistenceSlots[i].hasRead   = file.inboxMessages[i].hasRead
+			file.inboxPersistenceSlots[i].timestamp = file.inboxMessages[i].timestamp
+		}
+		else
+		{
+			file.inboxPersistenceSlots[i].id = 0
+			file.inboxPersistenceSlots[i].hasRead = false
+			file.inboxPersistenceSlots[i].timestamp = 0
+		}
+	}
+
+	file.inboxMessages.sort( SortInboxMessagesByOldest )
+
+	UICodeCallback_InboxMessageReceived()
+}
+
+
+
+void function RemoveInboxMessage( GRXInboxMessage message )
+{
+	
+	if ( message.type == eInboxMessageType.MAKEGOOD )
+	{
+		string trackingId = file.inboxUMTrackingIdMap[ message.trackingId ]
+		Assert( trackingId != "" )
+		if ( trackingId == "" )
+		{
+#if DEV
+				GRX_Info( "Attempted to remove a UM message (id:%d, type:%d) which is not present in file.inboxUMTrackingIdMap", message.trackingId, message.type )
+#endif
+
+			return
+		}
+
+		file.inboxUMRemovedMessages[message.trackingId] <- true
+
+		PIN_UM_Message( message.headerText, trackingId, PIN_MESSAGE_TYPE_INBOX, ePINPromoMessageStatus.CONVERSION, 0 )
+	}
+	else if ( message.type == eInboxMessageType.GIFTING || message.type == eInboxMessageType.TWITCH_DROP || message.type == eInboxMessageType.FIRST_PARTY_ENTITLEMENT )
+	{
+		GRX_MarkContainerAsSeen( message.container )
+	}
+	else if ( message.type == eInboxMessageType.ANTICHEAT )
+	{
+		Remote_ServerCallFunction( "ClientCallback_SetAnticheatLastReportedTimestamp", message.timestamp )
+	}
+
+	
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		if ( file.inboxPersistenceSlots[i].id == message.trackingId )
+		{
+			file.inboxPersistenceSlots[i].id = 0
+			file.inboxPersistenceSlots[i].timestamp = 0
+			file.inboxPersistenceSlots[i].hasRead = false
+			break
+		}
+	}
+
+	
+	for ( int i = 0; i < file.inboxMessages.len(); ++i )
+	{
+		if ( file.inboxMessages[i].trackingId == message.trackingId )
+		{
+			file.inboxMessages.fastremove( i )
+			break
+		}
+	}
+
+	file.inboxMessages.sort( SortInboxMessagesByOldest )
+
+	UICodeCallback_InboxMessageUpdated()
+}
+
+
+
+void function ClearInboxMessages()
+{
+	file.oldInboxMessageHasReadMap.clear()
+
+	for( int i = 0; i < file.inboxMessages.len(); ++i )
+	{
+		GRXInboxMessage message = file.inboxMessages[i]
+
+		if ( message.hasRead )
+		{
+			file.oldInboxMessageHasReadMap[ message.trackingId ] <- message.hasRead
+		}
+	}
+
+	file.inboxMessages.clear()
+}
+
+
+
+void function MarkInboxMessageAsRead( GRXInboxMessage message )
+{
+	bool found = false
+
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		if ( message.trackingId == file.inboxPersistenceSlots[i].id )
+		{
+			found = true
+			file.inboxPersistenceSlots[i].hasRead = true
+		}
+	}
+
+#if DEV
+		if ( !found )
+		{
+			GRX_Info( "Attempted to get a message (id:%d) which is not present in file.inboxPersistenceSlots", message.trackingId )
+		}
+#endif
+
+	message.hasRead = true
+	UICodeCallback_InboxMessageUpdated()
+}
+
+
+
+void function MarkInboxAllMessagesAsRead()
+{
+	for ( int i = 0; i < file.inboxMessages.len(); i++ )
+	{
+		if ( file.inboxMessages[ i ].hasRead == false )
+		{
+			MarkInboxMessageAsRead( file.inboxMessages[ i ] )
+		}
+	}
+}
+
+
+
+GRXInboxMessage ornull function GetInboxMessageFromTrackingID( int trackingID )
+{
+	for ( int i = 0; i < file.inboxMessages.len(); i++ )
+	{
+		if ( file.inboxMessages[ i ].trackingId == trackingID )
+			return file.inboxMessages[ i ]
+	}
+
+	return null
+}
+
+
+
+void function AddCallback_OnInboxMessageUpdated( void functionref() callback )
+{
+	Assert( !file.onInboxMessageUpdated.contains( callback ), "Already added " + string( callback ) + " with AddCallback_OnInboxMessageUpdated" )
+
+	file.onInboxMessageUpdated.append( callback )
+}
+
+
+
+void function RemoveCallback_OnInboxMessageUpdated( void functionref() callback )
+{
+	Assert( file.onInboxMessageUpdated.contains( callback ), "No function with name " + string( callback ) + " was found in RemoveCallback_OnInboxMessageUpdated" )
+	file.onInboxMessageUpdated.fastremovebyvalue( callback )
+}
+
+
+
+void function UICodeCallback_InboxMessageUpdated()
+{
+	foreach ( void functionref() callback in file.onInboxMessageUpdated )
+	{
+		callback()
+	}
+}
+
+
+
+void function AddCallback_OnInboxMessageReceived( void functionref() callback )
+{
+	Assert( !file.onInboxMessageReceived.contains( callback ), "Already added " + string( callback ) + " with AddCallback_OnInboxMessageReceived" )
+
+	file.onInboxMessageReceived.append( callback )
+}
+
+
+
+void function RemoveCallback_OnInboxMessageReceived( void functionref() callback )
+{
+	Assert( file.onInboxMessageReceived.contains( callback ), "No function with name " + string( callback ) + " was found in RemoveCallback_OnInboxMessageUpdated" )
+	file.onInboxMessageReceived.fastremovebyvalue( callback )
+}
+
+
+
+void function UICodeCallback_InboxMessageReceived()
+{
+	foreach ( void functionref() callback in file.onInboxMessageReceived )
+	{
+		callback()
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if DEV
+void function DEV_PrintGiftingInboxMessages()
+{
+	printt("Printing gifting inbox messages ---------------")
+	for ( int idx = 0; idx < file.giftingMessages.len(); ++idx )
+	{
+		printt( "Gift #" + ( idx + 1 ) )
+		printt( "\tisNew = " + file.giftingMessages[idx].isNew )
+		printt( "\ttimestamp = " + file.giftingMessages[idx].timestamp )
+		printt( "\tsenderNucleusPid = " + file.giftingMessages[idx].senderNucleusPid )
+
+		if ( file.giftingMessages[idx].itemIndices.len() == file.giftingMessages[idx].itemCounts.len() )
+		{
+			for ( int itemIdx = 0; itemIdx < file.giftingMessages[idx].itemIndices.len(); ++itemIdx )
+			{
+				printt( "\t\titemIndex = " + file.giftingMessages[idx].itemIndices[itemIdx] + ", itemCount = " + file.giftingMessages[idx].itemCounts[itemIdx] )
+			}
+		}
+	}
+	printt("End of gifts ---------------")
+}
+#endif
+
+#if DEV
+void function DEV_PrintInboxMessages( bool showPersistence = true )
+{
+	entity player = GetLocalClientPlayer()
+
+	for ( int i = 0; i < GetInboxMessagesCount(); ++i )
+	{
+		GRXInboxMessage msg = file.inboxMessages[i]
+
+		printt( "Inbox #" + ( i + 1 ) )
+		printt( "\t Type = " + GetEnumString( "eInboxMessageType", msg.type ) )
+		printt( "\t ID = " + msg.trackingId )
+		printt( "\t Timestamp = " + msg.timestamp )
+		printt( "\t hasRead = " + msg.hasRead )
+		printt( "\t isUrgent = " + msg.isUrgent )
+
+		if ( msg.type == eInboxMessageType.ANTICHEAT )
+		{
+			printt( "\t anticheat count = " + msg.anticheatCount )
+		}
+		else if ( msg.type == eInboxMessageType.GIFTING )
+		{
+			printt( "\t container items:" )
+
+			foreach ( int itemIdx in file.inboxMessages[i].container.itemIndices )
+			{
+				printt( "\t\t itemIndex : " + itemIdx )
+			}
+		}
+	}
+
+	if ( showPersistence )
+	{
+		DEV_PrintInboxPersistenceSlots()
+	}
+}
+#endif
+
+#if DEV
+void function DEV_PrintInboxPersistenceSlots()
+{
+	for ( int i = 0; i < INBOX_MAX_MESSAGE_COUNT; ++i )
+	{
+		printt( "Persistence Slot #" + i )
+		printt( "\t Tracking ID       = " + file.inboxPersistenceSlots[i].id )
+		printt( "\t Timestamp         = " + file.inboxPersistenceSlots[i].timestamp )
+		printt( "\t Read              = " + file.inboxPersistenceSlots[i].hasRead )
+	}
+}
+#endif
+
+#if DEV
+void function DEV_SortInboxMessages()
+{
+	file.inboxMessages.sort( SortInboxMessagesByOldest )
+}
+#endif
+
+#if DEV
+array<GRXInboxMessage> function DEV_GetDummyInboxMessages()
+{
+	array<GRXInboxMessage> dummyMessages = []
+	int numMessages = RandomIntRangeInclusive( 0, INBOX_MAX_MESSAGE_COUNT )
+	for ( int i = 0; i < numMessages; i++ )
+	{
+		GRXInboxMessage dummy
+		dummy.type = RandomIntRangeInclusive( 1, 3 )
+		dummy.hasRead = bool( RandomInt( 2 ) )
+		dummy.timestamp = GetUnixTimestamp() - ( RandomIntRange( i, 30 ) * SECONDS_PER_DAY )
+		dummy.image = $"rui/menu/buttons/lobby_character_select/loba"
+		dummy.imageName = "Loba"
+		dummy.hasRead = bool(RandomInt( 2 ))
+		dummy.isUrgent = bool(RandomInt( 2 ))
+
+		if ( bool( RandomInt( 2 ) ) )
+		{
+			dummy.messageText = "Really long text that I'm totally aware is a lot of text, we just need to be able to read in a lot of lines. Have I mentioned that this can have multiple lines? I really need a bit more lines here, I can't really have just one block of text, it needs to be one more, so it makes sense to have a scroll in our message area. It's impressive how we need to add so much text so players can really understand the message we're trying to pass. Maybe this will have legal text in here, so it all breaks down to lists and probabilities and legal blurb.\n\n Maybe I can even break a few lines here to make sure we're getting a proper message. Yeah, this line can be a second line if I extend a bit more this text. I know I'm using a lot of filler words here, though.\n\nAnd also I'll put a signature here too, because we usually sign our emails. And Let's add one more signature little text here too, it doesn't hurt.\n\nApex Team"
+		}
+		else
+		{
+			dummy.messageText = "Not so long text that I'm totally aware is a lot of text, we just need to be able to read in a lot of lines.\n\nAnd also I'll put a signature here too, because we usually sign our emails.\n\nApex Team"
+		}
+
+		switch( dummy.type )
+		{
+			case eInboxMessageType.GIFTING:
+				dummy.headerText = "Gifts Received"
+				array<int> guids = []
+				if ( bool( RandomInt( 2 ) ) )
+				{
+					guids = [ 986185028, 1283448225, 1635872980, 168830421, 1991092045, 1477443402, 595203580 ]
+				}
+				else
+				{
+					guids = [ 986185028 ]
+				}
+
+				foreach ( guid in guids )
+				{
+					ItemFlavor itemFlav = GetItemFlavorByGUID( guid )
+					dummy.container.itemIndices.push( ItemFlavor_GetGRXIndex( itemFlav ) )
+					dummy.container.itemCounts.push( 1 )
+				}
+				break
+			case eInboxMessageType.ANTICHEAT:
+				dummy.headerText = "Report Update"
+				break
+			case eInboxMessageType.MAKEGOOD:
+				dummy.headerText = bool( RandomInt( 2 ) ) ? "Twitch Drop" : "Urgent Message"
+				break
+		}
+
+		if ( bool(RandomInt( 2 )) )
+		{
+			dummy.deeplinkType = "battlepass_purchase_ultimate_plus"
+			dummy.deeplink = "BP Ultimate"
+		}
+
+		dummyMessages.append( dummy )
+	}
+
+	dummyMessages.sort( SortInboxMessagesByOldest )
+
+	return dummyMessages
+}
+#endif

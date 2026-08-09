@@ -1,0 +1,353 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function SurvivalLootBrands_InitShared
+global function SurvivalLootBrands_GetLootBrandFromAssetCache
+global function SurvivalLootBrands_GetBrandForLootData
+
+
+
+
+
+const asset LOOT_BRANDS_LIST_ASSET = $"settings/uidata/loot_brands_list.rpak"
+const asset WEAPON_ATTACHMENTS_DATATABLE = $"datatable/survival_weapon_mods.rpak"
+
+global enum eLootBrandImageAnchorBehavior
+{
+	TOP_PINCH,
+	BOTTOM_PINCH,
+	STRETCH
+}
+
+global struct LootBrand
+{
+	asset baseAsset									= $""	
+	string playlistOverrideIdentifier 				= ""	
+
+	asset lootHintImage								= $""	
+	int lootHintAnchoring							= eLootBrandImageAnchorBehavior.TOP_PINCH
+
+	bool applyColorFromItemQuality                  = false
+
+	asset weaponHudImage							= $""	
+	asset inventoryImage							= $""	
+	asset brandLogoImage							= $""	
+	asset deathBoxImage                 			= $""   
+	asset weaponToastImage							= $"" 	
+}
+
+struct
+{
+	table< asset, LootBrand > brandAssetToLootBrands	
+	table< string, asset > modToLootBrandAsset			
+} file
+
+void function SurvivalLootBrands_InitShared()
+{
+	SurvivalLootBrands_LoadBrandData()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________POPULATE_CACHE_FROM_BAKERY_ASSET___________________________(){}
+#endif
+
+void function SurvivalLootBrands_LoadBrandData()
+{
+	file.brandAssetToLootBrands.clear()
+	file.modToLootBrandAsset.clear()
+
+	SurvivalLootBrands_Bakery_PopulateBrandCacheFromBrandList( LOOT_BRANDS_LIST_ASSET )
+	SurvivalLootBrands_Mods_BuildModToBrandMappings( WEAPON_ATTACHMENTS_DATATABLE )
+}
+
+void function SurvivalLootBrands_Bakery_PopulateBrandCacheFromBrandList( asset lootBrandsListAsset )
+{
+	var lootBrandsListSettings = GetSettingsBlockForAsset( lootBrandsListAsset )
+
+	if ( lootBrandsListSettings == null )
+		return
+
+	var lootBrandsArray = GetSettingsBlockArray( lootBrandsListSettings, "lootBrands" )
+	if ( lootBrandsArray != null )
+	{
+		foreach ( var lootBrandBlock in IterateSettingsArray( lootBrandsArray ) )
+		{
+			asset lootBrandAsset = GetSettingsBlockAsset( lootBrandBlock, "lootBrandAsset" )
+			string playlistOverrideIdentifier = GetSettingsBlockString( lootBrandBlock, "playlistOverrideIdentifier" )
+
+			Assert( lootBrandAsset != $"", format( "Encountered a null Loot Brand asset when loading Loot Brand data. Ensure all Loot Brands in %s are valid and not null. If seeing this locally, make sure you've fully baked.", string( lootBrandsListAsset ) ) )
+			Assert( playlistOverrideIdentifier != "", format( "No Playlist Override Identifier was supplied for brand asset %s. In order to support playlist overrides, this value cannot be empty. If seeing this locally, make sure you've fully baked and that 'uidata/loot_brands_list' has a Playlist Override Identifier for your Loot Brand.", string( lootBrandAsset ) ) )
+
+			LootBrand brand = SurvivalLootBrands_Bakery_BuildLootBrandFromBrandAsset( playlistOverrideIdentifier, lootBrandAsset )
+
+			file.brandAssetToLootBrands[ lootBrandAsset ] <- brand
+		}
+	}
+}
+
+LootBrand function SurvivalLootBrands_Bakery_BuildLootBrandFromBrandAsset( string playlistOverrideIdentifier, asset lootBrandAsset )
+{
+	var settingsBlock = GetSettingsBlockForAsset( lootBrandAsset )
+
+	LootBrand brand
+	brand.baseAsset						= lootBrandAsset
+	brand.playlistOverrideIdentifier 	= playlistOverrideIdentifier
+	brand.brandLogoImage 				= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "brandLogoImage" )
+	brand.lootHintImage 				= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "lootHintImage" )
+	brand.applyColorFromItemQuality     = SurvivalLootBrands_Bakery_GetBoolField( playlistOverrideIdentifier, settingsBlock, "applyColorFromItemQuality" )
+	brand.lootHintAnchoring				= eLootBrandImageAnchorBehavior[SurvivalLootBrands_Bakery_GetStringField( playlistOverrideIdentifier, settingsBlock, "lootHintAnchorBehavior" )]
+	brand.inventoryImage 				= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "weaponInventoryImage" )
+	brand.weaponHudImage 				= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "weaponHudImage" )
+	brand.deathBoxImage            		= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "weaponDeathBoxImage" )
+	brand.weaponToastImage				= SurvivalLootBrands_Bakery_GetAssetField( playlistOverrideIdentifier, settingsBlock, "weaponToastImage" )
+
+	return brand
+}
+
+asset function SurvivalLootBrands_Bakery_GetAssetField( string playlistOverrideIdentifier, var settingsBlock, string fieldName )
+{
+	asset settingsAsset = GetSettingsBlockAsset( settingsBlock, fieldName )
+	return SurvivalLootBrands_Bakery_GetPlaylistOverridesForAssetField( playlistOverrideIdentifier, fieldName, settingsAsset )
+}
+
+asset function SurvivalLootBrands_Bakery_GetPlaylistOverridesForAssetField( string playlistOverrideIdentifier, string fieldName, asset defaultValue )
+{
+	string playlistVarName = ( playlistOverrideIdentifier + "_brandoverride_" + fieldName )
+	string assetRaw = GetCurrentPlaylistVarString( playlistVarName, "" )
+	if ( assetRaw.len() == 0 )
+		return defaultValue
+
+	return CastStringToAsset( assetRaw )
+}
+
+bool function SurvivalLootBrands_Bakery_GetBoolField( string playlistOverrideIdentifier, var settingsBlock, string fieldName )
+{
+	bool settingsBool = GetSettingsBlockBool( settingsBlock, fieldName )
+	return SurvivalLootBrands_Bakery_GetPlaylistOverridesForBoolField( playlistOverrideIdentifier, fieldName, settingsBool )
+}
+
+bool function SurvivalLootBrands_Bakery_GetPlaylistOverridesForBoolField( string playlistOverrideIdentifier, string fieldName, bool defaultValue )
+{
+	string playlistVarName = ( playlistOverrideIdentifier + "_brandoverride_" + fieldName )
+	return GetCurrentPlaylistVarBool( playlistVarName, defaultValue )
+}
+
+string function SurvivalLootBrands_Bakery_GetStringField( string playlistOverrideIdentifier, var settingsBlock, string fieldName )
+{
+	string settingsString = GetSettingsBlockString( settingsBlock, fieldName )
+	return SurvivalLootBrands_Bakery_GetPlaylistOverridesForStringField( playlistOverrideIdentifier, fieldName, settingsString )
+}
+
+string function SurvivalLootBrands_Bakery_GetPlaylistOverridesForStringField( string playlistOverrideIdentifier, string fieldName, string defaultValue )
+{
+	string playlistVarName = ( playlistOverrideIdentifier + "_brandoverride_" + fieldName )
+	return GetCurrentPlaylistVarString( playlistVarName, defaultValue )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________POPULATE_MOD_MAPPINGS_TABLE___________________________(){}
+#endif
+
+void function SurvivalLootBrands_Mods_BuildModToBrandMappings( asset modsDataTable )
+{
+	
+	var modsTable = GetDataTable( modsDataTable )
+	int numRows = GetDataTableRowCount( modsTable )
+
+	int col_modRef = GetDataTableColumnByName( modsTable, "mod" )
+
+	for ( int i = 0; i < numRows; i++ )
+	{
+		string modRef = GetDataTableString( modsTable, i, col_modRef )
+		asset brandAsset = Playlist_GetDataTableAssetNoPrecache( modRef, modsTable, i, "brandAsset", "_modoverride_" )
+
+		if ( brandAsset == $"" )
+			continue
+
+		
+		LootBrand ornull cachedBrand = SurvivalLootBrands_GetLootBrandFromAssetCache( brandAsset )
+
+		if ( cachedBrand == null )
+			continue
+
+		expect LootBrand( cachedBrand )
+
+		Assert( !( modRef in file.modToLootBrandAsset ), format( "Survival Loot Brands - Tried to add duplicate mod entry %s to the weaponModToLootBrandAssetString cache.", modRef ) )
+
+		file.modToLootBrandAsset[ modRef ] <- brandAsset
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________LOOT_BRANDS_RUNTIME_HELPERS___________________________(){}
+#endif
+
+LootBrand ornull function SurvivalLootBrands_GetLootBrandFromAssetCache( asset lootBrandAsset )
+{
+	if ( !( lootBrandAsset in file.brandAssetToLootBrands ) )
+		return null
+
+	return file.brandAssetToLootBrands[ lootBrandAsset ]
+}
+
+LootBrand ornull function SurvivalLootBrands_GetBrandForLootData( LootData lootData )
+{
+	LootBrand ornull lootBrand
+
+	
+	lootBrand = SurvivalLootBrands_GetBrandFromBaseMods( lootData )
+
+	if ( lootBrand != null )
+		return lootBrand
+
+	
+	lootBrand = SurvivalLootBrands_GetLootBrandFromAssetCache( lootData.brandAsset )
+
+	return lootBrand
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LootBrand ornull function SurvivalLootBrands_GetBrandFromBaseMods( LootData lootData )
+{
+	if ( lootData.baseMods.len() == 0 )
+		return null
+
+	foreach ( mod, brandAsset in file.modToLootBrandAsset )
+	{
+		if ( lootData.baseMods.contains( mod ) )
+		{
+			return SurvivalLootBrands_GetLootBrandFromAssetCache( brandAsset )
+		}
+	}
+
+	return null
+}

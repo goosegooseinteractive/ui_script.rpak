@@ -1,0 +1,139 @@
+global function RTKRankedRumbleWeekTimer_OnInitialize
+global function RTKRankedRumbleWeekTimer_OnDestroy
+
+global struct RTKRankedRumbleWeekTimerInfo
+{
+	int weekNumber
+	int endTime
+	int state
+	string title
+	string timerFormat
+}
+
+void function RTKRankedRumbleWeekTimer_OnInitialize( rtk_behavior self )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleWeekTimerInfo", "RTKRankedRumbleWeekTimerInfo" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "rankedRumbleWeekTimerInfo", true ) )
+
+	if ( Cups_IsInitialized() )
+	{
+		thread RTKRankedRumbleWeekTimer_InitializeScreen( self )
+	}
+}
+
+void function RTKRankedRumbleWeekTimer_InitializeScreen( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleWeekTimerInfo", "RTKRankedRumbleWeekTimerInfo" )
+	RTKStruct_SetValue( panelStruct, RTKRankedRumbleWeekTimer_GetWeekTimerInfo() )
+}
+
+
+void function RTKRankedRumbleWeekTimer_OnDestroy( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "rankedRumbleOverviewInfo" )
+}
+
+RTKRankedRumbleWeekTimerInfo function RTKRankedRumbleWeekTimer_GetWeekTimerInfo()
+{
+	int rankedRumbleState = RankedEvent_GetRumbleRankedState()
+	string title = ""
+	string timerFormat = ""
+
+	switch ( rankedRumbleState )
+	{
+		case eRankedRumbleState.INACTIVE:
+			title = "#RANKED_RUMBLE_INACTIVE_TITLE"
+			break
+
+		case eRankedRumbleState.COMING_SOON:
+			title = "#RANKED_RUMBLE_STARTS"
+			timerFormat = "#TIME_REMAINING_SHORT_CLOCK"
+			break
+
+		case eRankedRumbleState.LOCKED:
+			title = "#RANKED_RUMBLE_LOCKED"
+			break
+
+		case eRankedRumbleState.ACTIVE:
+			title = "#RANKED_RUMBLE_ACTIVE"
+			timerFormat = "#TIME_REMAINING_SHORT_CLOCK"
+			break
+
+		case eRankedRumbleState.FINISH:
+			title = "#RANKED_RUMBLE_ENDED"
+			timerFormat = "#RANKED_RUMBLE_NEXT_LADDER_IN"
+			break
+
+		case eRankedRumbleState.CROSSPLAY_DISABLED:
+			title = "#RANKED_RUMBLE_LOCKED"
+			break
+
+		default:
+			break
+	}
+
+	int endTime
+	switch( rankedRumbleState )
+	{
+		case eRankedRumbleState.INACTIVE:
+			CupBakeryAssetData ornull nextRankedEvent = RankedEvent_GetNextRevealedCup( GetLocalClientPlayer() )
+			timerFormat = ""
+
+			if ( nextRankedEvent != null )
+			{
+				timerFormat = "#RANKED_RUMBLE_NEXT_LADDER_IN"
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( nextRankedEvent ) )
+			}
+			break
+
+		case eRankedRumbleState.FINISH:
+			CupBakeryAssetData ornull nextRankedEvent = RankedEvent_GetNextRevealedCup( GetLocalClientPlayer() )
+			if ( nextRankedEvent != null )
+			{
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( nextRankedEvent ) )
+			}
+			else
+			{
+				timerFormat = "#RANKED_RUMBLE_FINISH_SEASON"
+				ItemFlavor ornull rankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+				if ( rankedPeriod != null )
+				{
+					if ( Ranked_IsRankedV2FirstSplit( expect ItemFlavor( rankedPeriod ) ) )
+					{
+						timerFormat = "#RANKED_RUMBLE_FINISH_SPLIT"
+					}
+				}
+			}
+			break
+
+		case eRankedRumbleState.COMING_SOON:
+			CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+			if ( rankedEvent != null )
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+			break
+
+		default:
+			CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+			if ( rankedEvent != null )
+				endTime = Cups_GetFinishUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+			break
+	}
+
+	RTKRankedRumbleWeekTimerInfo weekTimerInfo
+	weekTimerInfo.title = title
+	weekTimerInfo.endTime = endTime - 1 
+	weekTimerInfo.state = rankedRumbleState
+	weekTimerInfo.timerFormat = timerFormat
+	CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+	if ( rankedEvent != null )
+	{
+		expect CupBakeryAssetData( rankedEvent )
+		weekTimerInfo.weekNumber = rankedEvent.eventIndex + 1
+	}
+
+	return weekTimerInfo
+}

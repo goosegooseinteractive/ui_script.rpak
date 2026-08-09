@@ -1,0 +1,95 @@
+global function RTKSelectableButtonContainer_OnInitialize
+global function RTKSelectableButtonContainer_UpdateSelectedButton
+
+global struct RTKSelectableButtonContainer_Properties
+{
+	int initialButton = 0
+}
+
+void function RTKSelectableButtonContainer_OnInitialize( rtk_behavior self )
+{
+
+	rtk_panel panel = self.GetPanel()
+	self.AutoSubscribe( panel, "onChildAdded", function ( rtk_panel p0, int p1 ) : ( self )
+	{
+		rtk_behavior addedSelectableButton = p0.FindBehaviorByTypeName( "SelectableButton" )
+		RTKSelectableButton_SetOnSelectedCallbackFunc( addedSelectableButton, void function( int buttonIndex ) : ( self )
+		{
+			RTKSelectableButtonContainer_UpdateSelectedButton( self, buttonIndex )
+		})
+
+		RTKSelectableButton_SetOnHighlightedCallbackFunc( addedSelectableButton, void function( int buttonIndex ) : ( self )
+		{
+			RTKSelectableButtonContainer_UpdateHighlightedButton( self, buttonIndex )
+		})
+
+		RTKSelectableButton_SetOnIdleCallbackFunc( addedSelectableButton, void function( int buttonIndex ) : ( self )
+		{
+			RTKSelectableButtonContainer_UpdateIdleButton( self, buttonIndex )
+		})
+
+		RTKSelectableButton_SetOnSiblingIndexChangedCallbackFunc( addedSelectableButton.GetPanel(),  void function( int prevIndex, int newIndex ) : ( addedSelectableButton )
+		{
+			int buttonIndex = RTKStruct_GetDataIndex( addedSelectableButton.GetPanel().GetProperties(), -1 )
+			if ( buttonIndex >= 0 )
+				RTKSelectableButton_UpdateIndex( addedSelectableButton, buttonIndex )
+		})
+
+		
+		int initialButton = self.PropGetInt( "initialButton" )
+		array<rtk_panel> packSelectionButtons = self.GetPanel().GetChildren()
+		int buttonCount = packSelectionButtons.len()
+		for ( int i = 0; i < buttonCount; i++ )
+		{
+			rtk_panel packSelectionButton = packSelectionButtons[i]
+			int index = RTKStruct_GetDataIndex( packSelectionButton.GetProperties(), i )
+			rtk_behavior currentSelectableButton = packSelectionButton.FindBehaviorByTypeName( "SelectableButton" )
+			bool selected = index == initialButton || i == initialButton
+			RTKSelectableButton_UpdateIndex( currentSelectableButton, index )
+			RTKSelectableButton_SetSelected( currentSelectableButton, selected )
+		}
+	} )
+}
+
+void function RTKSelectableButtonContainer_UpdateSelectedButton( rtk_behavior self, int selectedIndex )
+{
+	array<rtk_panel> selectionButtons = self.GetPanel().GetChildren()
+	int buttonCount = selectionButtons.len()
+	for ( int i = 0; i < buttonCount; i++ )
+	{
+		rtk_panel button = selectionButtons[i]
+		int index = RTKStruct_GetDataIndex( button.GetProperties(), i )
+		rtk_behavior selectableButton = button.FindBehaviorByTypeName( "SelectableButton" )
+		bool selected = index == selectedIndex
+		RTKSelectableButton_SetSelected( selectableButton, selected )
+	}
+}
+
+void function RTKSelectableButtonContainer_UpdateHighlightedButton( rtk_behavior self, int highlightedIndex )
+{
+	array<rtk_panel> highlightedButtons = self.GetPanel().GetChildren()
+	int buttonCount = highlightedButtons.len()
+	for ( int i = 0; i < buttonCount; i++ )
+	{
+		rtk_panel button = highlightedButtons[i]
+		int index = RTKStruct_GetDataIndex( button.GetProperties(), i )
+		rtk_behavior highlightedButton = button.FindBehaviorByTypeName( "SelectableButton" )
+		bool highlighted = index == highlightedIndex
+		RTKSelectableButton_SetHighlighted( highlightedButton, highlighted )
+	}
+}
+
+
+void function RTKSelectableButtonContainer_UpdateIdleButton( rtk_behavior self, int idleIndex )
+{
+	array<rtk_panel> idleButtons = self.GetPanel().GetChildren()
+	int buttonCount = idleButtons.len()
+	for ( int i = 0; i < buttonCount; i++ )
+	{
+		rtk_panel button = idleButtons[i]
+		int index = RTKStruct_GetDataIndex( button.GetProperties(), i )
+		rtk_behavior idleButton = button.FindBehaviorByTypeName( "SelectableButton" )
+		bool idle = index == idleIndex
+		RTKSelectableButton_SetIdle( idleButton, idle )
+	}
+}

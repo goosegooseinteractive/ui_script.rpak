@@ -1,0 +1,271 @@
+global function RTKProgressionTrayButton_OnInitialize
+global function RTKProgressionTrayButton_OnPreDestroy
+global function RTKProgressionTrayButton_InitMetaData
+
+global function RTKProgressTrayButton_GetItemAssetHeight
+global function RTKProgressTrayButton_GetItemAssetWidth
+global function RTKProgressionTrayButton_GetNextPassRewardDataModel
+global function RTKProgressionTrayButton_GetBattlePassBadgeDataModel
+global function RTKProgresionTrayButton_UpdateBindPath
+global function RTKProgressTrayButton_GetLatestPage
+global function RTKProgressTrayButton_SetLatestPage
+
+global struct RTKProgressionTrayButton_Properties
+{
+	rtk_behavior buttonBehavior
+
+	string genericPanelFullPath
+	string pathToPage
+}
+
+global struct RTKProgressionTrayButtonModel
+{
+	RTKBadgeModel& badgeLeft
+	asset rewardIconLeft
+	string rewardStringLeft
+
+	RTKBattlepassTrackItemStruct& rewardRight
+	RTKBadgeModel& badgeRight
+	asset rewardIconRight
+	int rewardQuantityRight
+	int mythicTierRight = -1
+
+	int currentProgress
+	int maxProgress
+}
+
+struct PrivateData
+{
+	void functionref() OnTileUpdate
+}
+
+struct
+{
+	rtk_behavior ornull rtkBehavior
+	int lastPage = 0
+}file
+
+void function RTKProgressionTrayButton_InitMetaData( string behaviorType, string structType )
+{
+	if ( !IsProgressionTrayEnabled() )
+		return
+
+	RegisterSignal( "KillProgressionTrayButtonThreads" )
+
+	AddCallback_OnChallengeTileAdded( RTKProgressionTray_UpdateModel )
+	AddCallback_OnUpdateFavoriteChallenge( RTKProgressionTray_UpdateModel )
+}
+
+void function RTKProgressionTrayButton_OnInitialize( rtk_behavior self )
+{
+	if ( !IsProgressionTrayEnabled() )
+		return
+
+	file.rtkBehavior = null
+	RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+	RTKProgresionTrayButton_UpdateBindPath()
+
+	thread function() : ( self )
+	{
+		Signal( uiGlobal.signalDummy, "KillProgressionTrayButtonThreads" )
+		EndSignal( uiGlobal.signalDummy, "KillProgressionTrayButtonThreads" )
+		while ( !IsFullyConnected() || !GRX_IsInventoryReady() )
+			WaitFrame()
+
+		waitthread WaitForLocalClientEHI()
+
+		file.rtkBehavior = self
+		RTKProgressionTrayButton_SetUpOnClick( self )
+		RTKProgresionTrayButton_UpdateBindPath( file.lastPage )
+		AddCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), Loadout_Character(), RTKProgressionTrayButton_UpdateOnCharacterChange )
+	}()
+}
+
+void function RTKProgressionTrayButton_UpdateOnCharacterChange( EHI playerEHI, ItemFlavor flav )
+{
+	thread function() : ()
+	{
+		Signal( uiGlobal.signalDummy, "KillProgressionTrayButtonThreads" )
+		EndSignal( uiGlobal.signalDummy, "KillProgressionTrayButtonThreads" )
+
+		waitthread WaitForLocalClientEHI()
+		RTKProgressionTray_UpdateModel()
+		RTKProgresionTrayButton_UpdateBindPath( file.lastPage )
+	}()
+}
+
+void function RTKProgresionTrayButton_UpdateBindPath( int pageIndex = 0 )
+{
+	if ( file.rtkBehavior == null )
+		return
+
+	rtk_behavior self = expect rtk_behavior( file.rtkBehavior )
+	string modelPath = "&common.progressionTray.pages[" + pageIndex + "].trayButton"
+	self.GetPanel().SetBindingRootPath( modelPath )
+}
+
+void function RTKProgressionTrayButton_OnPreDestroy( rtk_behavior self )
+{
+	if ( !IsProgressionTrayEnabled() )
+		return
+
+	Signal( uiGlobal.signalDummy, "KillProgressionTrayButtonThreads" )
+	if ( file.rtkBehavior == null )
+		return
+
+	file.rtkBehavior = null
+	RemoveCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), Loadout_Character(), RTKProgressionTrayButton_UpdateOnCharacterChange )
+}
+
+void function RTKProgressionTrayButton_SetUpOnClick( rtk_behavior self )
+{
+	rtk_behavior ornull button = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : () {
+		if ( IsDialog( GetActiveMenu() ) )
+			return
+
+		var storePanel = GetPanel( "StorePanel" )
+		if ( IsPanelActive( storePanel ) )
+			return
+
+		bool isOpen = IsProgressionTrayOpen()
+		if ( isOpen )
+			CloseProgressionTray()
+		else
+			OpenProgressionTray()
+	} )
+}
+
+bool function RTKProgressionTrayButton_CanOpen()
+{
+	var storePanel = GetPanel( "StorePanel" )
+	return !IsPanelActive( storePanel )
+}
+
+void function RTKProgressionTrayButton_Toggle()
+{
+	bool isOpen = IsProgressionTrayOpen()
+
+	if ( isOpen )
+		CloseProgressionTray()
+	else
+		OpenProgressionTray()
+}
+
+RTKBadgeModel function RTKProgressionTrayButton_GetBattlePassBadgeDataModel()
+{
+	RTKBadgeModel model
+
+	ItemFlavor ornull currentPassFlav = GetActiveBattlePassV2()
+	if ( currentPassFlav == null )
+		return model
+
+	expect ItemFlavor( currentPassFlav )
+
+	entity player = GetLocalClientPlayer()
+	ItemFlavor bpLevelBadge = GetBattlePassProgressBadge( currentPassFlav )
+	int battlePassXP        = GetPlayerBattlePassXPProgress( ToEHI( player ), currentPassFlav )
+	int battlePassLevel     = GetBattlePassLevelForXP( currentPassFlav, battlePassXP ) + 1
+
+	GladCardBadgeDisplayData gcbdd = GetBadgeData( ToEHI( player ), null, 0, bpLevelBadge, null, false )
+	model.badgeRuiAsset = gcbdd.ruiAsset
+	model.tier = battlePassLevel
+	return model
+}
+
+RTKBattlepassTrackItemStruct function RTKProgressionTrayButton_GetNextPassRewardDataModel( int passType, ItemFlavor ornull pass = null )
+{
+	RTKBattlepassTrackItemStruct reward = GetNextPassRewardData( passType, pass )
+	reward.secondaryIconAsset = $""
+
+	return reward
+}
+
+int function RTKProgressTrayButton_GetItemAssetWidth( ItemFlavor flav )
+{
+	int itemType = ItemFlavor_GetType( flav )
+	int assetWidth = 44
+
+	switch ( itemType )
+	{
+		case eItemType.gladiator_card_kill_quip:
+		case eItemType.gladiator_card_intro_quip:
+		case eItemType.character_emote:
+		case eItemType.character:
+		case eItemType.gladiator_card_badge:
+		case eItemType.gladiator_card_stance:
+		case eItemType.music_pack:
+		case eItemType.boost_type:
+		case eItemType.voucher:
+			assetWidth = 54
+			break
+		case eItemType.skydive_emote:
+			assetWidth = int( assetWidth * 0.85 )
+			break
+
+		case eItemType.apex_coins:
+		case eItemType.account_currency:
+		case eItemType.account_currency_bundle:
+			assetWidth = 37
+			break
+		case eItemType.account_pack:
+			assetWidth = 48
+			break
+		}
+	return assetWidth
+}
+
+int function RTKProgressTrayButton_GetItemAssetHeight( ItemFlavor flav )
+{
+	int itemType = ItemFlavor_GetType( flav )
+	int assetHeight = 50
+	switch ( itemType )
+	{
+		case eItemType.gladiator_card_kill_quip:
+		case eItemType.gladiator_card_intro_quip:
+		case eItemType.character_emote:
+		case eItemType.character:
+		case eItemType.gladiator_card_badge:
+		case eItemType.gladiator_card_stance:
+		case eItemType.boost_type:
+		case eItemType.voucher:
+			assetHeight = 65
+			break
+		case eItemType.boost_type:
+			assetHeight = 65
+			break
+		case eItemType.voucher:
+			if ( Voucher_GetEffectBattlepassStars( flav ) > 0 )
+			{
+				assetHeight = 65
+			}
+			break
+		case eItemType.skydive_emote:
+			assetHeight = int( assetHeight * 0.85 )
+			break
+
+		case eItemType.apex_coins:
+		case eItemType.account_currency:
+		case eItemType.account_currency_bundle:
+			assetHeight = 37
+			break
+		case eItemType.music_pack:
+			assetHeight = 52
+			break
+		case eItemType.account_pack:
+			assetHeight = 50
+			break
+		}
+	return assetHeight
+}
+
+
+int function RTKProgressTrayButton_GetLatestPage()
+{
+	return file.lastPage
+}
+
+void function RTKProgressTrayButton_SetLatestPage( int page )
+{
+	file.lastPage = page
+}

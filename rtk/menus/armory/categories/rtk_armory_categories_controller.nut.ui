@@ -1,0 +1,192 @@
+global function InitRTKArmoryCategoriesPanel
+
+global function RTKArmoryCategoriesPanel_OnInitialize
+global function RTKArmoryCategoriesPanel_OnDestroy
+global function RTKMutator_CheckIfWeaponMasteryEnabled
+
+global struct RTKArmoryCategoriesPanel_Properties
+{
+	rtk_panel arPanel
+	rtk_panel smgPanel
+	rtk_panel lmgPanel
+	rtk_panel marksmanPanel
+	rtk_panel sniperPanel
+	rtk_panel pistolPanel
+	rtk_panel shotgunPanel
+
+	rtk_panel ordnancePanel
+}
+
+global struct RTKArmoryButtonData
+{
+	string name = ""
+	asset icon = $""
+	int count = 0
+	int flavGUID = 0
+	bool hasNew = false
+
+	string tooltipDesc = ""
+}
+
+struct
+{
+	bool isButtonFocused = false
+} file
+
+void function RTKArmoryCategoriesPanel_OnInitialize( rtk_behavior self )
+{
+	RTKArmoryCategories_SetupButtonData()
+
+	RTKArmoryCategories_SetupButton( self, "arPanel" )
+	RTKArmoryCategories_SetupButton( self, "smgPanel" )
+	RTKArmoryCategories_SetupButton( self, "lmgPanel" )
+	RTKArmoryCategories_SetupButton( self, "marksmanPanel" )
+	RTKArmoryCategories_SetupButton( self, "sniperPanel" )
+	RTKArmoryCategories_SetupButton( self, "pistolPanel" )
+	RTKArmoryCategories_SetupButton( self, "shotgunPanel" )
+	RTKArmoryCategories_SetupButton( self, "ordnancePanel" )
+}
+
+void function RTKArmoryCategoriesPanel_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "weaponCategories", ["armory"] )
+}
+
+void function RTKArmoryCategories_SetupButtonData()
+{
+	rtk_struct armoriesModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "weaponCategories", "",["armory"] )
+
+	array<ItemFlavor> categories = GetAllWeaponCategories()
+	foreach ( category in categories )
+	{
+		rtk_struct weaponCategoryStruct = RTKStruct_AddStructProperty( armoriesModel, WeaponCategoryFlavor_GetStatsKey( category ), "RTKArmoryButtonData" )
+
+		RTKStruct_SetString( weaponCategoryStruct, "name", ItemFlavor_GetLongName( category ) )
+		RTKStruct_SetAssetPath( weaponCategoryStruct, "icon", RTKArmoryCategories_GetCategoryIcon( category ) )
+		RTKStruct_SetInt( weaponCategoryStruct, "count", GetWeaponsInCategory( category ).len() )
+		RTKStruct_SetInt( weaponCategoryStruct, "flavGUID", ItemFlavor_GetGUID( category ) )
+		RTKStruct_SetString( weaponCategoryStruct, "tooltipDesc", RTKArmoryCategories_GetTooltipDescription( category ) )
+
+		Newness_Query nq
+		nq.itemFlavor   = category
+		nq.itemTypeList = [eItemType.weapon_category]
+		nq.uiCategory   = eItemTypeUICategory.WEAPON_LOADOUT
+		RTKStruct_SetBool( weaponCategoryStruct, "hasNew", Newness_GetNewCountForQuery( nq ) > 0 )
+	}
+}
+
+void function RTKArmoryCategories_SetupButton( rtk_behavior self, string property )
+{
+	rtk_panel ornull panel = self.PropGetPanel( property )
+
+	if ( panel != null )
+	{
+		expect rtk_panel( panel )
+		rtk_behavior ornull button = panel.FindBehaviorByTypeName( "Button" )
+		if ( button != null )
+		{
+			expect rtk_behavior( button )
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, panel ) {
+				rtk_struct model = RTKDataModel_GetStruct( panel.GetBindingRootPath() )
+				if( RTKStruct_HasProperty(model, "flavGUID" ) )
+				{
+					int flavGUID = RTKStruct_GetInt( model, "flavGUID" )
+					if ( flavGUID == 1487808783 ) 
+					{
+						SetTopLevelCustomizeContext( GetItemFlavorByGUID( flavGUID ) )
+						AdvanceMenu( GetMenu( "ArmoryOrdnancesMenu" ) )
+					}
+					else if ( IsValidItemFlavorGUID( flavGUID ) )
+
+					{
+						SetTopLevelCustomizeContext( GetItemFlavorByGUID( flavGUID ) )
+						AdvanceMenu( GetMenu( "CustomizeWeaponMenu" ) )
+					}
+				}
+			} )
+
+			self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self ) {
+				file.isButtonFocused = true
+				UpdateFooterOptions()
+			} )
+
+			self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+				file.isButtonFocused = false
+				UpdateFooterOptions()
+			} )
+		}
+	}
+}
+
+void function MarkAllArmoryMoreItemsAsViewed( var button )
+{
+	bool markSuccess = MarkAllItemsOfTypeAsViewed( eItemTypeUICategory.WEAPON_LOADOUT )
+
+	if ( markSuccess )
+	{
+		EmitUISound( "UI_Menu_Accept" )
+		RTKArmoryCategories_SetupButtonData()
+	}
+	else
+		EmitUISound( "UI_Menu_Deny" )
+
+}
+
+void function InitRTKArmoryCategoriesPanel( var panel )
+{
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, RTKArmoryCategoriesPanel_OnShow )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, BUTTON_A, false, "#A_BUTTON_SELECT", "", null, IsButtonFocused )
+	AddPanelFooterOption( panel, LEFT, BUTTON_Y, true, "#BUTTON_MARK_ALL_AS_SEEN_GAMEPAD", "#BUTTON_MARK_ALL_AS_SEEN_MOUSE", MarkAllArmoryMoreItemsAsViewed )
+
+
+
+
+}
+
+void function RTKArmoryCategoriesPanel_OnShow( var panel )
+{
+	UI_SetPresentationType( ePresentationType.WEAPON_CATEGORY )
+}
+
+bool function IsButtonFocused()
+{
+	return file.isButtonFocused
+}
+
+asset function RTKArmoryCategories_GetCategoryIcon( ItemFlavor category )
+{
+	asset categoryIcon = ItemFlavor_GetIcon( category )
+	ItemFlavor ornull categoryWeapon = WeaponCategoryFlavor_GetCategoryWeapon( category )
+	if ( categoryWeapon != null )
+	{
+		expect ItemFlavor( categoryWeapon )
+		categoryIcon = WeaponItemFlavor_GetHudIcon( categoryWeapon )
+	}
+
+	return categoryIcon
+}
+
+string function RTKArmoryCategories_GetTooltipDescription( ItemFlavor category )
+{
+	string tooltipDesc
+	array<ItemFlavor> weaponsInCategory = GetWeaponsInCategory( category )
+	for ( int i = 0; i < weaponsInCategory.len(); i++ )
+	{
+		if ( i > 0 )
+		{
+			tooltipDesc += "\n"
+		}
+
+		tooltipDesc += Localize( WeaponItemFlavor_GetLongName( weaponsInCategory[i] ) )
+	}
+	return tooltipDesc
+}
+
+
+
+bool function RTKMutator_CheckIfWeaponMasteryEnabled( int input )
+{
+	return ( GetCurrentPlaylistVarInt( "enable_mastery_weapon", 1 ) == 1 )
+}

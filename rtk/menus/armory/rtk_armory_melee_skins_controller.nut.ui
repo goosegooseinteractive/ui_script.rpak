@@ -1,0 +1,461 @@
+global function RTKArmoryMeleeSkinsScreen_OnInitialize
+global function RTKArmoryMeleeSkinsScreen_OnDestroy
+
+global struct RTKArmoryMeleeSkinsScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+	rtk_panel upgradeButton
+	rtk_panel customizeButton
+}
+
+struct PrivateData
+{
+	void functionref( var ) callbackOnTopLevelCustomizeContextChanged
+}
+
+const string MODEL_PATH = "armoryMeleeSkins"
+const string MELEE_SKINS_PANEL = "RTKMeleeSkinsPanel"
+
+void function RTKArmoryMeleeSkinsScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct dataStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticEquipScreenModel" )
+	RunMenuClientFunction( "ClearAllCharacterPreview" )
+	UI_SetPresentationType( ePresentationType.MELEE_INSPECT )
+	RunClientScript( "EnableModelTurn" )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( self ) 		  { RTKArmoryMeleeSkinsScreen_OnItemPreview( self, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemFavorite( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKArmoryMeleeSkinsScreen_OnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKArmoryMeleeSkinsScreen_OnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	RTKArmoryMeleeSkinsScreen_UpdateSkin( self )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip ) } )
+
+	var panel = GetPanel( MELEE_SKINS_PANEL )
+
+	p.callbackOnTopLevelCustomizeContextChanged = void function( var panel ) : ( self ) { RTKArmoryMeleeSkinsScreen_UpdateSkin( self )	}
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSortFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddShowHideUIToggleFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddUnlockFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddZoomFooterOption( cosmeticEquip, panel )
+	Hud_SetVisible( Hud_GetChild( Hud_GetParent( panel ), "LegendMeleePanelModelRotateMouseCapture"), true )
+
+	
+	RTKArmoryMeleeSkinsScreen_SetCustomizeUpgradeButtons( self, cosmeticEquip )
+
+	UpdateFooterOptions()
+}
+
+void function RTKArmoryMeleeSkinsScreen_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	var panel = GetPanel( MELEE_SKINS_PANEL )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH )
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+	ClearPanelFooterOptions( panel )
+	Hud_SetVisible( Hud_GetChild( Hud_GetParent( panel ), "LegendMeleePanelModelRotateMouseCapture"), false )
+}
+
+void function RTKArmoryMeleeSkinsScreen_SetCustomizeUpgradeButtons( rtk_behavior self, rtk_behavior cosmeticEquip )
+{
+	rtk_panel upgradeButton = self.PropGetPanel( "upgradeButton" )
+	rtk_behavior upgradeButtonBehavior = upgradeButton.FindBehaviorByTypeName( "Button" )
+	self.AutoSubscribe( upgradeButtonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKArmoryMeleeSkinsScreen_TryUpgradeItem( GetItemFlavorByGUID( cosmeticEquip.PropGetInt( "currentPreviewGUID" ) ) )
+	})
+
+	rtk_panel customizeButton = self.PropGetPanel( "customizeButton" )
+	rtk_behavior customizeButtonBehavior = customizeButton.FindBehaviorByTypeName( "Button" )
+	self.AutoSubscribe( customizeButtonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		OpenArtifactCustomizationMenu( GetItemFlavorByGUID( cosmeticEquip.PropGetInt( "currentPreviewGUID" ) ) )
+	})
+
+	
+	bool isItemUpgreadable = RTKArmoryMeleeSkinsScreen_IsItemUpgreadable( cosmeticEquip.PropGetInt( "currentPreviewGUID" ) )
+	upgradeButton.SetActive( isItemUpgreadable )
+	upgradeButton.SetVisible( isItemUpgreadable )
+}
+
+void function RTKArmoryMeleeSkinsScreen_UpdateSkin( rtk_behavior self )
+{
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+	ItemFlavor characterFlav   = GetTopLevelCustomizeContext()
+	LoadoutEntry loadoutEntry  = Loadout_MeleeSkin( characterFlav )
+
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ loadoutEntry ]
+	initSettings.sortFuncNames = RTKArmoryMeleeSkinsScreen_GetSortFuncNames()
+	initSettings.getItemFlavListFuncOverride = array<ItemFlavor> function() : ( loadoutEntry ) { return GetSelectableMeleeSkins( loadoutEntry ) } 
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+}
+
+void function RTKArmoryMeleeSkinsScreen_OnItemPreview( rtk_behavior self, int guid )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+	RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid )
+
+	
+	rtk_panel upgradeButton = self.PropGetPanel( "upgradeButton" )
+	bool isItemUpgreadable = RTKArmoryMeleeSkinsScreen_IsItemUpgreadable( guid )
+	upgradeButton.SetActive( isItemUpgreadable )
+	upgradeButton.SetVisible( isItemUpgreadable )
+
+	rtk_panel customizeButton = self.PropGetPanel( "customizeButton" )
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), GetItemFlavorByGUID( guid ) )
+	customizeButton.SetActive( isUnlocked )
+	customizeButton.SetVisible( isUnlocked )
+}
+
+void function RTKArmoryMeleeSkinsScreen_OnItemTryUnlock( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	ItemFlavor character = GetTopLevelCustomizeContext()
+	Assert( ItemFlavor_GetType( character ) == eItemType.character )
+
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+	bool doesItemNeedCharacterUnlockedFirst = RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav )
+	bool isItemUnlockable = RTKCosmeticEquip_IsItemUnlockable( flavGUID )
+
+	if ( !doesItemNeedCharacterUnlockedFirst && !isItemUnlockable )
+		return
+
+	
+	if ( doesItemNeedCharacterUnlockedFirst )
+	{
+		ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+		if ( Character_IsUnlockableInNewPlayerPass( characterFlav ) )
+		{
+			OpenPromoLink( "newplayerpass", "" )
+			return
+		}
+
+		RTKAmoryMeleeSkinsScreen_OpenUnlockLegendDialog( cosmeticEquip, character )
+		return
+	}
+
+	LoadoutEntry entry = Loadout_MeleeSkin( character )
+	if ( !IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), entry, itemFlav ) )
+	{
+		
+		bool wasOfferFound = false
+		if ( Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav ) )
+			wasOfferFound = RTKArmoryMeleeSkinsScreen_TryOpenArtifactStoreInspect()
+		else if ( UniversalMelee_IsItemFlavorUniversalMelee( itemFlav ) )
+			wasOfferFound = RTKArmoryMeleeSkinsScreen_TryOpenUniversalMeleeInspect( itemFlav )
+		else
+			wasOfferFound = RTKArmoryMeleeSkinsScreen_TryOpenHeirloomInspect( itemFlav )
+
+		if ( !wasOfferFound )
+		{
+			if ( !RTKArmoryMeleeSkinsScreen_TryOpenAssociatedEvent( itemFlav ) )
+				EmitUISound( "menu_deny" )
+		}
+	}
+}
+
+void function RTKAmoryMeleeSkinsScreen_OpenUnlockLegendDialog( rtk_behavior cosmeticEquip, ItemFlavor character )
+{
+	PurchaseDialogConfig pdc
+	ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( character )
+	pdc.flav = character
+	pdc.quantity = 1
+	pdc.onPurchaseResultCallback = void function( bool wasPurchaseSuccessful ) : ( cosmeticEquip, character ) {
+		if ( wasPurchaseSuccessful )
+		{
+			RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip )
+			
+		}
+	}
+	PurchaseDialog( pdc )
+}
+
+bool function RTKArmoryMeleeSkinsScreen_TryOpenArtifactStoreInspect()
+{
+	array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( Artifacts_GetSetItems( eArtifactSetIndex.MOB )[0], "artifact_set_shop" )
+	foreach ( offerIndex, offer in offers )
+	{
+		foreach( flav in offer.output.flavors )
+		{
+			if ( Artifacts_IsBaseArtifact( flav ) )
+			{
+				thread ArtifactsInspectMenu_AttemptOpenWithOffer_Delayed( offer )
+				EmitUISound( "ui_menu_accept" )
+				return true
+			}
+		}
+	}
+	return false
+}
+
+bool function RTKArmoryMeleeSkinsScreen_TryOpenUniversalMeleeInspect( ItemFlavor meleeFlav )
+{
+	array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( meleeFlav, "universal_set_shop" )
+	foreach ( offerIndex, offer in offers )
+	{
+		thread RTKUniversalMeleeInspectScreen_InspectOffer_Delayed( offer )
+		EmitUISound( "ui_menu_accept" )
+		return true
+	}
+	return false
+}
+
+void function RTKArmoryMeleeSkinsScreen_TryUpgradeItem( ItemFlavor upgradeMeleeSkin )
+{
+	array< ItemFlavor > addons = UniversalMelee_GetAddons( upgradeMeleeSkin )
+	if ( addons.len() < 1 )
+		return
+
+	array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( addons[ 0 ], "universal_set_shop" )
+	foreach ( offer in offers )
+	{
+		thread RTKUniversalMeleeInspectScreen_InspectOffer_Delayed( offer )
+		EmitUISound( "ui_menu_accept" )
+	}
+}
+
+bool function RTKArmoryMeleeSkinsScreen_TryOpenHeirloomInspect( ItemFlavor heirloomFlav )
+{
+	array<GRXScriptOffer> offers = GRX_GetLocationOffers( "heirloom_set_shop" )
+	foreach ( offerIndex, offer in offers )
+	{
+		ItemFlavor offerSkin = ItemFlavorBag_GetMeleeSkinItem( offer.output )
+		if ( offerSkin == heirloomFlav )
+		{
+			thread StoreInspectMenu_AttemptOpenWithOffer_Delayed( offer )
+			EmitUISound( "ui_menu_accept" )
+			return true
+		}
+	}
+	return false
+}
+
+bool function RTKArmoryMeleeSkinsScreen_TryOpenAssociatedEvent( ItemFlavor itemFlav )
+{
+	if ( MeleeSkin_IsRewardForActiveEvent( itemFlav ) )
+	{
+		EmitUISound( "ui_menu_accept" )
+		if ( MeleeSkin_IsRewardForActiveStoreEvent( itemFlav ) )
+		{
+			thread JumpToStoreMilestoneEventsMenu_Delayed()
+			return true
+		}
+		else
+		{
+			thread JumpToEventTab_Delayed( itemFlav )
+			return true
+		}
+	}
+	return false
+}
+
+
+array<ItemFlavor> function GetSelectableMeleeSkins( LoadoutEntry entry )
+{
+	array<ItemFlavor> allMeleeSkins = clone GetValidItemFlavorsForLoadoutSlot( entry )
+
+	
+	array<ItemFlavor> availableHeirlooms = []
+	array<GRXScriptOffer> heirloomOffers = GRX_GetLocationOffers( "heirloom_set_shop" )
+	foreach ( offer in heirloomOffers )
+	{
+		availableHeirlooms.append( ItemFlavorBag_GetMeleeSkinItem( offer.output ) )
+	}
+
+	array<ItemFlavor> meleeItems = []
+
+	
+	foreach ( ItemFlavor meleeSkin in allMeleeSkins )
+	{
+		
+		if ( !IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), entry, meleeSkin ) && !MeleeSkin_IsRewardForActiveEvent( meleeSkin ) )
+		{
+			
+			if ( MeleeSkin_ShouldHideIfLocked( meleeSkin ) )
+				continue
+
+			
+			bool isHeirloom = GetItemFlavorAssociatedCharacterOrWeapon( meleeSkin ) != null
+			if ( isHeirloom && !availableHeirlooms.contains( meleeSkin ) )
+				continue
+		}
+
+		
+		if ( Artifacts_Loadouts_IsConfigPointerItemFlavor( meleeSkin ) )
+			continue
+
+		
+		if ( UniversalMelee_IsItemFlavorUniversalMelee( meleeSkin ) )
+			continue
+
+		meleeItems.append( meleeSkin )
+	}
+
+	
+	array<ItemFlavor> artifactPointers = []
+	foreach ( ItemFlavor meleeSkin in allMeleeSkins )
+	{
+		if ( Artifacts_Loadouts_IsConfigPointerItemFlavor( meleeSkin ) )
+		{
+			artifactPointers.append( meleeSkin )
+		}
+	}
+	meleeItems.extend( artifactPointers )
+
+	
+	array<GRXScriptOffer> universalMeleeOffers = GRX_GetLocationOffers( "universal_set_shop" )
+	array<ItemFlavor> availableUniversalMelees = []
+	foreach ( offer in universalMeleeOffers )
+	{
+		availableUniversalMelees.extend( offer.output.flavors )
+	}
+
+	foreach ( ItemFlavor meleeSkin in allMeleeSkins )
+	{
+		if ( UniversalMelee_IsItemFlavorUniversalMelee( meleeSkin ) && UniversalMelee_IsBaseItem( meleeSkin ) )
+		{
+			if ( availableUniversalMelees.contains( meleeSkin ) || IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), entry, meleeSkin ) )
+			{
+				meleeItems.extend( UniversalMelee_GetSkins( meleeSkin ) )
+			}
+		}
+	}
+
+	
+	ItemFlavor equippedItem = LoadoutSlot_GetItemFlavor( LocalClientEHI(), entry )
+	meleeItems.sort( int function( ItemFlavor x, ItemFlavor y ) : ( equippedItem ) {
+		
+		ItemFlavor a = x
+		ItemFlavor b = y
+
+		
+		bool aIsEquipped = equippedItem ==  x
+		bool bIsEquipped = equippedItem == y
+		if ( aIsEquipped && !bIsEquipped )
+			return -1
+		else if ( bIsEquipped && !aIsEquipped )
+			return 1
+
+		
+		int aQuality = ItemFlavor_HasQuality( a ) ? ItemFlavor_GetQuality( a ) : -1
+		int bQuality = ItemFlavor_HasQuality( b ) ? ItemFlavor_GetQuality( b ) : -1
+		if ( aQuality > bQuality )
+			return -1
+		else if ( aQuality < bQuality )
+			return 1
+
+		
+		string aTag = string(ItemFlavor_GetSourceIcon( a ))
+		string bTag = string(ItemFlavor_GetSourceIcon( b ))
+		if ( aTag > bTag )
+			return -1
+		else if ( aTag < bTag )
+			return 1
+
+		
+		int aConfigIndex = Artifacts_Loadouts_IsConfigPointerItemFlavor( a ) ? Artifacts_Loadouts_GetConfigIndex( a ) : -1
+		int bConfigIndex = Artifacts_Loadouts_IsConfigPointerItemFlavor( b ) ? Artifacts_Loadouts_GetConfigIndex( b ) : -1
+
+		if ( aConfigIndex < bConfigIndex )
+			return -1
+		else if ( aConfigIndex > bConfigIndex )
+			return 1
+
+		
+		return SortStringAlphabetize( Localize( ItemFlavor_GetLongName( a ) ), Localize( ItemFlavor_GetLongName( b ) ) )
+	} )
+
+	return meleeItems
+}
+
+array<string> function RTKArmoryMeleeSkinsScreen_GetSortFuncNames()
+{
+	return [
+		"#LEGEND_LOCKER_SORT_DEFAULT",
+		"#LEGEND_LOCKER_SORT_UNOWNED",
+		"#LEGEND_LOCKER_SORT_ALPHABETICAL",
+	]
+}
+
+
+
+bool function RTKArmoryMeleeSkinsScreen_IsItemUpgreadable( int flavGUID )
+{
+	ItemFlavor ornull itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+		return false
+
+	expect ItemFlavor( itemFlav )
+	
+	if ( ItemFlavor_GetType( itemFlav ) != eItemType.melee_skin || !UniversalMelee_IsHookswordTheme( UniversalMelee_GetTheme( itemFlav ) ) )
+		return false
+
+	ItemFlavor baseSkin = UniversalMelee_GetBaseSkin( itemFlav )
+	if ( !GRX_IsItemOwnedByPlayer( baseSkin ) )
+		return false
+
+	array<ItemFlavor> addons = UniversalMelee_GetAddons( itemFlav )
+	foreach ( addon in addons )
+	{
+		if ( !GRX_IsItemOwnedByPlayer( addon ) )
+			return true
+	}
+	return false
+}
+
+
+
+void function RTKUniversalMeleeInspectScreen_InspectOffer_Delayed( GRXScriptOffer offer )
+{
+	WaitFrame()
+	RTKUniversalMeleeInspectScreen_InspectOffer( offer )
+}
+
+void function StoreInspectMenu_AttemptOpenWithOffer_Delayed( GRXScriptOffer offer )
+{
+	WaitFrame()
+	StoreInspectMenu_AttemptOpenWithOffer( offer )
+}
+
+void function ArtifactsInspectMenu_AttemptOpenWithOffer_Delayed( GRXScriptOffer offer )
+{
+	WaitFrame()
+	ArtifactsInspectMenu_AttemptOpenWithOffer( offer )
+}
+
+void function JumpToStoreMilestoneEventsMenu_Delayed()
+{
+	WaitFrame()
+	JumpToStoreMilestoneEventsMenu( )
+}
+
+void function JumpToEventTab_Delayed( ItemFlavor itemFlav )
+{
+	WaitFrame()
+	JumpToEventTab( "RTKEventsPanel" )
+	EventsPanel_SetOpenPageIndex( CosmeticSet_IsRewardForActiveCollectionEvent( itemFlav ) ? eEventsPanelPage.COLLECTION_EVENT : eEventsPanelPage.MILESTONES )
+}

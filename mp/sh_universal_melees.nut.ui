@@ -1,0 +1,593 @@
+global function ShUniversalMelees_LevelInit
+
+
+global function UniversalMelee_GetSetItems
+global function UniversalMelee_GetSetItemIndex
+global function UniversalMelee_GetNumberOfSetItems
+global function UniversalMelee_GetNumberOfBaseItems
+global function UniversalMelee_GetBaseSkin
+global function UniversalMelee_GetBaseDeathbox
+global function UniversalMelee_GetBaseItems
+global function UniversalMelee_IsBaseItem
+global function UniversalMelee_IsVariantItem
+global function UniversalMelee_AddOnHasMultipleOwnership
+global function UniversalMelee_AreBaseItemsOwned
+global function UniversalMelee_HasPreviousItem
+global function UniversalMelee_GetPreviousSetItem
+global function UniversalMelee_GetVideo
+global function UniversalMelee_GetTheme
+global function UniversalMelee_GetArtifactTheme
+global function UniversalMelee_IsHookswordTheme
+global function UniversalMelee_IsKarambitTheme
+global function UniversalMelee_IsPowerSwordTheme
+global function UniversalMelee_IsBatTheme
+global function UniversalMelee_IsScepterTheme
+global function UniversalMelee_GetStoreSetIndex
+global function UniversalMelee_GetVariantSetIndex
+global function UniversalMelee_GetNumberOfVariants
+global function UniversalMelee_GetSkins
+global function UniversalMelee_HasAddons
+global function UniversalMelee_GetAddons
+global function UniversalMelee_GetAddonFromSameTheme
+global function UniversalMelee_IsAddonActivationEmote
+global function UniversalMelee_GetDeathboxes
+
+
+global enum eUniversalSetIndex {
+	_EMPTY = -1,
+	HOOK_SWORD = 0,
+	KARAMBIT_BASE = 1,
+	KARAMBIT_RECOLOR_1 = 2,
+	KARAMBIT_RECOLOR_2 = 3,
+	KARAMBIT_RECOLOR_3 = 4,
+	KARAMBIT_RECOLOR_4 = 5,
+	KARAMBIT_RECOLOR_5 = 6,
+	POWER_SWORD_BASE = 7,
+	POWER_SWORD_RECOLOR_1 = 8,
+	POWER_SWORD_RECOLOR_2 = 9,
+	POWER_SWORD_RECOLOR_3 = 10,
+	SCEPTER_BASE = 11,
+	SCEPTER_RECOLOR_1 = 12,
+	SCEPTER_RECOLOR_2 = 13,
+	SCEPTER_RECOLOR_3 = 14,
+	BAT_BASE = 15,
+	BAT_RECOLOR_1 = 16,
+	BAT_RECOLOR_2 = 17,
+	BAT_RECOLOR_3 = 18,
+	KATANAS_BASE = 19,
+	KATANAS_RECOLOR_1 = 20,
+	KATANAS_RECOLOR_2 = 21,
+	KATANAS_RECOLOR_3 = 22,
+
+		WHIP_BASE = 23,
+		BREACH_WHIP_BASE = 24,
+		BEAMSABER_BASE = 25,
+		BEAMSABER_RECOLOR_1 = 26,
+		BEAMSABER_RECOLOR_2 = 27,
+		BEAMSABER_RECOLOR_3 = 28,
+
+	TONFAS_BASE = 29,
+	TONFAS_RECOLOR_1 = 30,
+	TONFAS_RECOLOR_2 = 31,
+	TONFAS_RECOLOR_3 = 32
+}
+
+global const table< int, int > UNIVERSAL_MELEE_TO_ARTIFACT_SET_INDEX = {
+	[ eUniversalSetIndex._EMPTY ] = eArtifactSetIndex._EMPTY,
+	[ eUniversalSetIndex.HOOK_SWORD ] = eArtifactSetIndex.HOOK_SWORD,
+	[ eUniversalSetIndex.KARAMBIT_BASE ] = eArtifactSetIndex.KARAMBIT_BASE,
+	[ eUniversalSetIndex.KARAMBIT_RECOLOR_1 ] = eArtifactSetIndex.KARAMBIT_RECOLOR_1,
+	[ eUniversalSetIndex.KARAMBIT_RECOLOR_2 ] = eArtifactSetIndex.KARAMBIT_RECOLOR_2,
+	[ eUniversalSetIndex.KARAMBIT_RECOLOR_3 ] = eArtifactSetIndex.KARAMBIT_RECOLOR_3,
+	[ eUniversalSetIndex.KARAMBIT_RECOLOR_4 ] = eArtifactSetIndex.KARAMBIT_RECOLOR_4,
+	[ eUniversalSetIndex.KARAMBIT_RECOLOR_5 ] = eArtifactSetIndex.KARAMBIT_RECOLOR_5,
+	[ eUniversalSetIndex.POWER_SWORD_BASE ] = eArtifactSetIndex.POWER_SWORD_BASE,
+	[ eUniversalSetIndex.POWER_SWORD_RECOLOR_1 ] = eArtifactSetIndex.POWER_SWORD_RECOLOR_1,
+	[ eUniversalSetIndex.POWER_SWORD_RECOLOR_2 ] = eArtifactSetIndex.POWER_SWORD_RECOLOR_2,
+	[ eUniversalSetIndex.POWER_SWORD_RECOLOR_3 ] = eArtifactSetIndex.POWER_SWORD_RECOLOR_3,
+	[ eUniversalSetIndex.SCEPTER_BASE ] = eArtifactSetIndex.SCEPTER_BASE,
+	[ eUniversalSetIndex.SCEPTER_RECOLOR_1 ] = eArtifactSetIndex.SCEPTER_RECOLOR_1,
+	[ eUniversalSetIndex.SCEPTER_RECOLOR_2 ] = eArtifactSetIndex.SCEPTER_RECOLOR_2,
+	[ eUniversalSetIndex.SCEPTER_RECOLOR_3 ] = eArtifactSetIndex.SCEPTER_RECOLOR_3,
+	[ eUniversalSetIndex.BAT_BASE ] = eArtifactSetIndex.BAT_BASE,
+	[ eUniversalSetIndex.BAT_RECOLOR_1 ] = eArtifactSetIndex.BAT_RECOLOR_1,
+	[ eUniversalSetIndex.BAT_RECOLOR_2 ] = eArtifactSetIndex.BAT_RECOLOR_2,
+	[ eUniversalSetIndex.BAT_RECOLOR_3 ] = eArtifactSetIndex.BAT_RECOLOR_3,
+	[ eUniversalSetIndex.KATANAS_BASE ] = eArtifactSetIndex.KATANAS_BASE,
+	[ eUniversalSetIndex.KATANAS_RECOLOR_1 ] = eArtifactSetIndex.KATANAS_RECOLOR_1,
+	[ eUniversalSetIndex.KATANAS_RECOLOR_2 ] = eArtifactSetIndex.KATANAS_RECOLOR_2,
+	[ eUniversalSetIndex.KATANAS_RECOLOR_3 ] = eArtifactSetIndex.KATANAS_RECOLOR_3,
+	[ eUniversalSetIndex.TONFAS_BASE ] = eArtifactSetIndex.TONFAS_BASE,
+	[ eUniversalSetIndex.TONFAS_RECOLOR_1 ] = eArtifactSetIndex.TONFAS_RECOLOR_1,
+	[ eUniversalSetIndex.TONFAS_RECOLOR_2 ] = eArtifactSetIndex.TONFAS_RECOLOR_2,
+	[ eUniversalSetIndex.TONFAS_RECOLOR_3 ] = eArtifactSetIndex.TONFAS_RECOLOR_3,
+
+		[ eUniversalSetIndex.WHIP_BASE ] = eArtifactSetIndex.WHIP_BASE,
+		[ eUniversalSetIndex.BREACH_WHIP_BASE ] = eArtifactSetIndex.BREACH_WHIP_BASE,
+		[ eUniversalSetIndex.BEAMSABER_BASE ] = eArtifactSetIndex.BEAMSABER_BASE,
+		[ eUniversalSetIndex.BEAMSABER_RECOLOR_1 ] = eArtifactSetIndex.BEAMSABER_RECOLOR_1,
+		[ eUniversalSetIndex.BEAMSABER_RECOLOR_2 ] = eArtifactSetIndex.BEAMSABER_RECOLOR_2,
+		[ eUniversalSetIndex.BEAMSABER_RECOLOR_3 ] = eArtifactSetIndex.BEAMSABER_RECOLOR_3,
+
+}
+
+global const table< int, array< int > > UNIVERSAL_STORE_SET_BUNDLE_ORDER = {
+	[ eUniversalSetIndex.HOOK_SWORD ] = [ eUniversalSetIndex.HOOK_SWORD ],
+	[ eUniversalSetIndex.KARAMBIT_BASE ] = [ eUniversalSetIndex.KARAMBIT_BASE, eUniversalSetIndex.KARAMBIT_RECOLOR_1, eUniversalSetIndex.KARAMBIT_RECOLOR_2, eUniversalSetIndex.KARAMBIT_RECOLOR_3, eUniversalSetIndex.KARAMBIT_RECOLOR_4, eUniversalSetIndex.KARAMBIT_RECOLOR_5 ],
+	[ eUniversalSetIndex.POWER_SWORD_BASE ] = [ eUniversalSetIndex.POWER_SWORD_BASE, eUniversalSetIndex.POWER_SWORD_RECOLOR_1, eUniversalSetIndex.POWER_SWORD_RECOLOR_2, eUniversalSetIndex.POWER_SWORD_RECOLOR_3 ],
+	[ eUniversalSetIndex.SCEPTER_BASE ] = [ eUniversalSetIndex.SCEPTER_BASE, eUniversalSetIndex.SCEPTER_RECOLOR_1, eUniversalSetIndex.SCEPTER_RECOLOR_2, eUniversalSetIndex.SCEPTER_RECOLOR_3 ],
+	[ eUniversalSetIndex.BAT_BASE ] = [ eUniversalSetIndex.BAT_BASE, eUniversalSetIndex.BAT_RECOLOR_1, eUniversalSetIndex.BAT_RECOLOR_2, eUniversalSetIndex.BAT_RECOLOR_3 ],
+	[ eUniversalSetIndex.KATANAS_BASE ] = [ eUniversalSetIndex.KATANAS_BASE, eUniversalSetIndex.KATANAS_RECOLOR_1, eUniversalSetIndex.KATANAS_RECOLOR_2, eUniversalSetIndex.KATANAS_RECOLOR_3 ],
+	[ eUniversalSetIndex.TONFAS_BASE ] = [ eUniversalSetIndex.TONFAS_BASE, eUniversalSetIndex.TONFAS_RECOLOR_1, eUniversalSetIndex.TONFAS_RECOLOR_2, eUniversalSetIndex.TONFAS_RECOLOR_3 ],	
+
+		[ eUniversalSetIndex.WHIP_BASE ] = [ eUniversalSetIndex.WHIP_BASE ],
+		[ eUniversalSetIndex.BREACH_WHIP_BASE ] = [ eUniversalSetIndex.BREACH_WHIP_BASE ],
+		[ eUniversalSetIndex.BEAMSABER_BASE ] = [ eUniversalSetIndex.BEAMSABER_BASE, eUniversalSetIndex.BEAMSABER_RECOLOR_1, eUniversalSetIndex.BEAMSABER_RECOLOR_2, eUniversalSetIndex.BEAMSABER_RECOLOR_3 ],
+
+}
+
+struct FileStruct_LifetimeLevel
+{
+}
+
+FileStruct_LifetimeLevel& fileLevel
+
+void function ShUniversalMelees_LevelInit()
+{
+	FileStruct_LifetimeLevel newFileLevel
+	fileLevel = newFileLevel
+}
+
+bool function UniversalMelee_IsValidSetItemType( ItemFlavor meleeSetItem )
+{
+	array<int> setTypes = [eItemType.melee_skin, eItemType.melee_addon, eItemType.artifact_component_deathbox ]
+
+	return setTypes.contains( ItemFlavor_GetType( meleeSetItem ) )
+}
+
+array< ItemFlavor > function UniversalMelee_GetSetItems( ItemFlavor meleeItem )
+{
+	array< ItemFlavor > setItems = []
+	int theme = UniversalMelee_GetTheme( meleeItem )
+
+	if ( theme == eUniversalSetIndex.HOOK_SWORD )
+	{
+		setItems.extend( UniversalMelee_GetSkins( meleeItem ) )
+		setItems.extend( UniversalMelee_GetAddons( meleeItem ) )
+		setItems.extend( UniversalMelee_GetDeathboxes( meleeItem ) )
+	}
+	else if ( UniversalMelee_IsKarambitTheme( theme ) )
+	{
+		setItems = UniversalMelee_GetSetItemsByTheme( meleeItem, theme )
+	}
+	else if ( UniversalMelee_IsPowerSwordTheme( theme ) )
+	{
+		if ( UniversalMelee_IsVariantItem( meleeItem ) )
+		{
+			
+			array< ItemFlavor > allSkins = UniversalMelee_GetSkins( meleeItem )
+
+			foreach ( skin in allSkins )
+			{
+				if ( UniversalMelee_GetTheme( skin ) == theme )
+				{
+					setItems.append( skin )
+					break
+				}
+			}
+			setItems.extend( UniversalMelee_GetAddons( meleeItem ) )
+		}
+		else
+		{
+			setItems = UniversalMelee_GetSetItemsByTheme( meleeItem, theme )
+		}
+	}
+
+	return setItems
+}
+
+int function UniversalMelee_GetSetItemIndex( ItemFlavor meleeItem )
+{
+	array< ItemFlavor > setItems = UniversalMelee_GetSetItems( meleeItem )
+
+	foreach( int index, ItemFlavor itemFlav in setItems )
+	{
+		if ( itemFlav == meleeItem )
+			return index
+	}
+
+	return -1
+}
+
+int function UniversalMelee_GetNumberOfSetItems( ItemFlavor meleeItem )
+{
+	return UniversalMelee_GetSetItems( meleeItem ).len()
+}
+
+int function UniversalMelee_GetNumberOfBaseItems( ItemFlavor meleeItem )
+{
+	return UniversalMelee_GetBaseItems( meleeItem ).len()
+}
+
+ItemFlavor function UniversalMelee_GetBaseSkin( ItemFlavor meleeItem )
+{
+	array<ItemFlavor> skins = UniversalMelee_GetSkins( meleeItem )
+
+	foreach( skin in skins )
+	{
+		if ( UniversalMelee_IsBaseItem( skin ) )
+			return skin
+	}
+
+	Assert( false, "Couldn't find a base skin for universal melee, please make sure set has at least one eItemType.melee_skin checked as base item" )
+	unreachable
+}
+
+ItemFlavor function UniversalMelee_GetBaseDeathbox( ItemFlavor meleeItem )
+{
+	array<ItemFlavor> deathboxes = UniversalMelee_GetDeathboxes( meleeItem )
+
+	foreach( deathbox in deathboxes )
+	{
+		if ( UniversalMelee_IsBaseItem( deathbox ) )
+			return deathbox
+	}
+
+	Assert( false, "Couldn't find a base deathbox for universal melee, please make sure set has at least one eItemType.melee_skin checked as base item" )
+	unreachable
+}
+
+array<ItemFlavor> function UniversalMelee_GetBaseItems( ItemFlavor meleeItem )
+{
+	array<ItemFlavor> baseItems = []
+
+	array<ItemFlavor> skins = UniversalMelee_GetSkins( meleeItem )
+	foreach( skin in skins )
+	{
+		if ( UniversalMelee_IsBaseItem( skin ) )
+		{
+			baseItems.push( skin )
+		}
+	}
+
+	array<ItemFlavor> deathboxes = UniversalMelee_GetDeathboxes( meleeItem )
+	foreach( deathbox in deathboxes )
+	{
+		if ( UniversalMelee_IsBaseItem( deathbox ) )
+		{
+			baseItems.push( deathbox )
+		}
+	}
+
+	return baseItems
+}
+
+bool function UniversalMelee_IsBaseItem( ItemFlavor meleeSetItem )
+{
+	int itemType = ItemFlavor_GetType( meleeSetItem )
+	if ( itemType == eItemType.melee_skin )
+		return GetGlobalSettingsBool( ItemFlavor_GetAsset( meleeSetItem ), "isBaseSkin" )
+	else if ( itemType == eItemType.artifact_component_deathbox )
+		return GetGlobalSettingsBool( ItemFlavor_GetAsset( meleeSetItem ), "isBaseDeathbox" )
+
+	return false
+}
+
+bool function UniversalMelee_IsVariantItem( ItemFlavor meleeItem )
+{
+	int theme = UniversalMelee_GetTheme( meleeItem )
+
+	switch ( theme )
+	{
+		case eUniversalSetIndex.KARAMBIT_RECOLOR_1:
+		case eUniversalSetIndex.KARAMBIT_RECOLOR_2:
+		case eUniversalSetIndex.KARAMBIT_RECOLOR_3:
+		case eUniversalSetIndex.KARAMBIT_RECOLOR_4:
+		case eUniversalSetIndex.KARAMBIT_RECOLOR_5:
+		case eUniversalSetIndex.POWER_SWORD_RECOLOR_1:
+		case eUniversalSetIndex.POWER_SWORD_RECOLOR_2:
+		case eUniversalSetIndex.POWER_SWORD_RECOLOR_3:
+		case eUniversalSetIndex.SCEPTER_RECOLOR_1:
+		case eUniversalSetIndex.SCEPTER_RECOLOR_2:
+		case eUniversalSetIndex.SCEPTER_RECOLOR_3:
+			return true
+	}
+
+	return false
+}
+
+bool function UniversalMelee_AddOnHasMultipleOwnership( ItemFlavor meleeItem )
+{
+	return meleeItem.grxMode == eItemFlavorGRXMode.ONE_OF_MULTIPLE || meleeItem.grxMode == eItemFlavorGRXMode.MULTIPLE_OWNERSHIP_TARGET
+}
+
+bool function UniversalMelee_AreBaseItemsOwned( ItemFlavor meleeItem, entity player = null )
+{
+	array< ItemFlavor > baseItems = UniversalMelee_GetBaseItems( meleeItem )
+
+	if ( baseItems.len() == 0 )
+		return false
+
+	int baseItemsOwned = 0
+	foreach ( baseItem in baseItems )
+	{
+
+
+
+
+
+
+
+
+
+
+			if ( GRX_IsItemOwnedByPlayer( baseItem ) )
+			{
+				baseItemsOwned++
+			}
+
+	}
+
+	return baseItems.len() == baseItemsOwned
+}
+
+bool function UniversalMelee_HasPreviousItem( ItemFlavor meleeItem )
+{
+	if ( UniversalMelee_IsVariantItem( meleeItem ) )
+	{
+		return UniversalMelee_AreBaseItemsOwned( meleeItem )
+	}
+
+	array< ItemFlavor > setItems = UniversalMelee_GetSetItems( meleeItem )
+
+	int itemIndex = 0
+	for ( int i = 0; i < setItems.len(); i++ )
+	{
+		if ( meleeItem.guid == setItems[ i ].guid )
+		{
+			itemIndex = i
+			break
+		}
+	}
+
+	if ( itemIndex > 0 )
+	{
+		int previousItemIndex = itemIndex - 1
+		ItemFlavor previousSetItem = setItems[ previousItemIndex ]
+
+		return GRX_IsItemOwnedByPlayer( previousSetItem )
+	}
+
+	return UniversalMelee_IsBaseItem( meleeItem ) || UniversalMelee_AreBaseItemsOwned( meleeItem )
+}
+
+ItemFlavor ornull function UniversalMelee_GetPreviousSetItem( ItemFlavor meleeItem )
+{
+	array< ItemFlavor > setItems = UniversalMelee_GetSetItems( meleeItem )
+
+	int itemIndex = 0
+	for ( int i = 0; i < setItems.len(); i++ )
+	{
+		if ( meleeItem.guid == setItems[ i ].guid )
+		{
+			itemIndex = i
+			break
+		}
+	}
+
+	if ( itemIndex > 0 )
+		return setItems[ itemIndex - 1 ]
+
+	return null
+}
+
+asset function UniversalMelee_GetVideo( ItemFlavor meleeAddon )
+{
+	Assert( ItemFlavor_GetType( meleeAddon ) == eItemType.melee_addon )
+
+	return GetGlobalSettingsStringAsAsset( ItemFlavor_GetAsset( meleeAddon ), "video" )
+}
+
+int function UniversalMelee_GetTheme( ItemFlavor meleeSetItem )
+{
+	Assert( UniversalMelee_IsValidSetItemType( meleeSetItem ) )
+
+	string themeFieldName = "universalMeleeTheme"
+	if ( ItemFlavor_GetType( meleeSetItem ) == eItemType.artifact_component_deathbox )
+	{
+		themeFieldName = "themeName"
+	}
+
+	string themeName = GetSettingsBlockString( ItemFlavor_GetSettingsBlock( meleeSetItem ), themeFieldName )
+	return eUniversalSetIndex[ themeName ]
+}
+
+int function UniversalMelee_GetArtifactTheme( int theme )
+{
+	return UNIVERSAL_MELEE_TO_ARTIFACT_SET_INDEX[ theme ]
+}
+
+bool function UniversalMelee_IsHookswordTheme( int theme )
+{
+	return theme == eUniversalSetIndex.HOOK_SWORD
+}
+
+bool function UniversalMelee_IsKarambitTheme( int theme )
+{
+	return theme >= eUniversalSetIndex.KARAMBIT_BASE && theme <= eUniversalSetIndex.KARAMBIT_RECOLOR_5
+}
+
+bool function UniversalMelee_IsPowerSwordTheme( int theme )
+{
+	return theme >= eUniversalSetIndex.POWER_SWORD_BASE && theme <= eUniversalSetIndex.POWER_SWORD_RECOLOR_3
+}
+
+bool function UniversalMelee_IsBatTheme( int theme )
+{
+	return theme >= eUniversalSetIndex.BAT_BASE && theme <= eUniversalSetIndex.BAT_RECOLOR_3
+}
+
+bool function UniversalMelee_IsScepterTheme( int theme )
+{
+	return theme >= eUniversalSetIndex.SCEPTER_BASE && theme <= eUniversalSetIndex.SCEPTER_RECOLOR_3
+}
+
+bool function UniversalMelee_IsTonfasTheme( int theme )
+{
+	return theme == eUniversalSetIndex.TONFAS_BASE 
+}
+
+array<int> function UniversalMelee_GetStoreSetIndex( int bundleButtonIndex )
+{
+	return UNIVERSAL_STORE_SET_BUNDLE_ORDER[ bundleButtonIndex ]
+}
+
+int function UniversalMelee_GetVariantSetIndex( ItemFlavor meleeItem )
+{
+	int theme = UniversalMelee_GetTheme( meleeItem )
+
+	ItemFlavor baseItem = UniversalMelee_GetBaseSkin( meleeItem )
+	int baseTheme = UniversalMelee_GetTheme( baseItem )
+
+	if ( !UniversalMelee_IsHookswordTheme( theme ) )
+		return UNIVERSAL_STORE_SET_BUNDLE_ORDER[ baseTheme ].find( theme )
+
+	return 0
+}
+
+int function UniversalMelee_GetNumberOfVariants( ItemFlavor meleeItem )
+{
+	int theme = UniversalMelee_GetTheme( meleeItem )
+
+	ItemFlavor baseItem = UniversalMelee_GetBaseSkin( meleeItem )
+	int baseTheme = UniversalMelee_GetTheme( baseItem )
+
+	if ( !UniversalMelee_IsHookswordTheme( theme ) )
+		return UNIVERSAL_STORE_SET_BUNDLE_ORDER[ baseTheme ].len() - 1
+
+	return 0
+}
+
+array<ItemFlavor> function UniversalMelee_GetSkins( ItemFlavor item )
+{
+	ItemFlavor ornull meleeWeapon = ItemFlavor_GetParentFlavor( item )
+	if ( meleeWeapon == null )
+		return []
+
+	expect ItemFlavor( meleeWeapon )
+
+	array<ItemFlavor> skins = []
+
+	var addonSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( meleeWeapon ) ), "skins" )
+	foreach ( var addonBlock in IterateSettingsArray( addonSettingsArray ) )
+	{
+		asset addonAsset = GetSettingsBlockAsset( addonBlock, "flavor" )
+
+		if ( IsValidItemFlavorSettingsAsset( addonAsset ) )
+		{
+			skins.append( GetItemFlavorByAsset( addonAsset ) )
+		}
+	}
+
+	return skins
+}
+
+bool function UniversalMelee_HasAddons( ItemFlavor item )
+{
+	return UniversalMelee_GetAddons( item ).len() > 0
+}
+
+
+array<ItemFlavor> function UniversalMelee_GetAddons( ItemFlavor item )
+{
+	ItemFlavor ornull meleeWeapon = ItemFlavor_GetParentFlavor( item )
+	if ( meleeWeapon == null )
+		return []
+
+	expect ItemFlavor( meleeWeapon )
+
+	array<ItemFlavor> addons = []
+
+	var addonSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( meleeWeapon ) ), "meleeAddOns" )
+	foreach ( var addonBlock in IterateSettingsArray( addonSettingsArray ) )
+	{
+		asset addonAsset = GetSettingsBlockAsset( addonBlock, "flavor" )
+
+		if ( IsValidItemFlavorSettingsAsset( addonAsset ) )
+		{
+			addons.append( GetItemFlavorByAsset( addonAsset ) )
+		}
+	}
+
+	return addons
+}
+
+ItemFlavor function UniversalMelee_GetAddonFromSameTheme( ItemFlavor item )
+{
+	array<ItemFlavor> addons = UniversalMelee_GetAddons( item )
+	int itemTheme = UniversalMelee_GetTheme( item )
+
+	foreach ( addon in addons )
+	{
+		if ( itemTheme == UniversalMelee_GetTheme( addon ) )
+			return addon
+	}
+
+	return addons[ 0 ]
+}
+
+bool function UniversalMelee_IsAddonActivationEmote( ItemFlavor item )
+{
+	if ( !UniversalMelee_HasAddons( item ) )
+		return false
+
+	if ( ItemFlavor_GetType( item ) == eItemType.melee_skin )
+	{
+		item = UniversalMelee_GetAddons( item )[ 0 ]
+	}
+
+	return GetGlobalSettingsBool( ItemFlavor_GetAsset( item ), "activationEmote" )
+}
+
+array<ItemFlavor> function UniversalMelee_GetDeathboxes( ItemFlavor item )
+{
+	ItemFlavor ornull meleeWeapon = ItemFlavor_GetParentFlavor( item )
+	if ( meleeWeapon == null )
+		return []
+
+	expect ItemFlavor( meleeWeapon )
+
+	array<ItemFlavor> deathboxes = []
+
+	var addonSettingsArray = GetSettingsBlockArray( GetSettingsBlockForAsset( ItemFlavor_GetAsset( meleeWeapon ) ), "deathboxes" )
+	foreach ( var addonBlock in IterateSettingsArray( addonSettingsArray ) )
+	{
+		asset addonAsset = GetSettingsBlockAsset( addonBlock, "flavor" )
+
+		if ( IsValidItemFlavorSettingsAsset( addonAsset ) )
+		{
+			deathboxes.append( GetItemFlavorByAsset( addonAsset ) )
+		}
+	}
+
+	return deathboxes
+}
+
+array<ItemFlavor> function UniversalMelee_GetSetItemsByTheme( ItemFlavor meleeItem , int theme )
+{
+	array<ItemFlavor> allItems = []
+	allItems.extend( UniversalMelee_GetSkins( meleeItem ) )
+	allItems.extend( UniversalMelee_GetAddons( meleeItem ) )
+	allItems.extend( UniversalMelee_GetDeathboxes( meleeItem ) )
+
+	array <ItemFlavor> setItems = []
+	foreach ( ItemFlavor setItem in allItems )
+	{
+		if ( UniversalMelee_GetTheme( setItem ) == theme )
+		{
+			setItems.push( setItem )
+		}
+	}
+
+	return setItems
+}

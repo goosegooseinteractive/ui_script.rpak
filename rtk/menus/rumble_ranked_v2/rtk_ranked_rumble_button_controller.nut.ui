@@ -1,0 +1,204 @@
+global function RTKRankedRumbleButton_OnInitialize
+global function RTKRankedRumbleButton_OnDestroy
+
+global struct RTKRankedRumbleButton_Properties
+{
+	rtk_behavior buttonBehavior
+	rtk_behavior timerBehavior
+}
+
+global struct RTKRankedRumbleButtonInfo
+{
+	bool visible
+	string title
+	int endTime
+	int state
+	string timerFormat
+}
+
+struct
+{
+	int rankedRumbleState
+} file
+
+
+void function RTKRankedRumbleButton_OnInitialize( rtk_behavior self )
+{
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleButtonInfo", "RTKRankedRumbleButtonInfo" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "rankedRumbleButtonInfo", true ) )
+
+	RTKRankedRumbleButton_AutoSubscribeButton( self )
+	rtk_behavior ornull timerBehavior = self.PropGetBehavior( "timerBehavior" )
+	if ( timerBehavior != null )
+	{
+		expect rtk_behavior( timerBehavior )
+		RTKTimer_AddOnFinishListener( timerBehavior , void function() : ( timerBehavior ) {
+			RTKRankedRumbleButton_SetDataModel()
+			timerBehavior.SetActive( true )
+		} )
+	}
+
+	RTKRankedRumbleButtonInfo buttonStateEmpty
+	RTKStruct_SetValue( panelStruct, buttonStateEmpty )
+
+	if ( Cups_IsInitialized() )
+	{
+		thread RTKRankedRubmleButton_InitializeScreen( self )
+	}
+}
+
+void function RTKRankedRumbleButton_OnDestroy( rtk_behavior self )
+{
+	file.rankedRumbleState = eRankedRumbleState.INACTIVE
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "rankedRumbleButtonInfo" )
+}
+
+void function RTKRankedRubmleButton_InitializeScreen( rtk_behavior self )
+{
+	Signal( self, RTK_ON_DESTROY_SIGNAL )
+	EndSignal( self, RTK_ON_DESTROY_SIGNAL )
+
+	RTKRankedRumbleButton_SetDataModel()
+}
+
+void function RTKRankedRumbleButton_SetDataModel()
+{
+	RTKRankedRumbleButtonInfo buttonState = RTKRankedRumbleButton_GetButtonState()
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "rankedRumbleButtonInfo", "RTKRankedRumbleButtonInfo" )
+	RTKStruct_SetValue( panelStruct, buttonState )
+}
+
+void function RTKRankedRumbleButton_AutoSubscribeButton( rtk_behavior self )
+{
+	rtk_behavior ornull buttonBehavior = self.PropGetBehavior( "buttonBehavior" )
+	if ( buttonBehavior != null )
+	{
+		expect rtk_behavior( buttonBehavior )
+
+		self.AutoSubscribe( buttonBehavior, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			OpenRankedInfoPage( null )
+
+			if ( file.rankedRumbleState == eRankedRumbleState.LOCKED || file.rankedRumbleState == eRankedRumbleState.COMING_SOON )
+			{
+				RankedInfo_SetInitialTab( "OverviewPanel" )
+			}
+			else if ( file.rankedRumbleState == eRankedRumbleState.ACTIVE || file.rankedRumbleState == eRankedRumbleState.FINISH )
+			{
+				RankedInfo_SetInitialTab( "LeaderboardPanel" )
+			}
+			else 
+			{
+				RankedInfo_SetInitialTab( "RankedInfoPanel" )
+			}
+		})
+	}
+}
+
+RTKRankedRumbleButtonInfo function RTKRankedRumbleButton_GetButtonState()
+{
+	RTKRankedRumbleButtonInfo buttonInfo
+
+	int rankedRumbleState = RankedEvent_GetRumbleRankedState()
+	string title = ""
+	string timerFormat = ""
+	bool visible = false
+
+	switch ( rankedRumbleState )
+	{
+		case eRankedRumbleState.INACTIVE:
+			title = "#RANKED_RUMBLE_INACTIVE_TITLE"
+			visible = true
+			break
+
+		case eRankedRumbleState.COMING_SOON:
+			title = "#RANKED_RUMBLE_STARTS"
+			timerFormat = "#TIME_REMAINING_SHORT_CLOCK"
+			visible = true
+			break
+
+		case eRankedRumbleState.LOCKED:
+			title = "#RANKED_RUMBLE_LOCKED"
+			visible = true
+			break
+
+		case eRankedRumbleState.ACTIVE:
+			title = "#RANKED_RUMBLE_ACTIVE"
+			timerFormat = "#TIME_REMAINING_SHORT_CLOCK"
+			visible = true
+			break
+
+		case eRankedRumbleState.FINISH:
+			title = "#RANKED_RUMBLE_ENDED"
+			timerFormat = "#RANKED_RUMBLE_NEXT_LADDER_IN"
+			visible = true
+			break
+
+		case eRankedRumbleState.CROSSPLAY_DISABLED:
+			title = "#RANKED_RUMBLE_LOCKED"
+			visible = true
+			break
+
+		default:
+			break
+	}
+
+	int endTime
+	switch( rankedRumbleState )
+	{
+		case eRankedRumbleState.INACTIVE:
+			CupBakeryAssetData ornull nextRankedEvent = RankedEvent_GetNextRevealedCup( GetLocalClientPlayer() )
+			if ( nextRankedEvent != null )
+			{
+				timerFormat = "#RANKED_RUMBLE_NEXT_LADDER_IN"
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( nextRankedEvent ) )
+			}
+			else
+			{
+				timerFormat = ""
+			}
+			break
+
+		case eRankedRumbleState.FINISH:
+			CupBakeryAssetData ornull nextRankedEvent = RankedEvent_GetNextRevealedCup( GetLocalClientPlayer() )
+			if ( nextRankedEvent != null )
+			{
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( nextRankedEvent ) )
+			}
+			else
+			{
+				timerFormat = "#RANKED_RUMBLE_FINISH_SEASON"
+				ItemFlavor ornull rankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+				if ( rankedPeriod != null )
+				{
+					if ( Ranked_IsRankedV2FirstSplit( expect ItemFlavor( rankedPeriod ) ) )
+					{
+						timerFormat = "#RANKED_RUMBLE_FINISH_SPLIT"
+					}
+				}
+			}
+			break
+
+		case eRankedRumbleState.COMING_SOON:
+			CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+			if ( rankedEvent != null )
+				endTime = Cups_GetStartUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+			break
+
+		default:
+			CupBakeryAssetData ornull rankedEvent = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+			if ( rankedEvent != null )
+				endTime = Cups_GetFinishUnixTime( expect CupBakeryAssetData( rankedEvent ) )
+			break
+	}
+
+	buttonInfo.title = title
+	buttonInfo.endTime = endTime - 1 
+	buttonInfo.state = rankedRumbleState
+	buttonInfo.timerFormat = timerFormat
+	buttonInfo.visible = visible
+
+	file.rankedRumbleState = buttonInfo.state
+
+	return buttonInfo
+}

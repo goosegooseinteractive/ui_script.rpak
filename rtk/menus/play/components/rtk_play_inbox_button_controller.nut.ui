@@ -1,0 +1,131 @@
+global function RTKPlayInboxButton_OnInitialize
+global function RTKPlayInboxButton_OnDestroy
+global function RTKPlayInboxButton_SetHasOpenedInboxScreen
+
+global struct RTKPlayInboxButton_Properties
+{
+	rtk_behavior button
+}
+
+global struct RTKPlayInboxButtonScreenModel
+{
+	int unreadMessages
+	bool hasUrgentMessages
+	bool hasGifts
+	bool isMoreInfoVisible
+}
+
+struct PrivateData
+{
+	string modelPath
+	rtk_struct screenModel
+}
+
+struct
+{
+	bool hasOpenedInboxScreen = false
+} file
+
+void function RTKPlayInboxButton_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "inboxButton", true, [ "play" ] )
+	p.screenModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "inboxButton", "RTKPlayInboxButtonScreenModel", [ "play" ] )
+	self.GetPanel().SetBindingRootPath( p.modelPath )
+
+	RTKPlayInboxButton_SetDataModel()
+	RTKPlayInboxButton_SetButtonAction( self )
+
+	AddCallback_OnInboxMessageUpdated( RTKPlayInboxButton_SetDataModel )
+	AddCallback_OnInboxMessageReceived( RTKPlayInboxButton_OnMessageReceived )
+}
+
+void function RTKPlayInboxButton_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, p.modelPath )
+
+	RemoveCallback_OnInboxMessageUpdated( RTKPlayInboxButton_SetDataModel )
+	RemoveCallback_OnInboxMessageReceived( RTKPlayInboxButton_OnMessageReceived )
+}
+
+void function RTKPlayInboxButton_OnMessageReceived()
+{
+	RTKPlayInboxButton_SetHasOpenedInboxScreen( false )
+	RTKPlayInboxButton_SetDataModel()
+}
+
+void function RTKPlayInboxButton_SetDataModel()
+{
+	rtk_struct ornull screenModel = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "inboxButton", true, [ "play" ] )
+
+	if ( screenModel == null )
+		return
+
+	expect rtk_struct( screenModel )
+
+	array<GRXInboxMessage> inboxMessages = GetInboxMessages()
+
+	int unreadMessagesCount = 0
+	int giftsCount = 0
+	int urgentMessageCount = 0
+	foreach ( GRXInboxMessage inboxMessage in inboxMessages )
+	{
+		if ( inboxMessage.hasRead == false )
+		{
+			unreadMessagesCount++
+
+			if ( inboxMessage.isUrgent == true )
+			{
+				urgentMessageCount++
+			}
+
+		if ( inboxMessage.container.itemIndices.len() > 0 )
+			{
+				giftsCount++
+			}
+		}
+	}
+
+	RTKStruct_SetInt( screenModel, "unreadMessages", unreadMessagesCount )
+	RTKStruct_SetBool( screenModel, "hasGifts", giftsCount > 0 )
+	RTKStruct_SetBool( screenModel, "hasUrgentMessages", urgentMessageCount > 0 )
+	RTKStruct_SetBool( screenModel, "isMoreInfoVisible", !file.hasOpenedInboxScreen && ( urgentMessageCount > 0 || giftsCount > 0 ) )
+}
+
+void function RTKPlayInboxButton_SetButtonAction( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull button = self.PropGetBehavior( "button" )
+	if ( button == null )
+		return
+
+	expect rtk_behavior( button )
+
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, p ) {
+		if ( PromoDialog_CanShow() )
+		{
+			AdvanceMenu( GetMenu( "PromoDialogUM" ) )
+			ReturnToInbox()
+		}
+	})
+}
+
+void function RTKPlayInboxButton_SetHasOpenedInboxScreen( bool hasOpened = true )
+{
+	rtk_struct ornull screenModel = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "inboxButton", true, [ "play" ] )
+
+	if ( screenModel == null )
+		return
+
+	expect rtk_struct( screenModel )
+
+	file.hasOpenedInboxScreen = hasOpened
+	RTKStruct_SetBool( screenModel, "isMoreInfoVisible", !hasOpened )
+}

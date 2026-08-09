@@ -1,0 +1,1335 @@
+
+
+
+global function LockoutTimeSynced_PLV_Enabled
+global function Freespawns_PLV_LockoutTime_Progress_PastDisable
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const string LOCKOUT_TIMES_DEFAULTS 		= "10 20 30 40 50 60"
+const string LOCKOUT_DEATHADDS_DEFAULTS 	= "05 10 15 15 15 15"
+
+
+const string LOCKOUT_TUNINGS_INTRO_ACTIVE 	= "Freespawns_Lockout_IntroTuning_Active"
+const string LOCKOUT_TUNINGS_HYPER_ACTIVE 	= "Freespawns_Lockout_HyperTuning_Active"
+
+global const string NETVAR_PERSONAL_LOCKOUT_BASE_TIME_ADJUSTMENTS	= "Freespawn_PersonalBaseLockoutTimeAdjustments"
+global const string NETVAR_PERSONAL_LOCKOUT_START_TIME 				= "Freespawn_PersonalLockoutStartTime"
+global const string NETVAR_PERSONAL_LOCKOUT_END_TIME 				= "Freespawn_PersonalLockoutEndTime"
+
+
+
+
+
+
+
+
+
+
+const float LOCKOUTTIME_MAX = 255.0
+const float MAX_LOCKOUT_GAMETIME = 9999.0
+
+
+
+
+
+enum eDeathModulationType 
+{
+	PENALTY_DEATH,
+	PENALTY_BLEEDOUT,
+	PENALTY_SUICIDE,
+	PENALTY_EXECUTED,
+	REWARD_DOWN,
+	REWARD_KILL,
+	REWARD_EXECUTION,
+	COUNT_
+}
+
+
+
+
+
+
+
+
+
+
+struct
+{
+	bool devPrintsOn = false
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+} file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________PLAYLIST_VARS___________________________(){}
+#endif
+
+
+string function Lockout_PLV_LockoutTimeMinimums_ByRound()
+{
+	return GetCurrentPlaylistVarString( "freespawns_lockouttimes_byround", LOCKOUT_TIMES_DEFAULTS ) 
+}
+
+bool function LockoutTimeSynced_PLV_Enabled()
+{
+	
+	return GetCurrentPlaylistVarBool( "freespawns_lockouttime_synced_enabled", true ) 
+}
+
+float function LockoutTimeSynced_PLV_AllyDeathPenalty()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockouttime_synced_allydeathpenalty", 0.0 ) 
+}
+
+
+
+bool function Lockout_PLV_IntroTunings_Enabled()
+{
+	
+	return GetCurrentPlaylistVarBool( "freespawns_lockout_introtunings_enabled", true )
+}
+
+int function Lockout_PLV_IntroTunings_Round()
+{
+	
+	return GetCurrentPlaylistVarInt( "freespawns_lockout_introtunings_round", 1 )
+}
+
+float function Lockout_PLV_IntroTunings_LockoutTime()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockout_introtunings_lockouttime", 5.0 )
+}
+
+float function Lockout_PLV_IntroTunings_DeathAdd()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockout_introtunings_deathadd", 5.0 )
+}
+
+bool function Lockout_PLV_HyperTunings_Enabled()
+{
+	
+	return GetCurrentPlaylistVarBool( "freespawns_lockout_hypertunings_enabled", false )
+}
+
+int function Lockout_PLV_HyperTunings_StartAt_EndofRound()
+{
+	
+	return GetCurrentPlaylistVarInt( "freespawns_lockout_hypertunings_startat_endofround", 4 )
+}
+
+float function Lockout_PLV_HyperTunings_LockoutTime()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockout_hypertunings_lockouttime", 60.0 )
+}
+
+float function Lockout_PLV_HyperTunings_DeathAdd()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockout_hypertunings_deathadd", 30.0 )
+}
+
+float function Lockout_PLV_HyperTunings_AggroRewardMod()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_lockout_hypertunings_aggrorewardmod", 2.0 )
+}
+
+
+
+bool function LockoutDeathAdds_PLV_Enabled()
+{
+	
+	return GetCurrentPlaylistVarBool( "freespawns_lockoutdeathadds_enabled", true ) 
+}
+
+float function DeathAddMod_PLV_Penalty_Death()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_penalty_death", 1.0 )
+}
+
+float function DeathAddMod_PLV_Penalty_Bleedout()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_penalty_bleedout", 1.0 )
+}
+
+float function DeathAddMod_PLV_Penalty_Executed()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_penalty_executed", 1.5 )
+}
+
+float function DeathAddMod_PLV_Penalty_Suicide()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_penalty_suicide", 2.0 )
+}
+
+float function DeathAddMod_PLV_Reward_Down()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_reward_down", -0.5 )
+}
+
+float function DeathAddMod_PLV_Reward_Kill()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_reward_kill", -0.5 )
+}
+
+float function DeathAddMod_PLV_Reward_Execution()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_deathaddmod_reward_finish", -1.0 )
+}
+
+string function Lockout_PLV_DeathAdds_ByRound()
+{
+	return GetCurrentPlaylistVarString( "freespawns_lockoutdeathadds_byround", LOCKOUT_DEATHADDS_DEFAULTS )
+}
+
+bool function Freespawns_PLV_LockoutTime_Progress_PastDisable()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_lockouttime_progress_pastdisable", true ) 
+}
+
+
+
+bool function AggroRewards_PLV_Enabled()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_enabled", true ) 
+}
+
+bool function AggroRewards_PLV_CanGive_Evo()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_CanGive_evo", true )
+}
+
+bool function AggroRewards_PLV_CanGive_DownedEnemy()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_CanGive_downedenemy", false ) 
+}
+
+bool function AggroRewards_PLV_CanGive_KilledEnemy()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_CanGive_killedenemy", false ) 
+}
+
+bool function AggroRewards_PLV_CanGive_ExecutedEnemy()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_CanGive_executedenemy", false ) 
+}
+
+bool function AggroRewards_PLV_CanGive_Penalty_AllyDeath()
+{
+	return GetCurrentPlaylistVarBool( "freespawns_aggrorewards_CanGive_penalty_allydeath", false ) 
+}
+
+float function AggroRewards_PLV_EvoToSeconds()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_aggrorewards_evo_to_seconds", -0.05  )
+}
+
+float function AggroRewards_PLV_DownedEnemy()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_aggrorewards_downedenemy", -5.0  ) 
+}
+
+float function AggroRewards_PLV_KilledEnemy()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_aggrorewards_killedenemy", -10  ) 
+}
+
+float function AggroRewards_PLV_ExecutedEnemy()
+{
+	return GetCurrentPlaylistVarFloat( "freespawns_aggrorewards_executedenemy", -15  ) 
+}
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________TUNINGS___________________________(){}
+#endif
+
+
+bool function Lockout_IntroTunings_ActiveCheck()
+{
+	if( !Lockout_PLV_IntroTunings_Enabled() )
+		return false
+
+	bool result = GetGlobalNetBool( LOCKOUT_TUNINGS_INTRO_ACTIVE )
+
+#if DEV
+		printt( FUNC_NAME() + "(): " + LOCKOUT_TUNINGS_INTRO_ACTIVE + " == " + result )
+#endif
+
+	return result
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Lockout_HyperTunings_ActiveCheck()
+{
+	if( !Lockout_PLV_HyperTunings_Enabled() )
+		return false
+
+	bool result = GetGlobalNetBool( LOCKOUT_TUNINGS_HYPER_ACTIVE )
+
+#if DEV
+		printt( FUNC_NAME() + "(): Freespawns_Lockout_HyperTuning_Active == " + result )
+#endif
+
+	return result
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________NETVAR_HELPERS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________AGGRO_REWARDS___________________________(){}
+#endif
+
+
+bool function AggroRewards_AreEnabled()
+{
+	bool freespawnsEnabled = true 
+
+
+
+
+	bool aggroRewardsEnabled = AggroRewards_PLV_Enabled()
+	return freespawnsEnabled && aggroRewardsEnabled
+}
+
+float function AggroRewards_GetRewardByType( int aggroRewardType )
+{
+	if ( !AggroRewards_AreEnabled() )
+		return 0
+
+	float result
+	switch( aggroRewardType )
+	{
+		case eFreespawns_AggroType.DOWNED_ENEMY:
+			result = AggroRewards_PLV_DownedEnemy()
+			break
+		case eFreespawns_AggroType.KILLED_ENEMY:
+			result = AggroRewards_PLV_KilledEnemy()
+			break
+		case eFreespawns_AggroType.EXECUTED_ENEMY:
+			result = AggroRewards_PLV_ExecutedEnemy()
+			break
+		case eFreespawns_AggroType.PENALTY_ALLYDEATH:
+			result = LockoutTimeSynced_PLV_AllyDeathPenalty()
+			break
+		case eFreespawns_AggroType.EVO:
+			result = AggroRewards_PLV_EvoToSeconds()
+			break
+		default:
+			result = 0
+			break
+	}
+
+	if ( Lockout_HyperTunings_ActiveCheck() )
+	{
+		float rewardMod = Lockout_PLV_HyperTunings_AggroRewardMod()
+		result = result * rewardMod
+	}
+
+	return result
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________DEATH_TIME_MODULATIONS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if INTELLIJ_OUTLINE_SECTION_MARKER
+void function _____________ANALYTICS___________________________(){}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                          

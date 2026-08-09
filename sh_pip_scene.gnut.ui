@@ -1,0 +1,1193 @@
+
+
+
+
+
+
+
+const bool ENABLE_CHARACTER_SELECT_FEATURE_PARITY_TEST = false
+
+
+global function ShPIPScene_UIInit
+global function ShPIPScene_UIShutdown
+global function UI_CreatePIPScene
+global function UI_ReleasePIPScene
+global function ClientToUI_OnPIPScenePIPSlotReserved
+global function UI_ChangePIPSceneParam_ItemFlavor
+global function UI_ChangePIPSceneParam_Int
+global function UI_ApplyPIPSceneParamChanges
+#if DEV
+global function UI_TestPIPSceneAPI
+#endif
+
+
+global function ShPIPScene_LevelInit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global typedef PIPScenePIPSlotReservedCallback void functionref( int pipSlotID )
+
+
+global enum PIPSceneAnimationType
+{
+	CHARACTER_SELECT = 0,
+	CHARACTER_SELECT_READY = 1,
+	GLADIATOR_CARD = 2,
+
+
+
+}
+
+global enum PIPSceneParamType
+{
+	ANIMATION_TYPE,
+	CHARACTER,
+	CHARACTER_SELECT,
+	CHARACTER_SKIN,
+	GLADIATOR_CARD_STANCE,
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global struct PIPSceneTemplate
+{
+	float	cameraHorizontalFOV
+	float	cameraZFar
+	float	cameraExposure
+	string	colorCorrectionRawPath
+}
+
+global struct PIPSceneParams
+{
+	int					animationType
+	ItemFlavor ornull	character
+	ItemFlavor ornull	characterSelect
+	ItemFlavor ornull	characterSkin
+	ItemFlavor ornull	gladiatorCardStance
+}
+
+
+struct UIPIPSceneState
+{
+	string 								key
+	PIPScenePIPSlotReservedCallback		pipSlotReservedCallback
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct
+{
+
+	table<string, UIPIPSceneState> uiStates
+
+
+
+} file
+
+
+void function ShPIPScene_LevelInit()
+{
+
+
+
+}
+
+
+
+void function ShPIPScene_UIInit()
+{
+	AddUICallback_UIShutdown( ShPIPScene_UIShutdown )
+}
+
+void function ShPIPScene_UIShutdown()
+{
+	foreach ( string key, UIPIPSceneState _ in clone file.uiStates )
+	{
+		UI_ReleasePIPScene( key )
+	}
+}
+
+void function UI_CreatePIPScene( string key, ItemFlavor pipSceneTemplate, PIPScenePIPSlotReservedCallback pipSlotReservedCallback )
+{
+	Assert( !( key in file.uiStates ) )
+
+	PrintIfVerbose( key, "UI_CreatePIPScene" )
+	int templateGUID = ItemFlavor_GetGUID( pipSceneTemplate )
+	RunClientScript( "UIToClient_CreatePIPScene", key, templateGUID )
+
+	UIPIPSceneState newState
+	newState.key = key
+	newState.pipSlotReservedCallback = pipSlotReservedCallback
+	file.uiStates[ key ] <- newState
+}
+
+void function UI_ReleasePIPScene( string key )
+{
+	PrintIfVerbose( key, "UI_ReleasePIPScene" )
+	RunClientScript( "ReleasePIPScene", key )
+
+	delete file.uiStates[ key ]
+}
+
+void function UI_ChangePIPSceneParam_ItemFlavor( string key, int paramType, ItemFlavor itemFlav )
+{
+	Assert( key in file.uiStates )
+	Assert( IsPIPSceneParamTypeItemFlavor( paramType ) )
+	int guid = ItemFlavor_GetGUID( itemFlav )
+	PrintIfVerbose( key, format( "UI_ChangePIPSceneParamItemFlav(%d): '%s' (%d)", paramType, ItemFlavor_GetAssetName( itemFlav ), guid ) )
+	RunClientScript( "ChangePIPSceneParamGeneric", key, paramType, guid, "" )
+}
+
+void function UI_ChangePIPSceneParam_Int( string key, int paramType, int value )
+{
+	Assert( key in file.uiStates )
+	Assert( IsPIPSceneParamTypeInt( paramType ) )
+	PrintIfVerbose( key, format( "UI_ChangePIPSceneParamInt(%d): %d", paramType, value ) )
+	RunClientScript( "ChangePIPSceneParamGeneric", key, paramType, value, "" )
+}
+
+void function UI_ApplyPIPSceneParamChanges( string key )
+{
+	Assert( key in file.uiStates )
+	RunClientScript( "ApplyPIPSceneParamChanges", key )
+}
+
+void function ClientToUI_OnPIPScenePIPSlotReserved( string key, int pipSlotID )
+{
+	PrintIfVerbose( key, format( "ClientToUI_OnPIPScenePIPSlotReserved: %d", pipSlotID ) )
+	if ( key in file.uiStates )
+	{
+		if ( file.uiStates[key].pipSlotReservedCallback != null )
+		{
+			file.uiStates[key].pipSlotReservedCallback( pipSlotID )
+		}
+	}
+}
+
+#if DEV
+void function UI_TestPIPSceneAPI()
+{
+	
+	thread void function() {
+		string key          = "UI_TestPIPSceneAPI"
+		ItemFlavor template = GetItemFlavorByGUID( 319499288 )
+		array<int> pipSlotIDs
+		UI_CreatePIPScene( key, template, void function( int pipSlotID ) : ( pipSlotIDs ) {
+			printf( "!!! pipSlotID = %d !!!", pipSlotID )
+			pipSlotIDs.append( pipSlotID )
+		} )
+		UI_ChangePIPSceneParam_Int( key, PIPSceneParamType.ANIMATION_TYPE, PIPSceneAnimationType.GLADIATOR_CARD )
+		UI_ChangePIPSceneParam_ItemFlavor( key, PIPSceneParamType.CHARACTER, GetItemFlavorByGUID( 725342087 ) )
+		UI_ChangePIPSceneParam_ItemFlavor( key, PIPSceneParamType.CHARACTER_SKIN, GetItemFlavorByGUID( 1694869144 ) )
+		UI_ChangePIPSceneParam_ItemFlavor( key, PIPSceneParamType.GLADIATOR_CARD_STANCE, GetItemFlavorByGUID( 509086852 ) )
+		UI_ApplyPIPSceneParamChanges( key )
+		while ( pipSlotIDs.len() == 0 )
+		{
+			WaitFrame()
+		}
+		UI_ReleasePIPScene( key )
+	}()
+}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function IsVerbose()
+{
+#if DEV
+		return GetConVarBool( "pip_scene_verbose" )
+#endif
+	return false
+}
+
+void function PrintIfVerbose( string key, string message )
+{
+	if ( IsVerbose() )
+	{
+		printf( "[PIP_SCENE:%s] %s", key, message )
+	}
+}
+
+PIPSceneTemplate function BuildPIPSceneTemplate( ItemFlavor templateItemFlav )
+{
+	Assert( ItemFlavor_GetType( templateItemFlav ) == eItemType.pip_scene_template )
+	var block = ItemFlavor_GetSettingsBlock( templateItemFlav )
+	PIPSceneTemplate template
+	template.cameraHorizontalFOV = GetSettingsBlockFloat( block, "cameraHorizontalFOV" )
+	template.cameraExposure = GetSettingsBlockFloat( block, "cameraExposure" )
+	template.cameraZFar = GetSettingsBlockFloat( block, "cameraZFar" )
+	template.colorCorrectionRawPath = GetSettingsBlockString( block, "colorCorrectionRawPath" )
+	return template
+}
+
+bool function IsPIPSceneParamTypeItemFlavor( int paramType )
+{
+	return (
+		paramType == PIPSceneParamType.CHARACTER ||
+		paramType == PIPSceneParamType.CHARACTER_SELECT ||
+		paramType == PIPSceneParamType.CHARACTER_SKIN ||
+		paramType == PIPSceneParamType.GLADIATOR_CARD_STANCE )
+}
+
+bool function IsPIPSceneParamTypeInt( int paramType )
+{
+	return paramType == PIPSceneParamType.ANIMATION_TYPE
+}

@@ -1,0 +1,91 @@
+global function RTKDeepLinkButton_OnInitialize
+
+global function RTKDeepLinkButton_AddCallbackOnClick
+global function RTKDeepLinkButton_RemoveCallbackOnClick
+
+global struct RTKDeepLinkButton_Properties
+{
+	rtk_behavior buttonBehavior
+	string link = ""
+	string linkType = ""
+	string fromPageId = ""
+	int messageType = 0
+	int carouselIndex = 0
+}
+
+struct PrivateData
+{
+	array <void functionref()> onClickCallbacks
+}
+
+void function RTKDeepLinkButton_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior ornull button = self.PropGetBehavior( "buttonBehavior" )
+
+	if ( button )
+	{
+		expect rtk_behavior ( button )
+		self.AutoSubscribe( button, "OnPressed", function( rtk_behavior button, int keycode, int prevState  ) : ( self ) {
+			GoToLink( self )
+			PrivateData p
+			self.Private( p )
+
+			foreach ( onClickCallback in p.onClickCallbacks )
+			{
+				onClickCallback()
+			}
+		} )
+	}
+}
+
+void function RTKDeepLinkButton_AddCallbackOnClick( rtk_behavior self, void functionref() callback )
+{
+	PrivateData p
+	self.Private( p )
+
+	Assert( p.onClickCallbacks.contains( callback ) == false, "Callback already registered" )
+
+	p.onClickCallbacks.append( callback )
+}
+
+void function RTKDeepLinkButton_RemoveCallbackOnClick( rtk_behavior self, void functionref() callback )
+{
+	
+	PrivateData p
+	self.Private( p )
+
+	Assert( p.onClickCallbacks.contains( callback ) == true, "Callback not registered" )
+
+	p.onClickCallbacks.removebyvalue( callback )
+}
+
+void function GoToLink( rtk_behavior self )
+{
+	string link = self.PropGetString( "link" )
+	string linkType = self.PropGetString( "linkType" )
+	string fromPageId = self.PropGetString( "fromPageId" )
+	int messageType = self.PropGetInt( "messageType" )
+	int carouselIndex = self.PropGetInt( "carouselIndex" )
+
+	if ( linkType == "" )
+		return
+
+	if ( fromPageId == "battlepass" )
+	{
+		switch ( messageType )
+		{
+			case eBattlepassUMType.MESSAGE:
+				PromoDialog_UpdateBattlepassPromo( true )
+				PromoDialog_OpenToPage( carouselIndex )
+				return
+
+			case eBattlepassUMType.DEEPLINK: 
+				break
+
+			case eBattlepassUMType.NONE:
+				break
+		}
+	}
+
+	OpenPromoLink( linkType, link, fromPageId )
+}

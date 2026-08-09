@@ -1,0 +1,386 @@
+global function RTKAngledProgressBarExtensions_OnInitialize
+global function RTKAngledProgressBarExtensions_OnDestroy
+global function RTKAngledProgressBarExtensions_InitMetaData
+
+global function RTKAngledProgressBarExtensions_PrepareAnimations
+global function RTKAngledProgressBarExtensions_Animate
+global function RTKAngledProgressBarExtensions_HideOldProgress
+global function RTKAngledProgressBarExtensions_ShowOldProgress
+
+global struct RTKAngledProgressBarExtensions_Tween
+{
+	rtk_behavior animator
+	int onStartedListenerID
+	int onFinishedListenerID
+	float startValue = 0.0
+	float endValue = 0.0
+	float delay = 0.0
+	float duration = 0.0
+	string animationName = "AnimateBar"
+	string soundName = ""
+	int tweenIndex = 0
+	void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) animationStartedCallback
+	void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) animationFinishedCallback
+}
+
+global struct RTKAngledProgressBarExtensions_Struct
+{
+	bool animate = false
+	bool prime = false
+	bool skipToEnd = false
+	bool onlyAnimateOnce = false
+	float startValue = 0.0
+	float endValue = 1.0
+	int startValueInt = 0
+	int endValueInt = 0
+	array< float > minValues = [] 
+	array< float > maxValues = [] 
+	array<void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) > animationStartedCallbacks
+	array<void functionref( rtk_behavior angledProgressBarExtensions, RTKAngledProgressBarExtensions_Tween tween ) > animationFinishedCallbacks
+}
+
+global struct RTKAngledProgressBarExtensions_Properties
+{
+	rtk_panel progressBar0
+	rtk_behavior progressBarBehavior0
+	rtk_behavior progressBarAnimator0
+	rtk_panel progressBar1
+	rtk_behavior progressBarBehavior1
+	rtk_behavior progressBarAnimator1
+
+	
+	bool animate
+	bool prime
+	bool skipToEnd
+	bool onlyAnimateOnce
+	float startValue
+	float endValue
+	array< float > minValues 
+	array< float > maxValues 
+}
+
+struct PrivateData
+{
+	array< RTKAngledProgressBarExtensions_Tween > tweens
+	int propertyListenerID = -1
+}
+
+void function RTKAngledProgressBarExtensions_PrepareAnimations( rtk_behavior self, RTKAngledProgressBarExtensions_Struct state )
+{
+	if ( state.minValues.len() == 0 || state.maxValues.len() == 0 )
+	{
+		return
+	}
+
+	PrivateData p
+	self.Private( p )
+
+	p.tweens.clear()
+
+	float curValue = state.startValue
+
+	int levelIndex = 0
+	float overallValueChange = state.endValue - state.startValue
+	bool noChange = overallValueChange == 0.0
+	bool negative = state.endValue < state.startValue || state.endValueInt < state.startValueInt
+
+	int tweenLimit = 50
+	while ( curValue != state.endValue || noChange )
+	{
+		float levelMin = state.minValues[ levelIndex ]
+		float levelMax = state.maxValues[ levelIndex ]
+		float levelRange = max( 1.0, levelMax - levelMin )
+		float levelValueChange = 0.0
+		if ( overallValueChange > 0 )
+			levelValueChange = min( state.endValue - curValue, levelMax - curValue )
+		else if ( overallValueChange < 0 )
+			levelValueChange = max( state.endValue - curValue, levelMin - curValue )
+
+		RTKAngledProgressBarExtensions_Tween barMovesTween
+		barMovesTween.animator = self.PropGetBehavior( "progressBarAnimator0" )
+		barMovesTween.startValue = ( curValue - levelMin ) / levelRange
+		barMovesTween.endValue = ( curValue + levelValueChange - levelMin ) / levelRange
+		barMovesTween.delay = 0.0
+		
+		barMovesTween.duration = noChange ? 0.0 : ( 2 * ( max( 0.66, barMovesTween.endValue - barMovesTween.startValue ) ) ) * pow( 0.66 , levelIndex )
+		barMovesTween.animationName = "AnimateBar"
+
+		int callbackIndex = ( levelIndex * 2 )
+		if ( callbackIndex < state.animationStartedCallbacks.len()  )
+			barMovesTween.animationStartedCallback = state.animationStartedCallbacks[ callbackIndex ]
+
+		if ( callbackIndex < state.animationFinishedCallbacks.len()  )
+			barMovesTween.animationFinishedCallback = state.animationFinishedCallbacks[ callbackIndex ]
+
+		barMovesTween.tweenIndex = p.tweens.len()
+		p.tweens.push( barMovesTween )
+
+		curValue += levelValueChange
+		bool willBreak = false
+		if (
+			( overallValueChange == 0.0 ) ||
+			( ( overallValueChange > 0.0 || !negative ) && curValue >= state.endValue ) ||
+			( ( overallValueChange < 0.0 || negative ) && curValue <= state.endValue )
+		)
+		{
+			curValue = state.endValue
+			willBreak = true
+		}
+
+		if ( curValue >= state.maxValues[ levelIndex ] && !noChange )
+		{
+			RTKAngledProgressBarExtensions_Tween tween
+			tween.animator = self.PropGetBehavior( "progressBarAnimator0" )
+			tween.animationName = "LevelUp"
+			tween.delay = 0.0
+			tween.duration = 3 * pow( 0.75 , levelIndex )
+
+			callbackIndex = ( levelIndex * 2 ) + 1
+			if ( callbackIndex < state.animationStartedCallbacks.len()  )
+				tween.animationStartedCallback = state.animationStartedCallbacks[ callbackIndex ]
+
+			if ( callbackIndex < state.animationFinishedCallbacks.len()  )
+				tween.animationFinishedCallback = state.animationFinishedCallbacks[ callbackIndex ]
+
+			tween.tweenIndex = p.tweens.len()
+			p.tweens.push( tween )
+
+			if ( willBreak ) 
+			{
+				RTKAngledProgressBarExtensions_Tween nextLevelNoProgressTween
+				nextLevelNoProgressTween.animator = self.PropGetBehavior( "progressBarAnimator0" )
+				nextLevelNoProgressTween.startValue = 0.0
+				nextLevelNoProgressTween.endValue = 0.0
+				nextLevelNoProgressTween.delay = 0.0
+				nextLevelNoProgressTween.duration = 0.0
+				nextLevelNoProgressTween.animationName = "AnimateBar"
+
+				callbackIndex = ( ( levelIndex + 1 ) * 2 )
+				if ( callbackIndex < state.animationStartedCallbacks.len()  )
+					nextLevelNoProgressTween.animationStartedCallback = state.animationStartedCallbacks[ callbackIndex ]
+
+				if ( callbackIndex < state.animationFinishedCallbacks.len()  )
+					nextLevelNoProgressTween.animationFinishedCallback = state.animationFinishedCallbacks[ callbackIndex ]
+
+				nextLevelNoProgressTween.tweenIndex = p.tweens.len()
+				p.tweens.push( nextLevelNoProgressTween )
+				break
+			}
+		}
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+
+		if ( state.minValues.len() - 1 > levelIndex && state.maxValues.len() - 1 > levelIndex )
+			levelIndex++
+
+		tweenLimit--
+
+		if ( tweenLimit < 0 )
+		{
+			Assert( false, "RTKAngledProgressBarExtensions_PrepareAnimations has exceeded tween limit" )
+			self.Warn("RTKAngledProgressBarExtensions_PrepareAnimations has exceeded tween limit" )
+			break
+		}
+
+		if ( willBreak )
+			break
+
+		noChange = false
+	}
+
+	p.tweens.reverse()
+
+	if ( !state.animate && !state.skipToEnd )
+	{
+		RTKAngledProgressBarExtensions_ShowOldProgress( self, state )
+	}
+
+	if ( state.skipToEnd && p.tweens.len() > 0 )
+	{
+		RTKAngledProgressBarExtensions_Tween sourceTween = clone p.tweens[ 0 ]
+		sourceTween.duration = 0.0
+		sourceTween.startValue = sourceTween.endValue
+		RTKAngledProgressBarExtensions_AnimateTween( self, sourceTween, false )
+	}
+	else if ( state.animate )
+	{
+		RTKAngledProgressBarExtensions_Animate( self )
+	}
+	else if ( state.prime && p.tweens.len() > 0 )
+	{
+		RTKAngledProgressBarExtensions_Tween sourceTween = clone p.tweens[ p.tweens.len() - 1 ]
+		sourceTween.duration = 0.0
+		sourceTween.endValue = sourceTween.startValue
+		RTKAngledProgressBarExtensions_AnimateTween( self, sourceTween, false )
+	}
+}
+
+void function RTKAngledProgressBarExtensions_ShowOldProgress( rtk_behavior self, RTKAngledProgressBarExtensions_Struct state )
+{
+	RTKAngledProgressBarExtensions_Tween prevBarTween
+	prevBarTween.animator = self.PropGetBehavior( "progressBarAnimator1" )
+	prevBarTween.startValue = ( state.startValue - state.minValues[ 0 ] ) / ( state.maxValues[ 0 ] - state.minValues[ 0 ] )
+	prevBarTween.endValue = prevBarTween.startValue
+	prevBarTween.animationName = "AnimateBar"
+	prevBarTween.delay = 0.0
+	prevBarTween.duration = 0.0
+	RTKAngledProgressBarExtensions_AnimateTween( self, prevBarTween, false )
+}
+
+void function RTKAngledProgressBarExtensions_HideOldProgress( rtk_behavior self )
+{
+	RTKAngledProgressBarExtensions_Tween prevBarTween
+	prevBarTween.animator = self.PropGetBehavior( "progressBarAnimator1" )
+	prevBarTween.startValue = 0.0
+	prevBarTween.endValue = 0.0
+	prevBarTween.animationName = "HideBar"
+	prevBarTween.delay = 0.0
+	prevBarTween.duration = 0.0
+	RTKAngledProgressBarExtensions_AnimateTween( self, prevBarTween, false )
+}
+
+void function RTKAngledProgressBarExtensions_Animate( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+
+	if ( p.tweens.len() == 0 )
+		return
+
+	RTKAngledProgressBarExtensions_Tween sourceTween = p.tweens.pop()
+
+	RTKAngledProgressBarExtensions_AnimateTween( self, sourceTween, true )
+}
+
+void function RTKAngledProgressBarExtensions_AnimateTween( rtk_behavior self, RTKAngledProgressBarExtensions_Tween sourceTween, bool queueNextAnimation = false )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( sourceTween.animator != null )
+	{
+		sourceTween.onStartedListenerID = sourceTween.animator.AddEventListener( "onAnimationStarted", function ( rtk_behavior barAnimator, string animName ) : ( self, p, sourceTween ) {
+			sourceTween.animator.RemoveEventListener( "onAnimationStarted", sourceTween.onStartedListenerID )
+
+			if ( sourceTween.soundName != "" )
+				EmitUISound( sourceTween.soundName )
+
+			if ( sourceTween.animationStartedCallback != null )
+				sourceTween.animationStartedCallback( self, sourceTween )
+		})
+
+		sourceTween.onFinishedListenerID = sourceTween.animator.AddEventListener( "onAnimationFinished", function ( rtk_behavior barAnimator, string animName ) : ( self, p, sourceTween, queueNextAnimation ) {
+			sourceTween.animator.RemoveEventListener( "onAnimationFinished", sourceTween.onFinishedListenerID )
+
+			if ( sourceTween.soundName != "" )
+				StopUISoundByName( sourceTween.soundName )
+
+			if ( sourceTween.animationFinishedCallback != null )
+				sourceTween.animationFinishedCallback( self, sourceTween )
+
+			if ( queueNextAnimation )
+				RTKAngledProgressBarExtensions_Animate( self )
+		})
+
+		rtk_array animations = sourceTween.animator.PropGetArray( "tweenAnimations" )
+		int animationsCount  = RTKArray_GetCount( animations )
+
+		for ( int i = 0; i < animationsCount; i++ )
+		{
+			rtk_struct animation = RTKArray_GetStruct( animations, i )
+			string animationName = RTKStruct_GetString( animation, "name" )
+
+			if ( animationName == sourceTween.animationName )
+			{
+				if ( animationName == "AnimateBar" )
+				{
+					rtk_array targetTweens = RTKStruct_GetArray( animation, "tweens" )
+					int tweensCount = RTKArray_GetCount( targetTweens )
+
+					for ( int j = 0; j < tweensCount; j++ )
+					{
+						if ( j > 0 ) 
+							continue
+						rtk_struct targetTween = RTKArray_GetStruct( targetTweens, j )
+						RTKStruct_SetFloat( targetTween, "delay", sourceTween.delay )
+						RTKStruct_SetFloat( targetTween, "duration", sourceTween.duration )
+						RTKStruct_SetFloat( targetTween, "startValue", sourceTween.startValue )
+						RTKStruct_SetFloat( targetTween, "endValue", sourceTween.endValue )
+					}
+				}
+
+				RTKAnimator_PlayAnimation( sourceTween.animator, animationName )
+
+				break
+			}
+		}
+	}
+}
+
+void function RTKAngledProgressBarExtensions_InitMetaData( string behaviorType, string structType )
+{
+	
+}
+
+void function RTKAngledProgressBarExtensions_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+}
+
+void function RTKAngledProgressBarExtensions_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	
+	
+}

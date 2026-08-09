@@ -1,0 +1,344 @@
+#if UI_AUTOMATION
+
+
+
+
+
+
+
+global function UIAutomation_Init
+global function UIAutomation_AddThinkFunc
+global function UIAutomation_AutomationDelay
+
+global function UIAutomation_LobbyAutomationThink
+
+
+global function UIAutomation_GetAutomationCount
+global function UIAutomation_GetAutomationExpiredTime
+
+global function UIAutomation_AnyUIAutomationConVarsActive
+global function UIAutomation_IsAutomateQueueForPlaylists
+global function UIAutomation_IsAutomateChallenges
+global function UIAutomation_IsAutomateStore
+global function UIAutomation_IsAutomatePacks
+global function UIAutomation_GetWaitForPostmatch
+global function UIAutomation_GetRequeue
+
+struct {
+	table< var, array< void functionref( var ) > > thinkFuncs = {}
+
+	int uiAutomationCount = 0
+	float uiAutomationLastTime = 0
+	float uiAutomationExpiredTime = 0
+	var uiAutomationCurrentMenu = null
+	var uiAutomationTopActivePanel = null
+} file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function UIAutomation_Init()
+{
+	thread RunThinkFuncsThread()
+}
+
+void function UIAutomation_AddThinkFunc( var ref, void functionref( var ) func )
+{
+	Assert( ref != null, "Cannot reference a null menu ref to add a think func." )
+
+	if ( !( ref in file.thinkFuncs ) )
+	{
+		file.thinkFuncs[ ref ] <- []
+	}
+
+	file.thinkFuncs[ ref ].append( func )
+}
+
+void function RunThinkFuncsThread()
+{
+	OnThreadEnd(
+		function() : ()
+		{
+			Assert( false, "This thread should never end." )
+		}
+	)
+
+	while ( true )
+	{
+		if ( UIAutomation_AnyUIAutomationConVarsActive() )
+		{
+			var menu = GetActiveMenu()
+			if ( menu != null && menu in file.thinkFuncs )
+			{
+				foreach ( void functionref( var ) func in file.thinkFuncs[ menu ] )
+				{
+					func( menu )
+				}
+			}
+		}
+
+		WaitFrame()
+	}
+}
+
+bool function UIAutomation_AutomationDelay( float delayFactor = 1 )
+{
+	float timeNow = UITime()
+
+	
+	if ( UIAutomation_IsAutomateQueueForPlaylists() && IsFullyConnected() && AreWeMatchmaking() )
+	{
+		return false
+	}
+
+	if ( file.uiAutomationLastTime == 0 )
+	{
+		file.uiAutomationLastTime = timeNow
+	}
+	file.uiAutomationExpiredTime += (timeNow - file.uiAutomationLastTime);
+	file.uiAutomationLastTime = timeNow
+
+	file.uiAutomationCount++
+
+	var currentActiveMenu = GetActiveMenu()
+	var currentTopActivePanel = null
+	if ( uiGlobal.activePanels.len() > 0 )
+	{
+		currentTopActivePanel = uiGlobal.activePanels.top()
+	}
+
+	if (( file.uiAutomationCurrentMenu != currentActiveMenu ) || ( file.uiAutomationTopActivePanel != currentTopActivePanel ))
+	{
+		file.uiAutomationCurrentMenu = currentActiveMenu
+		file.uiAutomationTopActivePanel = currentTopActivePanel
+		file.uiAutomationExpiredTime = 0
+	}
+
+	if ( IsFullyConnected() && AreWeMatchmaking() )
+	{
+		file.uiAutomationExpiredTime = 0
+		return false
+	}
+
+	if ( file.uiAutomationExpiredTime > delayFactor * GetConVarFloat( "ui_automation_delay_s" ) )
+	{
+		file.uiAutomationExpiredTime = 0
+		return true
+	}
+
+	return false
+}
+
+void function UIAutomation_LobbyAutomationThink( var menu )
+{
+	
+	if ( UIAutomation_AutomationDelay() )
+	{
+		if ( UIAutomation_IsAutomateChallenges() )
+		{
+			DoLobbyChallengesAutomation()
+		}
+		else if ( UIAutomation_IsAutomatePacks() )
+		{
+			DoPackOpeningAutomation()
+		}
+		else if ( UIAutomation_IsAutomateStore() )
+		{
+			DoStoreAutomation()
+		}
+	}
+}
+
+void function DoStoreAutomation()
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+	{
+		return
+	}
+
+	GRX_UIAutomation_PurchaseRandomOffer()
+}
+
+void function DoLobbyChallengesAutomation()
+{
+	if ( !GRX_IsInventoryReady() )
+	{
+		return
+	}
+
+	PlayerChallengesState pcs = GetPlayerChallengesState()
+	int randomIndex = RandomInt(pcs.challengeStateMap.len() )
+
+	int index = 0
+	foreach ( ItemFlavor flav, ChallengeState cs in pcs.challengeStateMap )
+	{
+		if ( index == randomIndex )
+		{
+			if ( Challenge_IsComplete( GetLocalClientPlayer(), flav ) )
+			{
+				break
+			}
+
+			int guid = ItemFlavor_GetGUID( flav )
+			printf( "UIAutomation: Auto-completing challenge (%s) as part of headless UI automation...", ItemFlavor_GetAssetString( flav ) )
+			Remote_ServerCallFunction( "DEV_ClientCallback_RequestProgressChallengeTierByGUID", guid, true, 0 )
+			break
+		}
+		else
+		{
+			index += 1
+		}
+	}
+}
+
+void function DoPackOpeningAutomation()
+{
+	if ( !GRX_IsInventoryReady() )
+	{
+		return
+	}
+
+	
+	ItemFlavor packFlav = GetItemFlavorByGRXRef( UIAutomation_GetPackRef() )
+	int packsRemaining = GRX_GetPackCount( ItemFlavor_GetGRXIndex( packFlav ) )
+
+	
+	if ( packsRemaining == 0 )
+	{
+		printf( "UIAutomation: finished opening all packs of type %s", UIAutomation_GetPackRef() )
+		ClientCommand( "quit" )
+	}
+
+	
+	printf( "UIAutomation: opening 1 pack of type %s", UIAutomation_GetPackRef() )
+	OpenMassPackOpeningMenu( packFlav, 1 )
+}
+
+
+bool function UIAutomation_AnyUIAutomationConVarsActive()
+{
+	return UIAutomation_IsAutomateQueueForPlaylists() ||
+	UIAutomation_IsAutomateChallenges() ||
+	UIAutomation_IsAutomatePacks() ||
+	UIAutomation_IsAutomateStore()
+}
+
+int function UIAutomation_GetAutomationCount()
+{
+	return file.uiAutomationCount
+}
+
+float function UIAutomation_GetAutomationExpiredTime()
+{
+	return file.uiAutomationExpiredTime
+}
+
+bool function UIAutomation_IsAutomateQueueForPlaylists()
+{
+	return GetConVarBool( "ui_automation_enabled" ) ||  GetConVarBool( "ui_automation_queue_for_playlists_enabled" ) 
+}
+
+bool function UIAutomation_GetWaitForPostmatch()
+{
+	return GetConVarBool( "ui_automation_wait_for_postmatch" )
+}
+
+bool function UIAutomation_GetRequeue()
+{
+	return GetConVarBool( "ui_automation_requeue" )
+}
+
+bool function UIAutomation_IsAutomateChallenges()
+{
+	return GetConVarBool( "ui_automation_challenges_enabled" )
+}
+
+bool function UIAutomation_IsAutomatePacks()
+{
+	return GetConVarBool( "ui_automation_packs_enabled" )
+}
+
+bool function UIAutomation_IsAutomateStore()
+{
+	return GetConVarBool( "ui_automation_store_enabled" )
+}
+
+string function UIAutomation_GetPackRef()
+{
+	return GetConVarString( "mtx_dev_pack_grant_grx_ref" )
+}
+
+#endif

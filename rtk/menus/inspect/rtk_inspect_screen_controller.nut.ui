@@ -1,0 +1,356 @@
+global function RTKInspectScreen_OnInitialize
+global function RTKInspectScreen_OnDestroy
+global function RTKInspectScreen_OverrideScreenDataModel
+global function RTKInspectScreen_OverridePurchaseButtonFunction
+global function RTKInspectScreen_OverrideGiftingButtonFunction
+global function RTKInspectScreen_OverrideOnPreviewGridIndexChanged
+global function RTKInspectScreen_ClearItemPreview
+global function RTKInspectScreen_ShowVideoPreview
+global function RTKInspectScreen_ShowModelPreview
+global function RTKInspectScreen_SetIsGiftingEnabled
+global function RTKInspectScreen_SetSubtitle
+global function RTKInspectScreen_SetDisclaimer1
+global function RTKInspectScreen_SetDisclaimer2
+
+global enum eInspectPreviewType
+{
+	MODEL,
+	BINK,
+	_COUNT,
+}
+
+global enum eInspectScreenItemState
+{
+	INVALID = -1,
+	UNAVAILABLE = 0,
+	UNAFFORDABLE_COINS = 1,
+	UNAFFORDABLE_EXOTIC_SHARDS = 2,
+	OWNED = 3,
+	BASE_ITEM_REQUIRED = 4,
+	SET_ITEM_REQUIRED = 5,
+	EVENT_REWARD = 6,
+	AVAILABLE = 7
+}
+
+global struct RTKInspectScreen_Properties
+{
+	string modelPath
+	rtk_behavior purchaseButton
+	rtk_behavior giftingButton
+	rtk_panel gridPanel
+
+	void functionref() onSetScreenDataModel
+	void functionref() onGridCreated
+	void functionref() onPreviewGridIndexChanged
+}
+
+global struct RTKInspectScreenPurchaseButtonModel
+{
+	int state
+	string title
+	string subtitle
+}
+
+global struct RTKInspectScreenItemModel
+{
+	int guid
+	string name
+	asset icon
+	asset eventIcon
+	int state
+	int itemType
+	string itemTypeText
+	int quality
+	int quantity = 1
+	RTKCurrencyDisplayModel& price
+
+	int prestigeTier
+	int maxPrestigeTier
+
+	bool showArrows 	
+	bool isBaseItem
+	bool isLinked		
+	bool isInBundle		
+	bool isOwned
+}
+
+global struct RTKInspectScreenModel
+{
+	RTKInspectScreenItemModel& previewItem
+	array<RTKInspectScreenItemModel> inspectItems
+	int previewGridIndex
+	string offerTitle
+	string offerSubtitle
+	string disclaimer1Title
+	string disclaimer1Text
+	string disclaimer2Text
+	string bundleInfoTypeText
+	asset videoPreview
+	bool canAfford
+	bool isGiftingEnabled
+	bool isGridEnabled
+	bool isPartOfEvent
+	bool isBundle
+	RTKInspectScreenPurchaseButtonModel& purchaseButton
+}
+
+struct PrivateData
+{
+	int lastPreviewType = -1
+	int onPurchaseClickedListenerID = -1
+	int onGiftingClickedListenerID = -1
+	int onSetDataModelListenerID = -1
+	int onGridCreatedListenerID = -1
+	int onPreviewGridIndexChangedListenerID = -1
+
+	void functionref() setScreenDataModelFunction
+	void functionref() onPreviewGridIndexChangedFunction
+}
+
+
+void function RTKInspectScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	UI_SetPresentationType( ePresentationType.STORE_INSPECT )
+	RunClientScript( "EnableModelTurn" )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	
+	p.onSetDataModelListenerID = self.AddEventListener( "onSetScreenDataModel", void function() : ( self ) { RTKInspectScreen_OnSetScreenDataModel( self ) } )
+	p.onGridCreatedListenerID = self.AddEventListener( "onGridCreated", void function() : ( self ) { RTKInspectScreen_OnGridCreated( self ) } )
+	p.onPreviewGridIndexChangedListenerID = self.AddEventListener( "onPreviewGridIndexChanged", void function() : ( self ) { RTKInspectScreen_OnPreviewGridIndexChanged( self ) } )
+
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, modelPath, true ) )
+}
+
+void function RTKInspectScreen_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	rtk_behavior purchaseButton = self.PropGetBehavior( "purchaseButton" )
+	purchaseButton.RemoveEventListener( "onPressed", p.onPurchaseClickedListenerID )
+
+	rtk_behavior giftingButton = self.PropGetBehavior( "giftingButton" )
+	giftingButton.RemoveEventListener( "onPressed", p.onGiftingClickedListenerID )
+
+	self.RemoveEventListener( "onSetScreenDataModel", p.onSetDataModelListenerID )
+	self.RemoveEventListener( "onGridCreated", p.onGridCreatedListenerID )
+	self.RemoveEventListener( "onPreviewGridIndexChanged", p.onPreviewGridIndexChangedListenerID )
+
+	RemoveCallback_OnGRXInventoryStateChanged( p.setScreenDataModelFunction )
+	RemoveCallback_OnGRXOffersRefreshed( p.setScreenDataModelFunction )
+
+	RTKInspectScreen_ClearItemPreview( self )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, modelPath )
+}
+
+void function RTKInspectScreen_OnSetScreenDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.setScreenDataModelFunction != null )
+	{
+		p.setScreenDataModelFunction()
+	}
+}
+
+void function RTKInspectScreen_OnGridCreated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	self.AutoSubscribe( self.PropGetPanel( "gridPanel" ), "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self, screenStruct ) {
+		rtk_behavior button = newChild.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( button, "onHighlightedOrFocused", function( rtk_behavior button, int prevState ) : ( self, newChildIndex, screenStruct ) {
+			rtk_struct inspectItem = RTKArray_GetStruct( RTKStruct_GetArray( screenStruct, "inspectItems" ), newChildIndex )
+			bool isInBundle = RTKStruct_GetBool( inspectItem, "isInBundle" )
+
+			if ( isInBundle && RTKStruct_GetInt( screenStruct, "previewGridIndex" ) != newChildIndex )
+			{
+				RTKStruct_SetInt( screenStruct, "previewGridIndex", newChildIndex )
+				self.InvokeEvent( "onPreviewGridIndexChanged" )
+			}
+		} )
+	} )
+}
+
+void function RTKInspectScreen_OnPreviewGridIndexChanged( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.onPreviewGridIndexChangedFunction != null )
+	{
+		p.onPreviewGridIndexChangedFunction()
+		EmitUISound( "UI_Menu_Focus_Small" )
+	}
+}
+
+
+
+
+
+void function RTKInspectScreen_ClearItemPreview( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	switch ( p.lastPreviewType )
+	{
+		case eInspectPreviewType.BINK:
+			RTKStruct_SetAssetPath( screenStruct, "videoPreview", $"" )
+			break
+		case eInspectPreviewType.MODEL:
+			if ( CanRunClientScript() )
+			{
+				RunClientScript( "UIToClient_ClearStorePreview" )
+			}
+			break
+	}
+}
+
+void function RTKInspectScreen_ShowVideoPreview( rtk_behavior self, asset videoPreview )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eInspectPreviewType.BINK )
+	{
+		RTKInspectScreen_ClearItemPreview( self )
+	}
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	if ( RTKStruct_GetAssetPath( screenStruct, "videoPreview" ) != videoPreview )
+		RTKStruct_SetAssetPath( screenStruct, "videoPreview", videoPreview )
+
+	p.lastPreviewType = eInspectPreviewType.BINK
+}
+
+void function RTKInspectScreen_ShowModelPreview( rtk_behavior self, ItemFlavor itemFlav, bool showFX = true )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eInspectPreviewType.MODEL )
+	{
+		RTKInspectScreen_ClearItemPreview( self )
+	}
+
+	RunClientScript( "UIToClient_PreviewStoreItem", ItemFlavor_GetGUID( itemFlav ), true, 0, showFX )
+
+	p.lastPreviewType = eInspectPreviewType.MODEL
+}
+
+
+
+
+
+void function RTKInspectScreen_OverrideScreenDataModel( rtk_behavior self, void functionref() setScreenDataModelHandler = null )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( setScreenDataModelHandler != null )
+	{
+		p.setScreenDataModelFunction = setScreenDataModelHandler
+		AddCallback_OnGRXInventoryStateChanged( p.setScreenDataModelFunction )
+		AddCallback_OnGRXOffersRefreshed( p.setScreenDataModelFunction )
+
+		self.InvokeEvent( "onSetScreenDataModel" )
+		self.InvokeEvent( "onGridCreated" )
+	}
+}
+
+void function RTKInspectScreen_OverridePurchaseButtonFunction( rtk_behavior self, void functionref( rtk_behavior, int, int ) handler )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	rtk_behavior button = self.PropGetBehavior( "purchaseButton" )
+	button.RemoveEventListener( "onPressed", p.onPurchaseClickedListenerID )
+
+	
+	p.onPurchaseClickedListenerID = button.AddEventListener( "onPressed", handler )
+}
+
+void function RTKInspectScreen_OverrideGiftingButtonFunction( rtk_behavior self, void functionref( rtk_behavior, int, int ) handler )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	rtk_behavior button = self.PropGetBehavior( "giftingButton" )
+	button.RemoveEventListener( "onPressed", p.onGiftingClickedListenerID )
+
+	
+	p.onGiftingClickedListenerID = button.AddEventListener( "onPressed", handler )
+}
+
+void function RTKInspectScreen_OverrideOnPreviewGridIndexChanged( rtk_behavior self, void functionref() onPreviewGridIndexChangedhandler )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( onPreviewGridIndexChangedhandler != null )
+	{
+		p.onPreviewGridIndexChangedFunction = onPreviewGridIndexChangedhandler
+	}
+}
+
+
+
+
+
+void function RTKInspectScreen_SetIsGiftingEnabled( rtk_behavior self, bool isGiftingEnabled )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	RTKStruct_SetBool( screenStruct, "isGiftingEnabled", isGiftingEnabled )
+}
+
+void function RTKInspectScreen_SetSubtitle( rtk_behavior self, string subtitleText )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	printt( FUNC_NAME(), modelPath )
+	RTKStruct_SetString( screenStruct, "offerSubtitle", subtitleText )
+}
+
+void function RTKInspectScreen_SetDisclaimer1( rtk_behavior self, string disclaimer1Title, string disclaimer1Text )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	RTKStruct_SetString( screenStruct, "disclaimer1Title", disclaimer1Title )
+	RTKStruct_SetString( screenStruct, "disclaimer1Text", disclaimer1Text )
+}
+
+void function RTKInspectScreen_SetDisclaimer2( rtk_behavior self, string disclaimer2Text )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKInspectScreenModel" )
+
+	RTKStruct_SetString( screenStruct, "disclaimer2Text", disclaimer2Text )
+}

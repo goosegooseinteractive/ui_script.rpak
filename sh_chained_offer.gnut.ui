@@ -1,0 +1,151 @@
+global function Sh_ChainedOffer_Init
+
+global function ChainedOffer_GetSortedChainedOffers
+global function ChainedOffer_GetFirstPurchasableOffer
+global function	ChainedOffer_GetChaseOffer
+global function ChainedOffer_GetChainedOfferProgress
+
+#if DEV
+global function DEV_PrintChainedOffers
+#endif
+
+const string CHAINED_OFFER_STORE_LOCATION = "chainedOffer"
+
+struct FileStruct_ChainedOffers
+{
+	array<GRXScriptOffer> chainedOffers
+
+	int progress
+	int total
+}
+
+FileStruct_ChainedOffers& fileLevel
+
+void function Sh_ChainedOffer_Init()
+{
+	AddCallback_OnGRXOffersRefreshed( ChainedOffer_OnGRXOffersRefreshed )
+}
+
+int function SortChainedOffersBySlot( GRXScriptOffer a, GRXScriptOffer b )
+{
+	int aSlot = "slot" in a.attributes ? int( a.attributes["slot"] ) : 99999
+	int bSlot = "slot" in b.attributes ? int( b.attributes["slot"] ) : 99999
+
+	return ClampInt( aSlot - bSlot, -1, 1 )
+}
+
+int function SortChainedOffersByPriority( GRXScriptOffer a, GRXScriptOffer b )
+{
+	if ( a.displayPriority <= b.displayPriority )
+	{
+		return -1
+	}
+	else if ( a.displayPriority > b.displayPriority )
+	{
+		return 1
+	}
+
+	return 0
+}
+
+void function ChainedOffer_OnGRXOffersRefreshed()
+{
+	if ( GRX_AreOffersReady() == false )
+		return
+
+	fileLevel.chainedOffers.clear()
+
+	array<GRXScriptOffer> offers = GRX_GetLocationOffers( CHAINED_OFFER_STORE_LOCATION )
+	offers.sort( SortChainedOffersBySlot )
+
+	fileLevel.chainedOffers = offers
+	fileLevel.total = fileLevel.chainedOffers.len()
+	fileLevel.progress = ChainedOffer_GetChainedOfferProgress()
+}
+
+array<GRXScriptOffer> function ChainedOffer_GetSortedChainedOffers()
+{
+	if( !GRX_AreOffersReady() )
+	{
+		return []
+	}
+
+	return fileLevel.chainedOffers
+}
+
+int function ChainedOffer_GetChainedOfferProgress()
+{
+	if( !GRX_AreOffersReady() )
+	{
+		return 0
+	}
+
+	for ( int i = 0; i < fileLevel.chainedOffers.len(); ++i )
+	{
+		if ( !GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( fileLevel.chainedOffers[i] ) )
+		{
+			return i
+		}
+	}
+
+	return fileLevel.chainedOffers.len()
+}
+
+GRXScriptOffer ornull function ChainedOffer_GetFirstPurchasableOffer()
+{
+	if( !GRX_AreOffersReady() )
+	{
+		return null
+	}
+
+	foreach( GRXScriptOffer offer in fileLevel.chainedOffers )
+	{
+		if ( !GRXOffer_IsNoLongerPurchasableDueToCompletionCondition( offer ) )
+		{
+			return offer
+		}
+	}
+
+	return null
+}
+
+GRXScriptOffer ornull function ChainedOffer_GetChaseOffer()
+{
+	if ( fileLevel.chainedOffers.len() == 0 )
+	{
+		printf( "[%s] no chained offer found, retruning null; \n", FUNC_NAME() )
+		return null
+	}
+
+	return fileLevel.chainedOffers[ fileLevel.chainedOffers.len() - 1 ]
+}
+
+#if DEV
+void function DEV_PrintChainedOffers()
+{
+	printt(" ---------------- Printing chained offers info ---------------- ")
+	printt( " Target Location: " + CHAINED_OFFER_STORE_LOCATION )
+	printt( " Chained Offer Progress: " + fileLevel.progress + " / " + fileLevel.total )
+	printt( " Offers: " + fileLevel.chainedOffers.len() )
+
+	for ( int i = 0; i < fileLevel.chainedOffers.len(); ++i )
+	{
+		GRXScriptOffer offer = fileLevel.chainedOffers[i]
+		printt( "Offer #" + i + " : " + offer.titleText )
+
+		for ( int j = 0; j < offer.output.flavors.len(); ++j )
+		{
+			ItemFlavor flav = offer.output.flavors[j]
+			int quantity = offer.output.quantities[j]
+
+			printt( "Item #" + j + ", " + ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) + ", " + quantity )
+		}
+
+		printt( "Priority : " + offer.displayPriority )
+		printt( "PurchaseCount : " + offer.purchaseCount )
+		printt( "PurchaseLimit : " + offer.purchaseLimit )
+		printt( "Purchasable : " + ( GRXOffer_GetOfferStatus( offer ) == eOfferStatus.PURCHASABLE ? "true" : "false") )
+	}
+	printt(" -------------------------------------------------------------- ")
+}
+#endif

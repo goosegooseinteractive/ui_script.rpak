@@ -1,0 +1,1012 @@
+global function InitBrowseLootPoolMenu
+
+global function BrowseLootPoolMenu_OpenWithPacks
+global function BrowseLootPoolMenu_CancelOpeningScreen
+
+global function RTKBrowseLootPoolMenu_OnInitialize
+global function RTKBrowseLootPoolMenu_OnDestroy
+
+global function RTKBrowseLootPoolMenu_GetPackInfoStruct
+global function RTKBrowseLootPoolMenu_GetItemInfoStruct
+global function RTKBrowseLootPoolMenu_GetIndividualItemInfoStruct
+
+global struct RTKBrowseLootPoolMenu_Properties
+{
+	rtk_behavior itemsListBinder
+	rtk_behavior packsListBinder
+	rtk_behavior gridScrollView
+	rtk_behavior chaseItemButton
+	rtk_behavior scrollContentArea
+	rtk_behavior scrollBarArea
+}
+
+global struct RTKIndividualItemInfo
+{
+	string itemRarity
+	string itemType
+	string itemName
+	string itemOrigin
+	int itemQuality
+	bool itemIsOwned
+}
+
+global struct RTKBrowseToolTipInfo
+{
+	string title
+	string actionText
+	vector titleTextAltColor
+	vector actionTextAltColor
+}
+
+global struct RTKBrowseLootPoolItem
+{
+	int guid
+	string name = ""
+	int quality = 0
+	int quantity = 1
+	bool quantityBackground = true
+	asset image = $""
+	asset nestedRuiAsset = $""
+	asset backgroundImage = $""
+	asset eventImage = $""
+	asset tagImage = $""
+	vector frameColor = <1.0, 1.0, 1.0>
+	vector backgroundColor = <1.0, 1.0, 1.0>
+	bool checked
+	bool locked
+	bool isFeaturedItem
+	bool isChaseItem
+	bool isBrowsable
+	bool isBackfill
+	bool hidePreview
+
+	string footerText
+	string browsingStepTitle
+	string browsingTitle
+	string browsingFooterText
+	RTKBrowseToolTipInfo& toolTipInfo
+}
+
+global struct RTKBrowseLootPoolInfo
+{
+	string title
+	string subTitle
+	string eventCollectionAmmount
+	bool hasChasePreview
+	bool hasBundle
+	string footerText
+	bool isShowingBrowsable
+
+	array<RTKBrowseLootPoolItem> itemList
+	array<RTKBrowseLootPoolItem> packList
+	RTKIndividualItemInfo& individualItemInfo
+	RTKCollectionChaseItemInfo& chaseItemModel
+}
+
+struct
+{
+	var menu
+	int backfillPacksCounter
+	int backfillPacksCounterMax
+	int itemsTotal
+	int itemsOwned
+	int scrollAreaCount
+	string previousMenuName
+	bool isInitialize
+	bool isContainerCallbackInit
+	bool isShowingBrowsable
+	bool hasChangedOffer
+	bool hasChasePreview
+	string footerText
+	rtk_behavior scrollView
+	array<GRXScriptOffer> originalOffer
+	array< ItemFlavor > packs
+	array< ItemFlavor > browsablePacksInPacks
+	array< RTKBrowseLootPoolItem > items
+	table< ItemFlavor, array<UILootPoolItemData> >  allLootPoolItems
+	ItemFlavor& chaseItem
+	RTKBrowseLootPoolItem& lastBrowsableItem
+} file
+
+void function InitBrowseLootPoolMenu( var menu )
+{
+	file.menu = menu
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, BrowseLootPoolMenu_OnClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, BrowseLootPoolMenu_OnNavigateBack )
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK", BrowseLootPoolMenu_OnBackPressed )
+	AddMenuFooterOption( menu, LEFT, BUTTON_X, true, "#FOOTER_PACK_INFO_BASE", "#FOOTER_PACK_INFO_MOUSE_BASE", BrowseLootPoolMenu_FooterPackInfo, BrowseLootPoolMenu_CanOpenFooterPackInfo )
+}
+
+void function RTKBrowseLootPoolMenu_OnInitialize( rtk_behavior self )
+{
+	if ( file.packs.len() < 1 )
+	{
+		RTKBrowseLootPoolMenu_UnexpectedErrorClose()
+		return
+	}
+
+	file.isInitialize = true
+
+	UI_SetPresentationType( ePresentationType.STORE_INSPECT_LOOT_POOL )
+
+	Hud_AddEventHandler( Hud_GetChild( file.menu, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_AddEventHandler( Hud_GetChild( file.menu, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+
+	RegisterWalletButtonPressCallbacks()
+
+	RuiSetBool( Hud_GetRui( Hud_GetChild( file.menu, "CoinsPopUpButton" ) ), "hasACBonus", GRX_IsPlayerEligibleForACBonus() )
+
+	rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "browseLootPoolInfo", "RTKBrowseLootPoolInfo" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "browseLootPoolInfo", true ) )
+
+	SetInitialBreadcrumb()
+	GetScrollView( self )
+	AutoSubscribeScrollArea( self )
+	AutoSubscribeItemListButtons( self, panelStruct )
+	AutoSubscribePacksListButtons( self, panelStruct )
+	AutoSubscribeChaseItemButton( self, panelStruct )
+
+	if ( file.isShowingBrowsable )
+	{
+		RTKBreadcrumbStepModel step
+		step.title = file.lastBrowsableItem.browsingStepTitle
+		RTKBreadcrumbHeader_PushStep( step )
+
+		SetScreenInfo( panelStruct, file.lastBrowsableItem.browsingTitle, "", [] )
+		SetPackList( panelStruct, [] )
+		SetItemListWithItemFlavors( panelStruct, RTKBrowseLootPoolMenu_GetBackfillItems( GetItemFlavorByGUID( file.lastBrowsableItem.guid ) ) )
+		RTKStruct_SetString( panelStruct, "footerText", Localize ( file.lastBrowsableItem.browsingFooterText ) )
+	}
+	else
+	{
+		array<ItemFlavor> allPacks = file.packs
+		ItemFlavor initialPack     = file.packs[0]
+		string packShortName       = Localize( ItemFlavor_GetShortName( initialPack ) )
+		string subTitle            = Localize( "#GUARANTEED_ITEM", packShortName )
+		SetScreenInfo( panelStruct, packShortName, subTitle, allPacks )
+		SetPackList( panelStruct, allPacks )
+		SetInitialList( panelStruct )
+	}
+
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.menu, "ScreenFrame" ), true )
+}
+
+void function RTKBrowseLootPoolMenu_OnDestroy( rtk_behavior self )
+{
+	if ( !file.isInitialize )
+		return
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "browseLootPoolInfo" )
+
+	Hud_RemoveEventHandler( Hud_GetChild( file.menu, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_RemoveEventHandler( Hud_GetChild( file.menu, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+}
+
+void function BrowseLootPoolMenu_OpenWithPacks( array<ItemFlavor> packs, string previousMenuName, array<GRXScriptOffer> originalOffer = [ ] )
+{
+	if ( GetActiveMenu() != GetMenu( "BrowseLootPool" ) )
+	{
+		file.itemsTotal = 0
+		file.itemsOwned = 0
+		file.backfillPacksCounter = 0
+		file.backfillPacksCounterMax = 0
+		file.previousMenuName = ""
+		file.packs.clear()
+		file.browsablePacksInPacks.clear()
+		file.items.clear()
+		file.allLootPoolItems.clear()
+		file.originalOffer.clear()
+		file.isShowingBrowsable = false
+		file.hasChangedOffer = false
+		file.hasChasePreview = false
+		file.isInitialize = false
+
+		file.packs = clone ( packs )
+		file.previousMenuName = previousMenuName
+		file.originalOffer = originalOffer
+
+		Assert( file.packs.len() > 0, "Attempted to open Pack Browser with no packs" )
+
+		GetPacksData()
+		UpdateFooterOptions()
+	}
+}
+
+void function GetPacksData()
+{
+	int packsLength = file.packs.len()
+	for ( int i = 0; i < packsLength; i++ )
+	{
+		string containerName = GRXPack_GetContainerAlias( file.packs[i] )
+		if ( containerName != "" )
+		{
+			file.backfillPacksCounterMax++
+			AddCallbackOrCallNow_OnDemandContainerAvailable( containerName, BrowseLootPoolMenu_OpenScreen )
+			GRX_RequestOnDemandContainer( containerName )
+			file.isContainerCallbackInit = true
+		}
+	}
+
+	if ( file.backfillPacksCounterMax == 0 )
+	{
+		AdvanceMenu( GetMenu( "BrowseLootPool" ) )
+	}
+}
+
+void function BrowseLootPoolMenu_OpenScreen( GRXContainerInfo containerInfo )
+{
+	file.backfillPacksCounter++
+
+	if ( file.backfillPacksCounter == file.backfillPacksCounterMax )
+	{
+		AdvanceMenu( GetMenu( "BrowseLootPool" ) )
+	}
+}
+
+void function BrowseLootPoolMenu_CancelOpeningScreen()
+{
+	BrowseLootPoolMenu_OnClose()
+}
+
+void function BrowseLootPoolMenu_OnClose()
+{
+	if ( file.isContainerCallbackInit )
+	{
+		int packsLength = file.packs.len()
+		for ( int i = 0; i < packsLength; i++ )
+		{
+			string containerName = GRXPack_GetContainerAlias( file.packs[i] )
+			if ( containerName != "" )
+			{
+				RemoveCallback_OnDemandContainerAvailable( containerName, BrowseLootPoolMenu_OpenScreen )
+				file.isContainerCallbackInit = false
+			}
+		}
+	}
+
+	if ( file.isInitialize )
+	{
+		DeregisterWalletButtonPressCallbacks()
+	}
+}
+
+void function BrowseLootPoolMenu_OnBackPressed( var button )
+{
+	if ( file.isShowingBrowsable )
+	{
+		file.isShowingBrowsable = false
+		file.hasChangedOffer = false
+		RTKBreadcrumbHeader_RemoveStep()
+		UpdateFooterOptions()
+
+		rtk_struct panelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "browseLootPoolInfo", "RTKBrowseLootPoolInfo" )
+		array<ItemFlavor> allPacks = file.packs
+		ItemFlavor initialPack = file.packs[0]
+
+		string packShortName = Localize( ItemFlavor_GetShortName( initialPack ) )
+		string subTitle = Localize( "#GUARANTEED_ITEM", packShortName )
+		SetScreenInfo( panelStruct, packShortName, subTitle, allPacks )
+		SetPackList( panelStruct, allPacks )
+		SetInitialList( panelStruct )
+		ResetScrollView()
+
+		RTKStruct_SetBool( panelStruct, "isShowingBrowsable", false )
+	}
+	else
+	{
+		
+		if ( file.hasChangedOffer && file.originalOffer.len() > 0 )
+		{
+			SetDialogFlowDisabledState( true )
+			CloseAllMenus()
+			AdvanceMenu( GetMenu( "LobbyMenu" ) )
+			JumpToStoreSection( STORE_OFFER_SHOP )
+			StoreInspectMenu_AttemptOpenWithOffer( file.originalOffer[0] )
+			SetDialogFlowDisabledState( false )
+		}
+		else if ( GetActiveMenu() == file.menu )
+		{
+			CloseActiveMenu()
+		}
+	}
+}
+
+void function BrowseLootPoolMenu_OnNavigateBack()
+{
+	BrowseLootPoolMenu_OnBackPressed( null )
+}
+
+bool function BrowseLootPoolMenu_CanOpenFooterPackInfo()
+{
+	if ( file.isShowingBrowsable )
+		return false
+
+	return !GRX_IsOfferRestricted() && GRXPack_IsAnyRetroPack( file.packs[0] )
+}
+
+void function BrowseLootPoolMenu_FooterPackInfo( var button )
+{
+	if ( GRX_IsOfferRestricted() )
+		return
+
+	OpenPurchaseRetroPackSelectionDialogWithPack( false, file.packs[0] )
+}
+
+void function SetInitialBreadcrumb()
+{
+	RTKBreadcrumbHeader_RemoveAllSteps()
+
+	RTKBreadcrumbStepModel step
+	step.title = file.previousMenuName
+	RTKBreadcrumbHeader_PushStep( step )
+	step.title = "#BROWSE_PACK_ITEMS"
+	RTKBreadcrumbHeader_PushStep( step )
+}
+
+void function SetInitialList( rtk_struct panelStruct )
+{
+	array< UILootPoolItemData > primaryItemList = GRXRetroPack_GetPersonalizedLootPoolItems(file.packs[0] )
+	primaryItemList.sort( RTKBrowseLootPoolMenu_SortPoolItems )
+	SetItemList( panelStruct,primaryItemList )
+}
+
+void function SetScreenInfo( rtk_struct panelStruct, string title, string subtitle, array<ItemFlavor> packs )
+{
+	RTKBrowseLootPoolInfo browseLootPoolInfo
+	browseLootPoolInfo.title = title
+	browseLootPoolInfo.subTitle = subtitle
+	browseLootPoolInfo.hasBundle = packs.len() > 1
+
+	RTKStruct_SetValue( panelStruct, browseLootPoolInfo )
+}
+
+void function SetPackList( rtk_struct panelStruct, array<ItemFlavor> packs )
+{
+	array<RTKBrowseLootPoolItem> packsList = []
+	foreach ( int index, ItemFlavor pack in packs )
+	{
+		RTKBrowseLootPoolItem packPoolItem = RTKBrowseLootPoolMenu_GetPackInfoStruct( pack )
+		packsList.append( packPoolItem )
+	}
+
+	rtk_array packListStruct = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "packList", "RTKBrowseLootPoolItem" )
+	RTKArray_SetValue( packListStruct, packsList )
+}
+
+RTKBrowseLootPoolItem function RTKBrowseLootPoolMenu_GetPackInfoStruct( ItemFlavor itemFlavor )
+{
+	RTKBrowseLootPoolItem pack
+	pack.guid 		 = itemFlavor.guid
+	pack.name 		 = ItemFlavor_GetLongName( itemFlavor )
+	pack.image 		 = ItemFlavor_GetSourceIcon( itemFlavor )
+	pack.quantity    = 1 
+	pack.isBrowsable = true
+	pack.hidePreview = true
+
+	return pack
+}
+
+void function SetItemList( rtk_struct panelStruct, array<UILootPoolItemData> lootPoolItems )
+{
+	int itemsOwned = 0
+	int itemsTotal = 0
+	file.hasChasePreview = false
+	file.items.clear()
+
+	foreach ( int index, UILootPoolItemData poolItem in lootPoolItems )
+	{
+		RTKBrowseLootPoolItem itemStruct = RTKBrowseLootPoolMenu_GetItemInfoStruct( poolItem )
+		file.items.append( itemStruct )
+
+		if ( itemStruct.checked )
+			itemsOwned++
+
+		itemsTotal++
+	}
+
+	file.itemsTotal = itemsTotal
+	file.itemsOwned = itemsOwned
+
+	array< ItemFlavor > completionRewards = GRXPack_GetCompletionRewards( file.packs[0], eLootPoolBrowserSortOrder.RARITY_ASCENDING )
+	if ( completionRewards.len() != 0 )
+	{
+		file.hasChasePreview = true
+		file.chaseItem = GetItemFlavorByGUID( completionRewards[0].guid )
+		RTKBrowseLootPoolMenu_SetChaseItemModelInfo( file.chaseItem, file.packs[0] )
+	}
+
+	RTKStruct_SetString( panelStruct, "eventCollectionAmmount", Localize( "#COLLECTION_VAL_SLASH_VAL_TWO_STYLE_COLLECTED", itemsOwned, itemsTotal ) )
+	RTKStruct_SetBool( panelStruct, "hasChasePreview", file.hasChasePreview )
+
+	string rewardPriorEventName = Localize( ItemFlavor_GetLongPriorEventName( file.packs[0] ) )
+	if ( rewardPriorEventName != "" )
+	{
+		RTKStruct_SetString( panelStruct, "footerText", Localize ( "#BACK_FILL_DISCLAIMER", rewardPriorEventName.toupper()) )
+	}
+
+	rtk_array itemList = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "itemList", "RTKBrowseLootPoolItem" )
+	RTKArray_SetValue( itemList, file.items )
+
+	RTKBrowseLootPoolItem initialReward = file.items[0]
+	RTKBrowseLootPoolMenu_ShowItemPreviewByGUID( initialReward.guid )
+}
+
+RTKBrowseLootPoolItem function RTKBrowseLootPoolMenu_GetItemInfoStruct( UILootPoolItemData poolItem )
+{
+	ItemFlavor itemFlavor = poolItem.flav
+	RTKBrowseLootPoolItem item
+
+	item.guid 			 = itemFlavor.guid
+	item.checked 		 = poolItem.isOwned
+	item.isBackfill 	 = poolItem.isFallback
+	item.image 			 = item.isBackfill ? $"ui_image/rui/menu/battlepass/backfill_item_icon/backfill_item_icon.rpak" : CustomizeMenu_GetGenericRewardButtonImage( itemFlavor )
+	item.eventImage 	 = item.isBackfill ? $"" : ItemFlavor_GetSourceIcon( itemFlavor )
+	item.quality 		 = ItemFlavor_GetQuality( itemFlavor )
+	item.frameColor 	 = GetBattlepassRarityColor( item.quality, true )
+	item.backgroundColor = GetBattlepassRarityColor( item.quality, false )
+	item.backgroundImage = GetBackgroundImage( item.isFeaturedItem )
+	item.quantity 		 = ItemFlavor_GetType( itemFlavor ) == eItemType.account_currency_bundle ? GRXCurrencyBundle_GetValue( itemFlavor ) : poolItem.quantity
+	item.tagImage    = Wishlist_IsPackUpgradable( itemFlavor ) ? WISHLIST_UPGRADABLE_TAG_ASSET : $""
+
+	if ( ItemFlavor_GetType( itemFlavor ) == eItemType.reward_set_tracker && RewardSetTracker_IsLootPoolBrowsable( itemFlavor ) )
+	{
+		item.isBrowsable = true
+		item.hidePreview = false
+		item.browsingTitle = RewardSetTracker_GetBrowseItemsTitle( itemFlavor )
+		item.browsingFooterText = RewardSetTracker_GetBrowseItemsDisclaimer( itemFlavor )
+		item.browsingStepTitle = ItemFlavor_GetShortDescription( itemFlavor )
+	}
+	else
+	{
+		item.isBrowsable = item.isBackfill && !item.checked
+		item.hidePreview = item.isBrowsable
+		item.browsingTitle = "#POSSIBLE_ITEMS"
+		item.browsingStepTitle = item.browsingTitle
+		item.browsingFooterText = ""
+	}
+
+	string locString = Localize ( "#LOOT_TIER" + ( item.quality + 1 ) + "_PLURAL" )
+	string backFillDesc
+	if ( ItemFlavor_GetType( itemFlavor ) == eItemType.character_skin )
+	{
+		backFillDesc = "#BACKFILL_CHARACTER_SKIN_DESC"
+	}
+	else if ( ItemFlavor_GetType( itemFlavor ) == eItemType.weapon_skin )
+	{
+		backFillDesc = "#BACKFILL_WEAPON_SKIN_DESC"
+	}
+	else if ( ItemFlavor_GetType( itemFlavor ) == eItemType.reward_set_tracker )
+	{
+		backFillDesc = RewardSetTracker_GetBrowseItemsTooltip( itemFlavor )
+	}
+	else
+	{
+		backFillDesc = "#BACKFILL_ITEM_DESC"
+	}
+
+	item.toolTipInfo.title 			   = item.isBrowsable ? Localize( backFillDesc, locString ) : ""
+	item.toolTipInfo.titleTextAltColor = item.frameColor
+
+	return item
+}
+
+void function SetItemListWithItemFlavors( rtk_struct panelStruct, array<ItemFlavor> lootPoolItems )
+{
+	file.items.clear()
+	file.isShowingBrowsable = true
+
+	UpdateFooterOptions()
+
+	foreach ( int index, ItemFlavor poolItem in lootPoolItems )
+	{
+		RTKBrowseLootPoolItem itemStruct = RTKBrowseLootPoolMenu_GetItemInfoStructWithItemFlavor( poolItem )
+		file.items.append( itemStruct )
+	}
+
+	RTKStruct_SetString( panelStruct, "eventCollectionAmmount", "" )
+	RTKStruct_SetBool( panelStruct, "hasChasePreview", false )
+	RTKStruct_SetBool( panelStruct, "isShowingBrowsable", true )
+
+	rtk_array itemList = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "itemList", "RTKBrowseLootPoolItem" )
+	RTKArray_SetValue( itemList, file.items )
+
+	RTKBrowseLootPoolItem initialReward = file.items[0]
+	RTKBrowseLootPoolMenu_ShowItemPreviewByGUID( initialReward.guid )
+}
+
+RTKBrowseLootPoolItem function RTKBrowseLootPoolMenu_GetItemInfoStructWithItemFlavor( ItemFlavor itemFlavor )
+{
+	RTKBrowseLootPoolItem item
+
+	item.guid 			    	= itemFlavor.guid
+	item.checked 				= GetChecked( itemFlavor )
+	item.image 					= CustomizeMenu_GetGenericRewardButtonImage( itemFlavor )
+	item.eventImage 			= ItemFlavor_GetSourceIcon( itemFlavor )
+	item.quality 				= ItemFlavor_GetQuality( itemFlavor )
+	item.frameColor 			= GetBattlepassRarityColor( item.quality, true )
+	item.backgroundColor 		= GetBattlepassRarityColor( item.quality, false )
+	item.backgroundImage 		= GetBackgroundImage( item.isFeaturedItem )
+	item.quantity 				= ItemFlavor_GetType( itemFlavor ) == eItemType.account_currency_bundle ? GRXCurrencyBundle_GetValue( itemFlavor ) : 1
+	item.toolTipInfo.title 		= ""
+	item.toolTipInfo.actionText = ""
+
+	return item
+}
+
+void function RTKBrowseLootPoolMenu_SetChaseItemModelInfo( ItemFlavor itemFlavor, ItemFlavor pack   )
+{
+	rtk_struct chaseItemInfoModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "chaseItemModel", true, [ "browseLootPoolInfo" ] ) )
+	RTKStruct_SetValue( chaseItemInfoModel, RTKBrowseLootPoolMenu_GetChaseItemInfoStruct( itemFlavor, pack ) )
+}
+
+RTKCollectionChaseItemInfo function RTKBrowseLootPoolMenu_GetChaseItemInfoStruct( ItemFlavor itemFlavor, ItemFlavor pack )
+{
+	array<ItemFlavor> packContents = GRXPack_GetPackContents( file.chaseItem )
+	RTKCollectionChaseItemInfo chaseItem
+
+	chaseItem.visible 				= file.hasChasePreview
+	if ( packContents.len() > 0 )
+	{
+		chaseItem.isOwned 				= GetChecked( packContents[0] )
+		chaseItem.chaseItemSubtitle	    = GetCompletionRewardHeaderText( packContents[0] )
+	}
+	chaseItem.state 				= chaseItem.isOwned ? eShopItemState.OWNED : eShopItemState.AVAILABLE
+	chaseItem.quality 				= ItemFlavor_GetQuality( itemFlavor )
+	chaseItem.icon 					= GRXPack_GetCompletionRewardAsset( pack )
+	chaseItem.currentCollectedItems = file.itemsOwned
+	chaseItem.totalItems 			= file.itemsTotal
+	chaseItem.chaseItemTitleFormat	= Localize( "#COLLECTION_VAL_SLASH_VAL_TWO_STYLE_COLLECTED", chaseItem.currentCollectedItems.tostring(), chaseItem.totalItems.tostring() )
+
+	string packName                     = Localize( ItemFlavor_GetShortName( pack ) )
+	string packNameLong                 = Localize( ItemFlavor_GetLongName( pack ) )
+	string rewardName                   = Localize( ItemFlavor_GetLongName( itemFlavor ) )
+	string chaseOwnedText               = Localize( "#CHASE_ITEM_OWNED", rewardName, packName )
+	string chaseRetroDescriptionText    = Localize( "#CHASE_ITEM_RETRO_DESC", rewardName, file.itemsTotal, packNameLong )
+	string chaseNonRetroDescriptionText = Localize( "#CHASE_ITEM_NON_RETRO_DESC", rewardName, file.itemsTotal )
+
+	bool isRetroPack                    = GRXPack_IsAnyRetroPack( pack )
+	chaseItem.chaseItemDescription      = chaseItem.isOwned ? chaseOwnedText : ( isRetroPack ? chaseRetroDescriptionText : chaseNonRetroDescriptionText )
+	chaseItem.tooltipInfo.titleText     = rewardName
+
+	return chaseItem
+}
+
+string function GetCompletionRewardHeaderText( ItemFlavor itemFlavor )
+{
+	string headerText = "#COLLECTION_EVENT_HEIRLOOM_BOX_TITLE"
+
+	if ( Mythics_IsItemFlavorMythicSkin( itemFlavor ) )
+		headerText = "#COLLECTION_EVENT_MYTHIC_BOX_TITLE"
+
+	return Localize( headerText ).toupper()
+}
+
+void function AutoSubscribeScrollArea( rtk_behavior self )
+{
+	file.scrollAreaCount = 0
+
+	rtk_behavior ornull scrollContentArea = self.PropGetBehavior( "scrollContentArea" )
+	if ( scrollContentArea != null )
+	{
+		expect rtk_behavior( scrollContentArea )
+
+		self.AutoSubscribe( scrollContentArea, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self ) {
+			if ( file.scrollAreaCount < 0 )
+				file.scrollAreaCount = 0
+
+			file.scrollAreaCount = file.scrollAreaCount + 1
+
+			RunClientScript( "DisableModelTurn" )
+		} )
+
+		self.AutoSubscribe( scrollContentArea, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+
+			file.scrollAreaCount = file.scrollAreaCount - 1
+
+			if ( file.scrollAreaCount == 0 )
+				RunClientScript( "EnableModelTurn" )
+		} )
+	}
+
+	rtk_behavior ornull scrollBarArea = self.PropGetBehavior( "scrollBarArea" )
+	if ( scrollBarArea != null )
+	{
+		expect rtk_behavior( scrollBarArea )
+
+		self.AutoSubscribe( scrollBarArea, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self ) {
+			if ( file.scrollAreaCount < 0 )
+				file.scrollAreaCount = 0
+
+			file.scrollAreaCount = file.scrollAreaCount + 1
+
+			RunClientScript( "DisableModelTurn" )
+		} )
+
+		self.AutoSubscribe( scrollBarArea, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+			file.scrollAreaCount = file.scrollAreaCount - 1
+
+			if ( file.scrollAreaCount == 0 )
+				RunClientScript( "EnableModelTurn" )
+		} )
+	}
+}
+
+void function AutoSubscribeItemListButtons( rtk_behavior self, rtk_struct panelStruct )
+{
+	rtk_behavior ornull itemsListBinder = self.PropGetBehavior( "itemsListBinder" )
+	if ( itemsListBinder != null )
+	{
+		expect rtk_behavior( itemsListBinder )
+		self.AutoSubscribe( itemsListBinder, "onUpdatedList", function ( ) : ( self, itemsListBinder, panelStruct ) {
+			rtk_panel panel = itemsListBinder.GetPanel()
+			array< rtk_panel > gridItems = panel.GetChildren()
+			rtk_array itemListStruct = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "itemList", "RTKBrowseLootPoolItem" )
+
+			foreach ( int index, item in gridItems )
+			{
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+
+				if ( button.GetName() != "" )
+					continue
+
+				button.SetName( string( index ) )
+
+				self.AutoSubscribe( button, "onHighlightedOrFocused", void function( rtk_behavior button, int prevState ) : ( index, itemListStruct ) {
+
+					if ( index >= file.items.len() ) 
+						return
+
+					RTKBrowseLootPoolItem poolItem = file.items[index]
+					if ( poolItem.hidePreview )
+					{
+						RTKBrowseLootPoolMenu_ShowEmptyItemPreview()
+					}
+					else
+					{
+						RTKBrowseLootPoolMenu_ShowItemPreviewByGUID( poolItem.guid, false )
+						RunClientScript( "DisableModelTurn" )
+					}
+				} )
+
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( panelStruct, index ) {
+
+					if ( index >= file.items.len() ) 
+						return
+
+					RTKBrowseLootPoolItem poolItem = file.items[index]
+					ItemFlavor reward = GetItemFlavorByGUID( poolItem.guid )
+
+					if ( poolItem.isBrowsable )
+					{
+						RTKBreadcrumbStepModel step
+						step.title = poolItem.browsingStepTitle
+						RTKBreadcrumbHeader_PushStep( step )
+
+						file.lastBrowsableItem = poolItem
+
+						ResetScrollView()
+						SetScreenInfo( panelStruct, poolItem.browsingTitle, "", [] )
+						SetPackList( panelStruct, [] )
+						SetItemListWithItemFlavors( panelStruct, RTKBrowseLootPoolMenu_GetBackfillItems( reward ) )
+						RTKStruct_SetString( panelStruct, "footerText", Localize ( poolItem.browsingFooterText ) )
+					}
+					else if ( ItemFlavor_IsApexPackBrowsable( reward ) )
+					{
+						
+						return
+					}
+					else if ( ItemFlavor_GetType( reward ) == eItemType.account_currency_bundle )
+					{
+						return
+					}
+					else
+					{
+						SetGenericItemPresentationModeActiveWithNavBack( reward, "", "", void function() : () {} )
+					}
+				} )
+			}
+		})
+	}
+}
+
+void function AutoSubscribePacksListButtons( rtk_behavior self, rtk_struct panelStruct )
+{
+	rtk_behavior ornull packsListBinder = self.PropGetBehavior( "packsListBinder" )
+	if ( packsListBinder != null )
+	{
+		expect rtk_behavior( packsListBinder )
+		self.AutoSubscribe( packsListBinder, "onUpdatedList", function (  ) : ( self, packsListBinder, panelStruct ) {
+			rtk_panel panel = packsListBinder.GetPanel()
+			array< rtk_panel > packs = panel.GetChildren()
+			rtk_array packListStruct = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "packList", "RTKBrowseLootPoolItem" )
+
+			foreach ( int index, item in packs )
+			{
+				rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+
+				if ( button.GetName() != "" )
+					continue
+
+				button.SetName( string( index ) )
+
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, index, panelStruct, packListStruct ) {
+					array< UILootPoolItemData > primaryItemList = GRXRetroPack_GetPersonalizedLootPoolItems(file.packs[0] )
+					primaryItemList.sort( RTKBrowseLootPoolMenu_SortPoolItems )
+					SetItemList( panelStruct, primaryItemList )
+					RTKStruct_SetString( panelStruct, "title", ItemFlavor_GetShortName( file.packs[index] ) )
+					ResetScrollView()
+				} )
+			}
+		})
+	}
+}
+
+void function AutoSubscribeChaseItemButton( rtk_behavior self, rtk_struct panelStruct )
+{
+	rtk_behavior ornull chaseItemButton = self.PropGetBehavior( "chaseItemButton" )
+	if ( chaseItemButton != null )
+	{
+		expect rtk_behavior( chaseItemButton )
+
+		self.AutoSubscribe( chaseItemButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( ) {
+			array<ItemFlavor> packContents = GRXPack_GetPackContents( file.chaseItem )
+			file.hasChangedOffer = true
+
+			ItemFlavor mainItem
+			if ( !(packContents.len() > 0) )
+				return
+
+			mainItem = packContents[0]
+
+			array<GRXScriptOffer> mythicOffer
+			if ( Mythics_IsItemFlavorMythicSkin( mainItem ) )
+			{
+				mythicOffer = GRX_GetItemDedicatedStoreOffers( mainItem, "prestige_set_shop" )
+			}
+			else 
+			{
+				mythicOffer = GRX_GetItemDedicatedStoreOffers( mainItem, "heirloom_set_shop" )
+			}
+
+			GRXScriptOffer displayOffer
+			if ( mythicOffer.len() == 1 )
+			{
+				displayOffer = mythicOffer[0]
+			}
+			else
+			{
+				displayOffer.titleText = ItemFlavor_GetLongName( file.chaseItem )
+				displayOffer.descText = ""
+				displayOffer.prereq = packContents[0]
+
+				ItemFlavorBag priceBag
+				priceBag.flavors.append( GRX_CURRENCIES[GRX_CURRENCY_HEIRLOOM] )
+				priceBag.quantities.append( 999999999 )
+				displayOffer.prices.append( priceBag )
+
+				foreach ( item in packContents )
+					AddItemToFakeOffer( displayOffer, item )
+			}
+
+			RTKStore_OpenInspectPage( mainItem, displayOffer )
+		} )
+
+		rtk_array itemListStruct = RTKStruct_GetOrCreateScriptArrayOfStructs( panelStruct, "itemList", "RTKBrowseLootPoolItem" )
+		self.AutoSubscribe( chaseItemButton, "onHighlightedOrFocused", void function( rtk_behavior button, int prevState ) : ( itemListStruct ) {
+			array<ItemFlavor> packContents = GRXPack_GetPackContents( file.chaseItem )
+			RTKBrowseLootPoolMenu_ShowItemPreviewByGUID( packContents[0].guid, false )
+		} )
+	}
+}
+
+void function RTKBrowseLootPoolMenu_SetIndividualItemInfo( ItemFlavor itemFlavor )
+{
+	rtk_struct individualItemInfoModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "individualItemInfo", true, [ "browseLootPoolInfo" ] ) )
+	RTKStruct_SetValue( individualItemInfoModel, RTKBrowseLootPoolMenu_GetIndividualItemInfoStruct( itemFlavor ) )
+}
+
+void function RTKBrowseLootPoolMenu_SetEmptyIndividualItemInfo()
+{
+	rtk_struct individualItemInfoModel = expect rtk_struct( RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "individualItemInfo", true, [ "browseLootPoolInfo" ] ) )
+	RTKStruct_SetValue( individualItemInfoModel, RTKBrowseLootPoolMenu_GetEmptyIndividualItemInfoStruct() )
+}
+
+RTKIndividualItemInfo function RTKBrowseLootPoolMenu_GetIndividualItemInfoStruct( ItemFlavor itemFlavor )
+{
+	RTKIndividualItemInfo individualItem
+	individualItem.itemName    = ItemFlavor_GetLongName( itemFlavor )
+	individualItem.itemRarity  = ItemFlavor_GetQualityName( itemFlavor )
+	individualItem.itemQuality = ItemFlavor_GetQuality( itemFlavor )
+	individualItem.itemIsOwned = GetChecked( itemFlavor )
+	individualItem.itemType = Wishlist_GetItemFlavorRewardShortDescription( itemFlavor )
+
+	return individualItem
+}
+
+RTKIndividualItemInfo function RTKBrowseLootPoolMenu_GetEmptyIndividualItemInfoStruct()
+{
+	RTKIndividualItemInfo individualItem
+	individualItem.itemName    = ""
+	individualItem.itemType    = ""
+	individualItem.itemRarity  = ""
+	individualItem.itemQuality = 0
+	individualItem.itemIsOwned = false
+
+	return individualItem
+}
+
+void function RTKBrowseLootPoolMenu_ShowItemPreviewByGUID( SettingsAssetGUID guid, bool showFX = true )
+{
+	RunClientScript( "UIToClient_PreviewStoreItem", guid , false, 0, showFX )
+	RTKBrowseLootPoolMenu_SetIndividualItemInfo( GetItemFlavorByGUID( guid ) )
+}
+
+void function RTKBrowseLootPoolMenu_ShowEmptyItemPreview()
+{
+	RunClientScript( "UIToClient_ClearStorePreview" )
+	RTKBrowseLootPoolMenu_SetEmptyIndividualItemInfo()
+}
+
+asset function GetBackgroundImage( bool isFeatured )
+{
+	return isFeatured ? $"ui_image/rui/menu/chase/chase_bkg_texture.rpak" : $"ui_image/rui/menu/buttons/generic_item/reg_frame.rpak"
+}
+
+bool function GetChecked( ItemFlavor itemFlavor )
+{
+	if ( ItemFlavor_GetGRXMode( itemFlavor ) != GRX_ITEMFLAVORMODE_REGULAR )
+	{
+		return false
+	}
+
+	return GRX_IsItemOwnedByPlayer( itemFlavor )
+}
+
+void function GetScrollView( rtk_behavior self )
+{
+	rtk_behavior ornull gridScrollView = self.PropGetBehavior( "gridScrollView" )
+	if ( gridScrollView != null )
+	{
+		expect rtk_behavior( gridScrollView )
+		file.scrollView = self.PropGetBehavior( "gridScrollView" )
+	}
+}
+
+void function ResetScrollView()
+{
+	if ( file.scrollView != null )
+	{
+		RTKScrollView_ScrollTo( file.scrollView, 0 )
+	}
+}
+
+array<ItemFlavor> function RTKBrowseLootPoolMenu_GetBackfillItems( ItemFlavor reward )
+{
+	if ( reward.typeIndex == eItemType.reward_set_tracker && RewardSetTracker_IsLootPoolFromCeremonyPack( reward ) )
+	{
+		ItemFlavor ceremonyPack = GetItemFlavorByAsset( GetGlobalSettingsAsset( ItemFlavor_GetAsset( reward ), "rewardCeremonyDisplayFlav" ) )
+		return GRXPack_GetPackContents( ceremonyPack )
+	}
+	else
+	{
+		int backFillCategory = GRXRetroPack_GetBackfillCategoryForItem( reward )
+		return GRXRetroPack_GetAllBackfillItemsInCategory( backFillCategory )
+	}
+
+	unreachable
+}
+
+void function RTKBrowseLootPoolMenu_PackPreviewCallback( int status, array< UILootPoolItemData > results, ItemFlavor pack )
+{
+	foreach ( int index ,lootPoolItem in results )
+	{
+		file.allLootPoolItems[ pack ] <- []
+		file.allLootPoolItems[ pack ].append( lootPoolItem )
+
+		ItemFlavor reward = lootPoolItem.flav
+		if ( ItemFlavor_IsApexPackBrowsable( reward ) )
+		{
+			file.browsablePacksInPacks.append( reward )
+		}
+	}
+	file.allLootPoolItems[ pack ].sort( RTKBrowseLootPoolMenu_SortPoolItems )
+}
+
+int function RTKBrowseLootPoolMenu_SortPoolItems( UILootPoolItemData aLootPool, UILootPoolItemData bLootPool )
+{
+	ItemFlavor a = aLootPool.flav
+	ItemFlavor b = bLootPool.flav
+
+	int a_quality = ItemFlavor_HasQuality( a ) ? ItemFlavor_GetQuality( a ) : 0
+	int b_quality = ItemFlavor_HasQuality( b ) ? ItemFlavor_GetQuality( b ) : 0
+
+	int a_type = ItemFlavor_GetType( a )
+	int b_type = ItemFlavor_GetType( b )
+
+	int a_owned = aLootPool.isOwned ? 1 : 0
+	int b_owned = bLootPool.isOwned ? 1 : 0
+
+	if ( a_owned < b_owned )
+	 {
+		 return -1
+	 }
+	 else if ( a_owned > b_owned )
+	 {
+		 return 1
+	 }
+	else if ( a_quality < b_quality )
+	{
+		return 1
+	}
+	else if ( a_quality > b_quality )
+	{
+		return -1
+	}
+	else
+	{
+		if ( a_type == eItemType.account_currency )
+		{
+			return -1
+		}
+		else if ( b_type == eItemType.account_currency )
+		{
+			return 1
+		}
+
+		if ( a_type == eItemType.weapon_skin && WeaponSkin_DoesReactToKills ( a ) )
+		{
+			return -1
+		}
+		else if ( b_type == eItemType.weapon_skin && WeaponSkin_DoesReactToKills ( b ) )
+		{
+			return 1
+		}
+
+		
+		if ( a_type == eItemType.skydive_emote || a_type == eItemType.skydive_trail )
+		{
+			a_type = eItemType.character_execution
+		}
+
+		if ( b_type == eItemType.skydive_emote || b_type == eItemType.skydive_trail )
+		{
+			b_type = eItemType.character_execution
+		}
+
+		if ( a_type < eItemType.character && b_type >= eItemType.character )
+		{
+			return 1
+		}
+		else if ( a_type >= eItemType.character && b_type < eItemType.character )
+		{
+			return -1
+		}
+		else
+		{
+			if ( a_type > b_type )
+			{
+				return 1
+			}
+			else if ( a_type < b_type )
+			{
+				return -1
+			}
+		}
+	}
+
+	return 0
+}
+
+void function RTKBrowseLootPoolMenu_UnexpectedErrorClose()
+{
+	if ( file.menu != GetActiveMenu() )
+		return
+
+	CloseActiveMenu()
+
+	ConfirmDialogData dialogData
+	dialogData.headerText = "#ERROR"
+	dialogData.messageText = "#UNEXPECTED_ERROR"
+	dialogData.contextImage = $"ui/menu/common/dialog_error"
+	OpenOKDialogFromData( dialogData )
+}

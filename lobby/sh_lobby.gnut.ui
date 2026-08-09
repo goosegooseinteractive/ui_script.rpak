@@ -1,0 +1,146 @@
+
+
+
+
+
+global function IsLobbyRefreshEnabled
+
+
+global function IsLobbyUnhingedEnabled
+
+
+
+global function UI_GetRewardEscapeConfirmationViewed
+global function UI_SetRewardEscapeConfirmationViewed
+
+
+global const string PRIVATE_MATCH_PLAYLIST = "private_match"
+global const int    PRIVATE_MATCH_MAX_PARTY_SIZE = 1
+
+global const int TRAINING_REQUIRED_BELOW_LEVEL_0_BASE = 14
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function IsLobbyRefreshEnabled()
+{
+	return GetCurrentPlaylistVarBool( "lobby_refresh_enabled", false )
+}
+
+
+
+bool function IsLobbyUnhingedEnabled()
+{
+
+		if ( !IsFullyConnected() )
+			return false
+
+
+	return GetCurrentPlaylistVarBool( "lobby_unhinged_enabled", true )
+}
+
+
+
+bool function UI_GetRewardEscapeConfirmationViewed()
+{
+	return UISafeGetPersistentVarAsBool( "rewardEscapeConfirmationViewed" )
+}
+
+
+
+void function UI_SetRewardEscapeConfirmationViewed( bool viewed )
+{
+	Remote_ServerCallFunction( "ClientCallback_SetRewardEscapeConfirmationViewed", viewed )
+}
+

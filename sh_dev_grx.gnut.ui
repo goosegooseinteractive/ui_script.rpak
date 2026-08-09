@@ -1,0 +1,541 @@
+
+#if DEV
+
+
+
+
+
+
+
+
+
+
+
+global function DEV_GRX_DescribeOffer
+global function DEV_GRX_TestPurchase
+
+global function DEV_GRX_TestOpenPack
+global function DEV_GRX_TestPackPreview
+
+global function DEV_GRX_GetAccountIntAttribute
+global function DEV_TestUpdateSmartMerchandisingData
+
+global function DEV_GRX_PrintNextCurrencyExpirationInfo
+global function DEV_GRX_PrintContainers
+global function DEV_PrintSortedStoreSectionData
+
+global function DEV_GRX_WishlistUpgradePacks
+
+
+const string DEV_PACK_GRANT_REWARD_SEQUENCE_NAME = "dev_rewardSeq_pack_grant"
+const int DEV_REWARD_SEQ_ITEM_GRANT_LIMIT = 255
+const int DEV_GRX_GRANT_ITEMS_MIN_COLUMN = 1
+const int DEV_GRX_GRANT_ITEMS_MAX_COLUMN = 5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function DEV_GRX_WishlistUpgradePacks( string packRef, int packCount )
+{
+	if ( !IsValidGRXRef( packRef ) )
+	{
+		Warning( "'%s' is not a valid grx ref", packRef )
+		return
+	}
+
+	ItemFlavor packFlav = GetItemFlavorByGRXRef( packRef )
+	GRXScriptOffer ornull upgradeOfferOrNull = Wishlist_GetUpgradePackOffer( packFlav )
+	if ( upgradeOfferOrNull == null )
+	{
+		Warning( "'%s' has no upgrade offer", packRef )
+		return
+	}
+
+	GRXScriptOffer upgradeOffer = expect GRXScriptOffer( upgradeOfferOrNull )
+	int queryGoal = GRX_HTTPQUERYGOAL_PURCHASE_STORE_OFFER
+
+	ScriptGRXOperationInfo op
+	op.expectedQueryGoal = queryGoal
+	op.doOperationFunc = (void function( int opID ) : ( queryGoal, upgradeOffer, packCount )
+	{
+		GRX_PurchaseOffer( opID, queryGoal, upgradeOffer, upgradeOffer.prices[0], packCount, null )
+	})
+	op.onDoneCallback = null
+	QueueGRXOperation( GetLocalClientPlayer(), op, true )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+string function DEV_GRX_DescribeOffer( GRXScriptOffer offer )
+{
+	array<string> priceDescs = []
+	foreach ( int priceIdx, ItemFlavorBag price in offer.prices )
+	{
+		priceDescs.append( format( "price%d=(%s)", priceIdx, DEV_DescribeItemFlavorBag( price ) ) )
+	}
+
+	string offerStr		= offer.offerAlias
+	string contentsStr	= DEV_DescribeItemFlavorBag( offer.output )
+	string priceStr		= priceDescs.join( "; " )
+
+	return format( "\"%s\" = [contents=(%s) %s]", offerStr, contentsStr, priceStr )
+}
+
+
+
+void function DEV_GRX_TestPurchase( string ref = "pack_cosmetic_rare", array<int> price = [100], int qty = 1 )
+{
+	ItemFlavor flav = GetItemFlavorByGRXRef( ref )
+
+	price.resize( GRX_CURRENCY_COUNT, 0 )
+
+	ScriptGRXOperationInfo operation
+	operation.expectedQueryGoal = GRX_HTTPQUERYGOAL_PURCHASE_PACK
+	operation.doOperationFunc = (void function( int opID ) : ( flav, price, qty, ref )
+	{
+		GRX_PurchaseOfferV2( opID, GRX_HTTPQUERYGOAL_PURCHASE_PACK, "Store_Offer_pack_cosmetic_rare_1", GRX_ITEM_INDEX_INVALID, qty, "price1", price )
+	})
+	operation.onDoneCallback = null
+	QueueGRXOperation( GetLocalClientPlayer(), operation, true )
+}
+
+
+
+void function DEV_GRX_TestOpenPack( string ref = "pack_cosmetic_rare", int quantity = 1 )
+{
+	ItemFlavor pack = GetItemFlavorByGRXRef( ref )
+	ScriptGRXOperationInfo operation
+	operation.expectedQueryGoal = GRX_HTTPQUERYGOAL_OPEN_PACKS
+	operation.doOperationFunc = (void function( int opID ) : ( pack, quantity )
+	{
+		GRX_OpenPacks( opID, ItemFlavor_GetGRXIndex( pack ), quantity )
+	})
+	operation.onDoneCallback = null
+	QueueGRXOperation( GetLocalClientPlayer(), operation, true )
+}
+
+
+
+void function DEV_GRX_TestPackPreview( string grxRefForPack )
+{
+	ItemFlavor packFlav = GetItemFlavorByGRXRef( grxRefForPack )
+
+	GRX_PreviewPack( packFlav )
+}
+
+
+
+int function DEV_GRX_GetAccountIntAttribute( string attrName )
+{
+	return GRX_GetAccountIntAttribute( attrName )
+}
+
+
+
+void function DEV_TestUpdateSmartMerchandisingData()
+{
+	array<int> smartMerchInts = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 10 ]
+	GRX_UpdateSmartMerchandisingData( smartMerchInts )
+}
+
+
+
+void function DEV_GRX_PrintNextCurrencyExpirationInfo()
+{
+	PlayerGRXScriptState grxState = GetPlayerGRXScriptState( GetLocalClientPlayer() )
+
+	foreach ( int idx, GRXUserInfoBalances currency in grxState.currencies )
+	{
+		if (currency.nextCurrencyExpirationAmt > 0)
+		{
+			int secondsToExpire = currency.nextCurrencyExpirationTime - GetUnixTimestamp(); 
+			float SECPERDAY = 86400.0; 
+			float daysToExpire = secondsToExpire / SECPERDAY;
+			printt( "Next Currency Expiration Info:", currency.nextCurrencyExpirationAmt, "AC expire in", daysToExpire, "days | expiretime =", currency.nextCurrencyExpirationTime )
+		}
+	}
+}
+
+
+
+void function DEV_GRX_PrintContainer( GRXContainerInfo container, string alias = "" )
+{
+	string aliasPrint = ""
+	if ( alias != "" )
+		aliasPrint = format( " Alias: \"%s\"", alias )
+
+	printf( "Container \"%s\"%s\n", container.containerId, aliasPrint )
+	printf( "\tType = %d\n", container.type )
+	printf( "\tTimestamp = %d\n", container.timestamp )
+	printf( "\tIs New? = %s\n", container.isNew ? "true" : "false" )
+	printf( "\tItems = %d\n", container.itemIndices.len() )
+
+	array<ItemFlavor> items = GRX_GetItemFlavsFromContainer( container )
+
+	for ( int i = 0; i < container.itemIndices.len(); ++i )
+	{
+		printf( "\t- %s, Count = %d\n", ItemFlavor_GetAssetName( items[i] ), container.itemCounts[i] )
+	}
+}
+
+void function DEV_GRX_PrintContainers()
+{
+	PlayerGRXScriptState scriptState = GetPlayerGRXScriptState( GetLocalClientPlayer() )
+
+	printf( "Primary Containers (%d): \n", scriptState.containers.len() )
+	foreach ( GRXContainerInfo container in scriptState.containers )
+	{
+		DEV_GRX_PrintContainer( container )
+	}
+
+	printf( "OnDemand Containers (%d): \n", scriptState.onDemandContainers.len() )
+	foreach ( string containerAlias, GRXContainerInfo container in scriptState.onDemandContainers )
+	{
+		DEV_GRX_PrintContainer( container, containerAlias )
+	}
+}
+
+
+
+void function DEV_PrintSortedStoreSectionData()
+{
+	table<int, StoreSectionInfo> sortedStoreSectionData = GetSortedStoreSectionData()
+	foreach ( int location, StoreSectionInfo sectionInfo in sortedStoreSectionData )
+	{
+		printt( "Section name: ", sectionInfo.sectionName )
+		printt( "Section id: ", sectionInfo.sectionId )
+		printt( "Marked as new date: ", sectionInfo.markedAsNewDate )
+		printt( "Offers for location ", GetSectionLocationNameFromEnum( location ) )
+		foreach ( GRXScriptOffer offer in sectionInfo.offers )
+		{
+			printt( "Offer ", offer.offerAlias, " with displayPriority = ", offer.displayPriority )
+		}
+	}
+}
+
+
+
+string function GetSectionLocationNameFromEnum( int location )
+{
+	foreach ( string key, int val in eStoreSections )
+	{
+		if ( val == location)
+			return key
+	}
+	return "INVALID LOCATION"
+}
+
+#endif

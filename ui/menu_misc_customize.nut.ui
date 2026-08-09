@@ -1,0 +1,152 @@
+global function InitMiscCustomizeMenu
+
+global function SetCustomizeMiscMenuDefaultTab
+
+struct
+{
+	var        menu
+	array<var> tabBodyPanelList
+	table<int, Newness_Query> itemTypeToNewnessMap
+
+	bool newnessInitialized = false
+	int defaultTabIndex = 0
+} file
+
+
+void function InitMiscCustomizeMenu( var menu )
+{
+	file.menu = menu
+
+	SetTabRightSound( menu, "UI_Menu_ArmoryTab_Select" )
+	SetTabLeftSound( menu, "UI_Menu_ArmoryTab_Select" )
+
+	file.tabBodyPanelList = [
+		Hud_GetChild( menu, "LoadscreenPanel" )
+		Hud_GetChild( menu, "MusicPackPanel" )
+		Hud_GetChild( menu, "SkydiveTrailPanel" )
+	]
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, MiscCustomizeMenu_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, MiscCustomizeMenu_OnShow )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, MiscCustomizeMenu_OnClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, MiscCustomizeMenu_OnNavigateBack )
+
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddMenuFooterOption( menu, LEFT, BUTTON_A, true, "#A_BUTTON_SELECT", "" )
+}
+
+
+void function MiscCustomizeMenu_OnOpen()
+{
+	ItemFlavor character = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_Character() )
+	SetTopLevelCustomizeContext( character )
+
+	AddCallback_OnTopLevelCustomizeContextChanged( file.menu, MiscCustomizeMenu_Update )
+	MiscCustomizeMenu_Update( file.menu )
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	tabData.centerTabs = true
+	tabData.bannerTitle = ""
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.STANDARD )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		ActivateTab( tabData, file.defaultTabIndex )
+	}
+
+	RegisterNewnessQueries()
+
+	SetTabDefsToSeasonal( tabData )
+	UpdateMenuTabs()
+}
+
+void function RegisterNewnessQueries()
+{
+	Newness_Query loadscreenQuery
+	loadscreenQuery.itemTypeList  = [eItemType.loadscreen]
+	loadscreenQuery.uiCategory    = eItemTypeUICategory.MISC_LOADOUT
+	loadscreenQuery.panelOrButton = GetPanel( "LoadscreenPanel" )
+	loadscreenQuery.cb            = OnNewnessQueryChangedUpdatePanelTab
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( loadscreenQuery )
+	file.itemTypeToNewnessMap[ eItemType.loadscreen ] <- loadscreenQuery
+
+	Newness_Query musicQuery
+	musicQuery.itemTypeList  = [eItemType.music_pack]
+	musicQuery.uiCategory    = eItemTypeUICategory.MISC_LOADOUT
+	musicQuery.panelOrButton = GetPanel( "MusicPackPanel" )
+	musicQuery.cb            = OnNewnessQueryChangedUpdatePanelTab
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( musicQuery )
+	file.itemTypeToNewnessMap[ eItemType.music_pack ] <- musicQuery
+
+	Newness_Query skydiveTrailQuery
+	skydiveTrailQuery.itemTypeList  = [eItemType.skydive_trail]
+	skydiveTrailQuery.uiCategory    = eItemTypeUICategory.MISC_LOADOUT
+	skydiveTrailQuery.panelOrButton = GetPanel( "SkydiveTrailPanel" )
+	skydiveTrailQuery.cb            = OnNewnessQueryChangedUpdatePanelTab
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( skydiveTrailQuery )
+	file.itemTypeToNewnessMap[ eItemType.skydive_trail ] <- skydiveTrailQuery
+
+	file.newnessInitialized = true
+}
+
+
+void function MiscCustomizeMenu_OnShow()
+{
+	UI_SetPresentationType( ePresentationType.WEAPON_CATEGORY )
+}
+
+
+void function MiscCustomizeMenu_OnClose()
+{
+	Newness_RemoveCallback_OnQueryUpdated( file.itemTypeToNewnessMap[ eItemType.loadscreen ] )
+	Newness_RemoveCallback_OnQueryUpdated( file.itemTypeToNewnessMap[ eItemType.music_pack ] )
+	Newness_RemoveCallback_OnQueryUpdated( file.itemTypeToNewnessMap[ eItemType.skydive_trail ] )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( file.menu, MiscCustomizeMenu_Update )
+	MiscCustomizeMenu_Update( file.menu )
+
+	file.defaultTabIndex = 0
+	file.itemTypeToNewnessMap.clear()
+	file.newnessInitialized = false
+}
+
+
+void function MiscCustomizeMenu_Update( var menu )
+{
+	ClearTabs( menu )
+
+	
+	if ( GetActiveMenu() == menu )
+	{
+		{
+			TabDef tabdef = AddTab( menu, file.tabBodyPanelList[0], Localize( "#TAB_CUSTOMIZE_LOADSCREEN" ).toupper() )
+			SetTabBaseWidth( tabdef, 280 )
+			tabdef.isBannerLogoSmall = true
+		}
+		{
+			TabDef tabdef = AddTab( menu, file.tabBodyPanelList[1], Localize( "#TAB_CUSTOMIZE_MUSIC_PACK" ).toupper() )
+			SetTabBaseWidth( tabdef, 260 )
+			tabdef.isBannerLogoSmall = true
+		}
+		{
+			TabDef tabdef = AddTab( menu, file.tabBodyPanelList[2], Localize( "#TAB_CUSTOMIZE_SKYDIVE_TRAIL" ).toupper() )
+			SetTabBaseWidth( tabdef, 270 )
+			tabdef.isBannerLogoSmall = true
+		}
+	}
+
+	UpdateMenuTabs()
+}
+
+
+void function MiscCustomizeMenu_OnNavigateBack()
+{
+	Assert( GetActiveMenu() == file.menu )
+
+	CloseActiveMenu()
+}
+
+void function SetCustomizeMiscMenuDefaultTab( int index )
+{
+	file.defaultTabIndex = index
+}

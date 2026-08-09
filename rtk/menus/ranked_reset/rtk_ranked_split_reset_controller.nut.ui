@@ -1,0 +1,243 @@
+global function RTKRankedSplitResetDialog_OnInitialize
+global function RTKRankedSplitResetDialog_OnDestroy
+
+global function OpenRankedSplitResetDialog
+global function InitRTKRankedSplitResetDialog
+
+global function RTKRankedSplitResetDialog_SetWaitUserInfo
+global function RTKRankedSplitResetDialog_IsWaitUserInfo
+
+global struct RTKRankedSplitResetDialog_Properties
+{
+	rtk_behavior acknowlegeButton
+}
+
+struct PrivateData
+{
+
+}
+
+global struct RTKRankedSplitResetModel
+{
+	RTKRankedBadgeModel& previousRank
+	RTKRankedBadgeModel& initialRank
+	string title
+	string header
+	string context
+	string disclaimer
+
+	bool isExistingRankPlayer
+}
+
+struct
+{
+	var menu
+	bool isWaitingUserInfoUpdate = false
+}file
+
+const string MODEL_PATH_NAME = "rankedSplitReset"
+
+
+void function InitRTKRankedSplitResetDialog( var menu )
+{
+	file.menu = menu
+
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, false, "", "", RTKRankedSplitResetDialog_OnBackPressed )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, RTKRankedSplitResetDialog_OnNavigateBack )
+
+#if UI_AUTOMATION
+		UIAutomation_AddThinkFunc( menu, RTKRankedSplitResetDialogAutomationThink )
+#endif
+}
+
+#if UI_AUTOMATION
+void function RTKRankedSplitResetDialogAutomationThink( var menu )
+{
+	if ( UIAutomation_AutomationDelay() && file.menu == GetActiveMenu() )
+	{
+		CloseActiveMenu()
+		AdvanceMenu( GetMenu( "LobbyMenu" ) )
+	}
+}
+#endif
+
+void function RTKRankedSplitResetDialog_OnBackPressed( var button )
+{
+	if ( file.menu == GetActiveMenu() )
+		EmitUISound( "UI_Menu_Deny" )
+}
+
+void function RTKRankedSplitResetDialog_OnNavigateBack()
+{
+	RTKRankedSplitResetDialog_OnBackPressed( null )
+}
+
+void function OpenRankedSplitResetDialog()
+{
+	
+	if ( GetActiveMenu() == file.menu )
+		return
+
+	if ( Ranked_IsCurrentSplitResetAcknowledged() )
+		return
+
+	if ( RTKRankedSplitResetDialog_IsWaitUserInfo() )
+		return
+
+	if ( !RankedEvent_DoesLocalPlayerHaveRankedAccess() )
+		return
+
+	if ( ItemFlavor_GetGUID( expect ItemFlavor( Ranked_GetCurrentActiveRankedPeriod() ) ) != UISafeGetPersistentVarAsInt( RANKED_LAST_INITIALIZED_PERIOD_GUID_VAR_NAME ) )
+		return
+
+	AdvanceMenu( file.menu )
+}
+
+
+ItemFlavor ornull function GetPrecedingRankedPeriodWithGamesPlayed( ItemFlavor flav )
+{
+	if ( GetCurrentPlaylistVarBool( "player_evaluation_get_direct_preceding_period", false ) )
+		return GetPrecedingRankedPeriod( flav )
+
+	ItemFlavor ornull precedingRankedPeriod = GetPrecedingRankedPeriod( flav )
+	if ( precedingRankedPeriod == null )
+		return null
+	expect ItemFlavor( precedingRankedPeriod )
+	if ( GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.rankedperiod_games_played_base, ItemFlavor_GetGUIDString( precedingRankedPeriod ) ) ) > 0 )
+		return precedingRankedPeriod
+	else
+		return GetPrecedingRankedPeriodWithGamesPlayed( precedingRankedPeriod )
+	unreachable
+}
+
+void function RTKRankedSplitResetDialog_OnInitialize( rtk_behavior self )
+{
+	rtk_struct splitResetDialogModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKRankedSplitResetModel" )
+	string modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+	self.GetPanel().SetBindingRootPath( modelPath )
+
+	ItemFlavor ornull rankedPeriod = Ranked_GetCurrentActiveRankedPeriod()
+	if ( rankedPeriod == null )
+		return
+	expect ItemFlavor( rankedPeriod )
+
+	CommunityUserInfo ornull userInfoOrNull = GetUserInfo( GetPlayerHardware(), GetPlayerUID() )
+	Assert( userInfoOrNull != null, "Can't have null userinfo in RTKRankedSplitResetDialog_OnInitialize, should check before advancing menu" )
+	expect CommunityUserInfo( userInfoOrNull )
+
+	entity player = GetLocalClientPlayer()
+	RTKRankedSplitResetDialog_SetAcknowledgeButton( self )
+
+	bool isExistingPlayer = userInfoOrNull.isExistingRankPlayer
+	SharedRankedDivisionData rankedData = Ranked_GetHistoricalRankedDivisionFromScore( userInfoOrNull.initialRP, userInfoOrNull.rankedPeriodName )
+
+	printt( "RTKRankedSplitResetDialog_OnInitialize: isExistingPlayer:", isExistingPlayer, "initialRP:", userInfoOrNull.initialRP )
+
+	RTKRankedSplitResetModel data
+	bool isFirstSplit = Ranked_IsRankedV2FirstSplit( rankedPeriod )
+	data.title = Localize( "#APEX_RANKED_LEAGUES_N", isFirstSplit ? Localize( "#RANKED_SPLIT_1" ) : Localize( "#RANKED_SPLIT_2" ) )
+	data.header = isExistingPlayer ? "#RANK_RESET" : "#RANK_PLACEMENT"
+	if ( isExistingPlayer )
+		data.context = Localize( isFirstSplit ? "#RANKED_SEASON_RESET_CONTEXT" : "#RANKED_SPLIT_RESET_CONTEXT", Localize( rankedData.divisionName ) )
+	else
+		data.context = Localize( isFirstSplit ? "#RANKED_SEASON_RESET_CONTEXT_NEW": "#RANKED_SPLIT_RESET_CONTEXT_NEW", Localize( rankedData.divisionName ) )
+	data.disclaimer = Localize( "#RANKED_SPLIT_REWARDS_DISCLAIMER", RANKED_REWARD_MIN_MATCH_COUNT )
+	data.isExistingRankPlayer = isExistingPlayer
+
+	
+	data.initialRank.badgeRuiAsset = rankedData.tier.iconRuiAsset
+	data.initialRank.rankedIcon = string(rankedData.tier.icon)
+	data.initialRank.emblemDisplayMode = rankedData.emblemDisplayMode
+	data.initialRank.ladderPosition = userInfoOrNull.rankedLadderPos
+	data.initialRank.rankScore = userInfoOrNull.initialRP
+	data.initialRank.badgeLabel = GetRankEmblemText( rankedData, userInfoOrNull.initialRP, userInfoOrNull.rankedLadderPos )
+	data.initialRank.isPlacementMode = false
+	data.initialRank.startPip = 0
+	data.initialRank.useDynamicPips = false
+	data.initialRank.isPromotional = false
+
+	
+	if ( userInfoOrNull.isExistingRankPlayer )
+	{
+		ItemFlavor ornull previousRankedPeriodOrNull = GetPrecedingRankedPeriodWithGamesPlayed( rankedPeriod )
+		if ( previousRankedPeriodOrNull != null )
+		{
+			expect ItemFlavor( previousRankedPeriodOrNull )
+			string previousRankedPeriodStringGUID = ItemFlavor_GetGUIDString( previousRankedPeriodOrNull )
+			int previousRP = Ranked_GetHistoricalRankScore( player, previousRankedPeriodStringGUID, true )
+			int previousLadderPosition = Ranked_GetHistoricalLadderPosition( player, previousRankedPeriodStringGUID )
+
+			SharedRankedDivisionData previousRankedData = Ranked_GetHistoricalRankedDivisionFromScoreAndLadderPosition( previousRP, previousLadderPosition, previousRankedPeriodStringGUID )
+			data.previousRank.badgeRuiAsset = previousRankedData.tier.iconRuiAsset
+			data.previousRank.rankedIcon = string(previousRankedData.tier.icon)
+			data.previousRank.emblemDisplayMode = previousRankedData.emblemDisplayMode
+			data.previousRank.ladderPosition = userInfoOrNull.rankedLadderPos
+			data.previousRank.rankScore = userInfoOrNull.initialRP
+			data.previousRank.badgeLabel = GetRankEmblemText( previousRankedData, previousRP, Ranked_GetHistoricalLadderPosition( player, previousRankedPeriodStringGUID ) )
+			data.previousRank.isPlacementMode = false
+			data.previousRank.startPip = 0
+			data.previousRank.useDynamicPips = false
+			data.previousRank.isPromotional = false
+		}
+	}
+
+	RTKStruct_SetValue( splitResetDialogModel, data )
+}
+
+void function RTKRankedSplitResetDialog_SetAcknowledgeButton( rtk_behavior self )
+{
+	rtk_behavior acknowledgeButton = self.PropGetBehavior( "acknowlegeButton" )
+	self.AutoSubscribe( acknowledgeButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			printt( "RTKRankedSplitResetDialog_SetAcknowledgeButton onPressed", GetActiveMenu() == null ? "" : GetActiveMenuName() )
+			EmitUISound( "UI_Menu_LootCeremony_Hold_Bar" )
+	} )
+	self.AutoSubscribe( acknowledgeButton, "onCompletedHold", function( rtk_behavior button, int keycode ) : ( self ) {
+		Ranked_SetLastRankedResetAcknowledgmentGUID()
+		StopUISoundByName( "UI_Menu_LootCeremony_Hold_Bar" )
+		EmitUISound( "UI_Menu_Accept" )
+		printt( "RTKRankedSplitResetDialog_SetAcknowledgeButton onCompletedHold", GetActiveMenu() == null ? "" : GetActiveMenuName() )
+		thread Delayed_CloseMenu()
+	} )
+	self.AutoSubscribe( acknowledgeButton, "onInterrumptedHold", function( rtk_behavior button, int keycode ) : ( self ) {
+		printt( "RTKRankedSplitResetDialog_SetAcknowledgeButton onInterrumptedHold", GetActiveMenu() == null ? "" : GetActiveMenuName() )
+		StopUISoundByName( "UI_Menu_LootCeremony_Hold_Bar" )
+	} )
+}
+
+void function RTKRankedSplitResetDialog_OnDestroy( rtk_behavior self )
+{
+	string modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, modelPath )
+}
+
+void function Delayed_CloseMenu( float delay = 0.2 )
+{
+	wait delay
+	printt( "RTKRankedSplitResetDialog_SetAcknowledgeButton Delayed_CloseMenu", GetActiveMenu() == null ? "" : GetActiveMenuName() )
+	if ( file.menu == GetActiveMenu() )
+		thread CloseActiveMenu()
+}
+
+void function RTKRankedSplitResetDialog_SetWaitUserInfo()
+{
+	if ( !HasCallback_UserInfoUpdated( OnUserInfoUpdated ) )
+	{
+		file.isWaitingUserInfoUpdate = true
+		AddCallback_UserInfoUpdated( OnUserInfoUpdated )
+	}
+}
+
+bool function RTKRankedSplitResetDialog_IsWaitUserInfo()
+{
+	return file.isWaitingUserInfoUpdate
+}
+
+void function OnUserInfoUpdated( string hardware, string id )
+{
+	if ( id == GetConVarString( "nucleus_id" ) )
+	{
+		file.isWaitingUserInfoUpdate = false
+		if( HasCallback_UserInfoUpdated( OnUserInfoUpdated ) )
+			RemoveCallback_UserInfoUpdated( OnUserInfoUpdated )
+	}
+}

@@ -1,0 +1,125 @@
+global function RTKRankedBadge_OnInitialize
+global function RTKRankedBadge_OnDrawBegin
+
+global struct RTKRankedBadge_Properties
+{
+	asset badgeRuiAsset
+	asset rankedIcon
+
+
+
+
+
+	asset rankedIconOverlay
+
+
+	bool isPlacementMode = false
+	int completedMatches
+	int maxMatches = 10
+	bool useDynamicPips = false
+	bool isPromotional = false
+	bool showDemoteProtection = false
+	int startPip
+	array<bool> wonMatches
+
+	string emblemText
+	int emblemDisplayMode
+	int ladderPosition
+	int rankScore
+	int protectionCurrent
+}
+
+void function RTKRankedBadge_OnInitialize( rtk_behavior self )
+{
+	self.AddPropertyCallback( "badgeRuiAsset", UpdateBadgeRuiAsset )
+
+	UpdateBadgeRuiAsset( self )
+}
+
+void function RTKRankedBadge_OnDrawBegin( rtk_behavior self )
+{
+	if ( self.HasRui() )
+	{
+		self.SetRuiArgImage( "rankedIcon", self.PropGetAssetPath( "rankedIcon" ) )
+
+
+
+
+
+
+
+		asset rankedIconOverlay = self.PropGetAssetPath( "rankedIconOverlay" )
+		if ( rankedIconOverlay != $"" )
+			self.SetRuiArgImage( "rankedIconOverlay", rankedIconOverlay )
+
+
+		bool showProtection = self.PropGetBool( "showDemoteProtection" )
+		bool isPlacementMode = self.PropGetBool( "isPlacementMode" )
+		if ( showProtection )
+		{
+			self.SetRuiArgInt( "protectionCurrent", self.PropGetInt( "protectionCurrent" ) )
+			self.SetRuiArgString( "emblemText", self.PropGetString( "emblemText" ) )
+		}
+		else if ( isPlacementMode )
+		{
+			self.SetRuiArgInt( "placementProgress", self.PropGetInt( "completedMatches" ) )
+			self.SetRuiArgInt( "maxPips", self.PropGetInt( "maxMatches" ) )
+			self.SetRuiArgBool( "useDynamicPips", self.PropGetBool( "useDynamicPips" ) )
+			self.SetRuiArgBool( "isPromotional", self.PropGetBool( "isPromotional" ) )
+			self.SetRuiArgInt( "startPip", self.PropGetInt( "startPip" ) )
+
+			rtk_array wonMatches = self.PropGetArray( "wonMatches" )
+			for ( int i = 0; i < RTKArray_GetCount( wonMatches ); i++ )
+			{
+				bool val = RTKArray_GetBool( wonMatches, i )
+				self.SetRuiArgBool( "wonGame" + i, val )
+			}
+
+			self.SetRuiArgInt( "emblemDisplayMode", self.PropGetInt( "emblemDisplayMode" ) )
+
+			switch( self.PropGetInt( "emblemDisplayMode" ) )
+			{
+				case emblemDisplayMode.DISPLAY_DIVISION:
+				{
+					self.SetRuiArgString( "emblemText", self.PropGetString( "emblemText" ) )
+					break
+				}
+
+				case emblemDisplayMode.DISPLAY_RP:
+				{
+					string rankScoreShortened = FormatAndLocalizeNumber( "1", float( self.PropGetInt( "rankScore" ) ), IsTenThousandOrMore( self.PropGetInt( "rankScore" ) ) )
+					self.SetRuiArgString( "emblemText", Localize( "#RANKED_POINTS_GENERIC", rankScoreShortened ) )
+					break
+				}
+
+				case emblemDisplayMode.DISPLAY_LADDER_POSITION:
+				{
+					string ladderPosShortened
+					if ( self.PropGetInt( "ladderPosition" ) == SHARED_RANKED_INVALID_LADDER_POSITION )
+						ladderPosShortened = ""
+					else
+						ladderPosShortened = Localize( "#RANKED_LADDER_POSITION_DISPLAY", FormatAndLocalizeNumber( "1", float( self.PropGetInt( "ladderPosition" ) ), IsTenThousandOrMore( self.PropGetInt( "ladderPosition" ) ) ) )
+
+					self.SetRuiArgString( "emblemText", ladderPosShortened )
+					break
+				}
+
+				case emblemDisplayMode.NONE:
+				default:
+				{
+					self.SetRuiArgString( "emblemText", "" )
+					break
+				}
+			}
+		}
+	}
+}
+
+void function UpdateBadgeRuiAsset( rtk_behavior self )
+{
+	asset badgeRuiAsset = self.PropGetAssetPath( "badgeRuiAsset" )
+	if ( badgeRuiAsset != "" )
+		self.CreateRui( badgeRuiAsset )
+	else if ( self.HasRui() )
+		self.DestroyRui()
+}

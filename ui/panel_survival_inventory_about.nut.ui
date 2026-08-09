@@ -1,0 +1,28 @@
+global function InitSurvivalInventoryAboutPanel
+
+
+void function InitSurvivalInventoryAboutPanel( var panel )
+{
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnSurvivalInventoryAboutPanel_Show )
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, RIGHT, BUTTON_START, true, "#HINT_SYSTEM_MENU_GAMEPAD", "#HINT_SYSTEM_MENU_KB", SurvivalInventoryAbout_TryOpenSystemMenu )
+}
+
+void function OnSurvivalInventoryAboutPanel_Show( var panel )
+{
+	if ( !UI_CurrentPlaylistHasFeatureTutorialTabs() )
+		return
+
+	if ( Hud_HasChild( panel, "InventoryAboutContentPanel" ) )
+		UI_FeatureTutorialDialog_RefreshEmbeddedPanel( Hud_GetChild( panel, "InventoryAboutContentPanel" ) )
+
+	UpdateFooterOptions()
+}
+
+void function SurvivalInventoryAbout_TryOpenSystemMenu( var panel )
+{
+	if ( InputIsButtonDown( BUTTON_START ) )
+		return
+
+	OpenSystemMenu()
+}

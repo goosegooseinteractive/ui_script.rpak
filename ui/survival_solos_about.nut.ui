@@ -1,0 +1,31 @@
+
+
+global function Survival_Solos_PopulateAboutText
+
+
+array< featureTutorialTab > function Survival_Solos_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+	string playlistUiRules = GetCurrentPlaylist_UIRules()
+	if ( playlistUiRules != GAMEMODE_SURVIVAL_SOLOS )
+		return tabs
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#SURVIVAL_MODE_SOLOS_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_SOLOS_HEADER_1", "#SURVIVAL_MODE_SOLOS_BODY_1", $"rui/about_images/survival_solos/about_survival_solos_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_SOLOS_HEADER_3_ALT", "#SURVIVAL_MODE_SOLOS_BODY_3_ALT", $"rui/about_images/ltm/about_quickmatch_grab_go" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MODE_SOLOS_HEADER_2", "#SURVIVAL_MODE_SOLOS_BODY_2", $"rui/about_images/survival_solos/about_survival_solos_2" ) )
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	GameMode_AboutDialog_AppendDefaultGamemodeFeatureTabs( tabs )
+
+	return tabs
+}
+
+
+      

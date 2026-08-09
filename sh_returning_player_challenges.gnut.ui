@@ -1,0 +1,37 @@
+global function ReturningPlayerChallenges_Init
+
+global function ReturningPlayerChallenges_IsActive
+
+global function ReturningPlayerChallenges_GetPlayerCompletedChallengeCount
+
+struct {
+
+} file
+
+void function ReturningPlayerChallenges_Init()
+{
+
+}
+
+bool function ReturningPlayerChallenges_IsActive()
+{
+	return GetCurrentPlaylistVarBool( "returning_player_challenges_active", true )
+}
+
+int function ReturningPlayerChallenges_GetPlayerCompletedChallengeCount( entity player )
+{
+	Assert( IsValid( player ) )
+
+	array< ItemFlavor > returningPlayerChallenges = GetAssignedChallengesByTimeSpan( player, eChallengeTimeSpanKind.RETURNING_PLAYER )
+
+	int count = 0;
+	for( int i = 0; i < returningPlayerChallenges.len(); ++i )
+	{
+		if ( !Challenge_IsAssigned( player, returningPlayerChallenges[i] ) )
+			continue
+
+		if( Challenge_IsComplete(player, returningPlayerChallenges[i] ) )
+			count++;
+	}
+	return count;
+}

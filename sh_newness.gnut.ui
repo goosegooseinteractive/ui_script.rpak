@@ -1,0 +1,825 @@
+global function ShNewness_LevelInit
+
+
+global function ShNewness_LevelShutdown
+
+
+
+
+
+
+
+
+
+
+global function Newness_IsItemFlavorNew
+global function Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer
+global function Newness_GetNewCountForQuery
+global function Newness_AddCallbackAndCallNow_OnQueryUpdated
+global function Newness_RemoveCallback_OnQueryUpdated
+
+global function OnNewnessQueryChangedUpdateButton
+global function OnNewnessQueryChangedUpdatePanelTab
+
+global function ServerToUI_OnItemFlavorNewnessChanged
+global function MarkAllItemsAsViewed
+global function MarkAllItemsOfTypeAsViewed
+
+
+
+global function Newness_MarkItemAsNewAndInformServer
+
+
+#if DEV
+global function DEV_Newness_QueryTest
+global function DEV_Newness_DumpSparseList
+global function DEV_Newness_PrintNewItemFlavorSet
+global function DEV_RebuildNewnessSet 
+#endif
+
+const bool DEBUG_NEWNESS = false
+const int NUM_NEW_ITEM_FLAVORS_TO_PERSIST = 80
+
+
+
+
+enum eNewnessCount
+{
+	INVALID = -1,
+	NO_NEW_ITEMS = 0,
+	HAS_NEW_ITEMS = 1,
+}
+
+const array<int> COSMETIC_ITEM_TYPES_THAT_DO_NOT_SUPPORT_NEWNESS = [
+
+
+
+	eItemType.melee_addon
+	eItemType.artifact_component_START,
+	eItemType.artifact_component_deathbox,
+	eItemType.artifact_component_blade,
+	eItemType.artifact_component_activation_emote,
+	eItemType.artifact_component_power_source,
+	eItemType.artifact_component_theme,
+	eItemType.artifact_component_END,
+]
+
+typedef NewnessQueryCallback void functionref( int newCount, var panelOrButton )
+
+
+
+
+
+global struct Newness_Query
+{
+	ItemFlavor ornull	 itemFlavor = null
+	array< int >         itemTypeList 
+	int ornull           uiCategory = null 
+	NewnessQueryCallback  cb
+	var                   panelOrButton
+	int                   count = eNewnessCount.INVALID
+}
+
+
+
+
+
+
+struct FileStruct_LifetimeLevel
+{
+
+		table<ItemFlavor, bool> newItemFlavorSet
+		array< Newness_Query > registeredQueries
+
+}
+FileStruct_LifetimeLevel& fileLevel
+
+
+
+
+
+
+void function ShNewness_LevelInit()
+{
+	FileStruct_LifetimeLevel newFileLevel
+	fileLevel = newFileLevel
+
+
+
+
+
+
+		AddCallback_OnPersistentDataReady( OnPersistentDataReady )
+
+
+
+
+
+
+
+}
+
+
+void function ShNewness_LevelShutdown()
+{
+	fileLevel.newItemFlavorSet.clear()
+	fileLevel.registeredQueries.clear()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Newness_IsItemFlavorNew( ItemFlavor flavor )
+{
+	Assert( IsItemFlavorStructValid( flavor.guid, eValidation.ASSERT ) )
+	return (flavor in fileLevel.newItemFlavorSet)
+}
+
+
+
+
+void function OnNewnessQueryChangedUpdateButton( int newCount, var button )
+{
+	Hud_SetNew( button, (newCount > 0) )
+}
+
+
+
+
+void function OnNewnessQueryChangedUpdatePanelTab( int newCount, var panel )
+{
+	SetPanelTabNew( panel, (newCount > 0) )
+}
+
+
+
+
+void function Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer( ItemFlavor flavor )
+{
+	Assert( IsItemFlavorStructValid( flavor.guid, eValidation.ASSERT ) )
+	Assert( Remote_ServerCallFunctionAllowed() )
+
+	if ( !ItemForGUIDSupportsNewness( ItemFlavor_GetGUID( flavor ) ) )
+	{
+		Warning( format( "DEBUG_NEW: called %s with non-cosmetic ItemFlavor %s", FUNC_NAME(), ItemFlavor_GetHumanReadableRefForPIN_Slow( flavor ) ) )
+		return
+	}
+
+#if DEBUG_NEWNESS
+		printt( "DEBUG_NEW: Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer with itemFlav = " + ItemFlavor_GetAssetName( flavor )  )
+#endif
+
+	if ( !(flavor in fileLevel.newItemFlavorSet) )
+		return
+
+	if ( !Remote_ServerCallFunctionAllowed() ) 
+		return
+
+#if DEBUG_NEWNESS
+		printt( "DEBUG_NEW: Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer - deleting itemFlav = " + ItemFlavor_GetAssetName( flavor ) + " from newItemFlavorSet" )
+#endif
+
+	delete fileLevel.newItemFlavorSet[flavor]
+	InvalidateAndRunAllRegisteredQueries()
+
+	SettingsAssetGUID guid = ItemFlavor_GetGUID( flavor )
+	Remote_ServerCallFunction( "ClientCallback_Newness_Clear", guid )
+}
+
+
+
+
+
+void function MarkAllItemsAsViewed( var button )
+{
+#if DEBUG_NEWNESS
+		printt( "DEBUG_NEW: MarkAllItemsAsViewed" )
+#endif
+	array<ItemFlavor> itemFlavorArray = fileLevel.newItemFlavorSet.clonekeys()
+	foreach ( ItemFlavor iFlavor in itemFlavorArray )
+		Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer( iFlavor )
+}
+
+
+
+
+bool function MarkAllItemsOfTypeAsViewed( int categoryType )
+{
+#if DEBUG_NEWNESS
+		printt( "DEBUG_NEW: MarkAllItemsOfTypeAsViewed - type = " + categoryType )
+#endif
+	bool itemsMarkedAsViewed = false
+	array<ItemFlavor> itemFlavorArray = fileLevel.newItemFlavorSet.clonekeys()
+	foreach ( ItemFlavor iFlavor in itemFlavorArray )
+	{
+		int flavorCategoryType = ItemFlavor_GetTypeUICategory( iFlavor )
+		if ( flavorCategoryType == categoryType )
+		{
+			Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer( iFlavor )
+			itemsMarkedAsViewed = true
+		}
+	}
+	return itemsMarkedAsViewed
+}
+
+
+
+
+void function Newness_MarkItemAsNewAndInformServer( ItemFlavor flavor )
+{
+	Assert( IsItemFlavorStructValid( flavor.guid, eValidation.ASSERT ) )
+	if ( !ItemForGUIDSupportsNewness( ItemFlavor_GetGUID( flavor ) ) )
+	{
+		return
+	}
+
+#if DEBUG_NEWNESS
+		string assetName = ItemFlavor_GetAssetName( flavor )
+
+
+
+			printt( "DEBUG_NEW: UI Newness_MarkItemAsNewAndInformServer with itemFlav = " + assetName )
+
+#endif
+
+	SettingsAssetGUID guid = ItemFlavor_GetGUID( flavor )
+	Remote_ServerCallFunction( "ClientCallback_Newness_MarkAsNew", guid )
+
+
+
+
+		Wishlist_UpdateCachedOwnershipAsOwned( guid )
+
+}
+
+
+
+
+int function Newness_GetNewCountForQuery( Newness_Query query )
+{
+#if DEBUG_NEWNESS
+		DEV_DebugQuery( query )
+#endif
+
+	foreach ( Newness_Query nq in fileLevel.registeredQueries )
+	{
+		if ( AreQueryStructsIdentical( nq, query ) && nq.count != eNewnessCount.INVALID )
+			return nq.count
+	}
+
+	query.count = eNewnessCount.NO_NEW_ITEMS
+	foreach ( ItemFlavor flav, bool _ in fileLevel.newItemFlavorSet )
+	{
+		int itemType = ItemFlavor_GetType( flav )
+		ItemFlavor ornull parentFlavor = ItemFlavor_GetParentFlavor( flav )
+		bool isGenericChallengeBadge = ( parentFlavor != null && itemType == eItemType.gladiator_card_badge && ItemFlavor_GetType( expect ItemFlavor( parentFlavor ) ) == eItemType.challenge )
+
+		
+		if ( query.uiCategory == null ) 
+		{
+#if DEBUG_NEWNESS
+				printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+			query.count = eNewnessCount.HAS_NEW_ITEMS
+			return query.count
+		}
+		else if ( query.uiCategory == ItemFlavor_GetTypeUICategory( flav ) )
+		{
+			if ( query.itemTypeList.len() == 0 )
+			{
+#if DEBUG_NEWNESS
+					printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+				query.count = eNewnessCount.HAS_NEW_ITEMS
+				return query.count
+			}
+			else if ( query.itemTypeList.contains( eItemType.character ) )
+			{
+				switch( itemType )
+				{
+					case eItemType.character_skin:
+					
+					case eItemType.character_emote:
+					case eItemType.emote_icon:
+					case eItemType.skydive_emote:
+					
+					case eItemType.character_execution:
+					case eItemType.character_select:
+					
+					case eItemType.gladiator_card_stat_tracker:
+					case eItemType.gladiator_card_kill_quip:
+					case eItemType.gladiator_card_intro_quip:
+					case eItemType.gladiator_card_badge:
+					case eItemType.gladiator_card_frame:
+					case eItemType.gladiator_card_stance:
+					
+					case eItemType.digital_garment:
+						if ( query.itemFlavor == null || parentFlavor == query.itemFlavor || parentFlavor == null || isGenericChallengeBadge )
+						{
+#if DEBUG_NEWNESS
+								printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+							query.count = eNewnessCount.HAS_NEW_ITEMS
+							return query.count
+						}
+						break
+
+					case eItemType.melee_skin:
+						if ( CheckIfMeleeSkinIsNewForQuery( flav, query ) == eNewnessCount.HAS_NEW_ITEMS )
+							return query.count
+				}
+			}
+			else if ( query.itemTypeList.contains( eItemType.weapon_category ) || query.itemTypeList.contains( eItemType.loot_main_weapon ) )
+			{
+				if ( itemType == eItemType.weapon_charm && query.itemFlavor != GetItemFlavorByGUID( ORDNANCE_CATEGORY_GUID ) )
+				{
+#if DEBUG_NEWNESS
+						printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+					query.count = eNewnessCount.HAS_NEW_ITEMS
+					return query.count
+				}
+				else if ( itemType == eItemType.weapon_skin || itemType == eItemType.weapon_addon )
+				{
+					ItemFlavor parentWeapon = expect ItemFlavor( parentFlavor )
+					if ( query.itemFlavor == null || query.itemFlavor == parentWeapon || query.itemFlavor == WeaponItemFlavor_GetCategory( parentWeapon ) )
+					{
+#if DEBUG_NEWNESS
+							printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+						query.count = eNewnessCount.HAS_NEW_ITEMS
+						return query.count
+					}
+				}
+			}
+			else if ( itemType == eItemType.melee_skin && query.itemTypeList.contains( eItemType.melee_skin ) )
+			{
+				if ( CheckIfMeleeSkinIsNewForQuery( flav, query ) == eNewnessCount.HAS_NEW_ITEMS )
+					return query.count
+			}
+			else if ( query.itemTypeList.contains( itemType ) && ( parentFlavor == query.itemFlavor || parentFlavor == null || isGenericChallengeBadge ) )
+			{
+#if DEBUG_NEWNESS
+					printt( "DEBUG_NEW: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+				query.count = eNewnessCount.HAS_NEW_ITEMS
+				return query.count
+			}
+		}
+	}
+
+#if DEBUG_NEWNESS
+		if ( query.count == eNewnessCount.NO_NEW_ITEMS )
+			printt( "DEBUG_NEW: no matches found" )
+#endif
+	return query.count
+}
+
+
+
+
+int function CheckIfMeleeSkinIsNewForQuery( ItemFlavor flav, Newness_Query query )
+{
+	bool hasCharacter                     = MeleeSkin_HasSpecificCharacterFlavor( flav )
+	ItemFlavor ornull associatedCharacter = hasCharacter ? MeleeSkin_GetCharacterFlavor( flav ) : null
+	if ( query.itemFlavor == null || associatedCharacter == query.itemFlavor || !hasCharacter )
+	{
+#if DEBUG_NEWNESS
+			printt( "DEBUG_NEWNESS: matched new ItemFlavor - ", ItemFlavor_GetHumanReadableRefForPIN_Slow( flav ) )
+#endif
+		query.count = eNewnessCount.HAS_NEW_ITEMS
+	}
+	return query.count
+}
+
+
+
+
+void function Newness_AddCallbackAndCallNow_OnQueryUpdated( Newness_Query query )
+{
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	fileLevel.registeredQueries.append( query )
+	query.count = Newness_GetNewCountForQuery( query )
+	query.cb( query.count, query.panelOrButton )
+}
+
+
+
+
+void function Newness_RemoveCallback_OnQueryUpdated( Newness_Query query )
+{
+#if DEBUG_NEWNESS
+		printt( FUNC_NAME() )
+		DEV_DebugQuery( query )
+#endif
+
+	int foundIndex = -1
+	foreach ( int index, Newness_Query nq in fileLevel.registeredQueries )
+	{
+		if ( AreQueryStructsIdentical( query, nq ) )
+		{
+			foundIndex = index
+			break
+		}
+	}
+	Assert( foundIndex != -1, "Tried to remove a callback that was not added" )
+
+	if ( foundIndex != -1 )
+		fileLevel.registeredQueries.fastremove( foundIndex )
+}
+
+
+
+
+
+
+
+bool function AreQueryStructsIdentical( Newness_Query qa, Newness_Query qb )
+{
+	if ( qa == qb )
+		return true 
+
+	if ( qa.cb != qb.cb )
+		return false
+
+	if ( qa.uiCategory != qb.uiCategory )
+		return false
+
+	if ( qa.panelOrButton != qb.panelOrButton )
+		return false
+
+	if ( qa.itemFlavor != qb.itemFlavor )
+		return false
+
+	if ( qa.itemTypeList.len() != qb.itemTypeList.len() )
+		return false
+
+	foreach ( int type in qa.itemTypeList )
+	{
+		if ( !qb.itemTypeList.contains( type ) )
+			return false
+	}
+
+	return true
+}
+
+
+bool function ItemForGUIDSupportsNewness( int guid )
+{
+	bool isValidForNewness = IsValidItemFlavorGUID( guid )
+	if ( isValidForNewness )
+	{
+		int storedItemType = ItemFlavor_GetType( GetItemFlavorByGUID( guid ) )
+		isValidForNewness = ItemFlavor_IsEquippableCosmeticType( storedItemType ) && !(COSMETIC_ITEM_TYPES_THAT_DO_NOT_SUPPORT_NEWNESS.contains( storedItemType ))
+	}
+	return isValidForNewness
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function OnPersistentDataReady( entity _ )
+{
+	int sparseListSize = PersistenceGetArrayCount( "newItemFlavorSparseList" )
+	for ( int sparseListSlotIndex = 0; sparseListSlotIndex < sparseListSize; sparseListSlotIndex++ )
+	{
+		SettingsAssetGUID guid = GetPersistentVarAsInt( "newItemFlavorSparseList[" + sparseListSlotIndex + "]" )
+		if ( guid == 0 )
+			continue
+
+		if ( !ItemForGUIDSupportsNewness( guid ) )
+			continue
+
+		ItemFlavor flavor = GetItemFlavorByGUID( guid )
+		fileLevel.newItemFlavorSet[flavor] <- true
+	}
+
+	InvalidateAndRunAllRegisteredQueries()
+}
+
+
+
+
+void function ServerToUI_OnItemFlavorNewnessChanged( int guid, bool isNew )
+{
+	ItemFlavor flavor = GetItemFlavorByGUID( guid )
+#if DEBUG_NEWNESS
+		printf("DEBUG_NEW: ServerToUI_OnItemFlavorNewnessChanged itemFlav %s is %s", ItemFlavor_GetAssetName( flavor ), isNew ? "new" : "not new" )
+#endif
+
+	if ( isNew == ( flavor in fileLevel.newItemFlavorSet ) )
+		return
+
+	if ( isNew )
+		fileLevel.newItemFlavorSet[flavor] <- true
+	else
+		delete fileLevel.newItemFlavorSet[flavor]
+
+	InvalidateAndRunAllRegisteredQueries()
+}
+
+
+
+
+void function InvalidateAndRunAllRegisteredQueries()
+{
+	
+	foreach ( Newness_Query query in fileLevel.registeredQueries )
+	{
+		query.count = eNewnessCount.INVALID
+		query.cb( Newness_GetNewCountForQuery( query ), query.panelOrButton )
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if ( DEV && DEBUG_NEWNESS )
+void function DEV_DebugQuery( Newness_Query query )
+{
+	printt( "### DEBUG_NEW: " + FUNC_NAME() + " ###" )
+	if ( query.itemFlavor != null )
+	{
+		ItemFlavor ornull flav = query.itemFlavor
+		printt( "query.itemFlavor: ", ItemFlavor_GetHumanReadableRefForPIN_Slow( expect ItemFlavor( flav ) ) )
+	}
+	if ( query.itemTypeList.len() > 0 )
+	{
+		string debugString = ""
+		foreach ( int type in query.itemTypeList )
+			debugString += DEV_GetEnumStringSafe( "eItemType", type ) + ", "
+		printt( "query.itemTypes: ", debugString )
+	}
+	if ( query.uiCategory != null )
+		printt( "query.uiCategory: ", DEV_GetEnumStringSafe( "eItemTypeUICategory", expect int( query.uiCategory ) ) )
+	printt( "##################################" )
+}
+#endif
+
+#if DEV
+void function DEV_Newness_QueryTest()
+{
+	
+}
+
+void function DEV_Newness_DumpSparseList()
+{
+	entity player = GetLocalClientPlayer()
+	int sparseListSize = PersistenceGetArrayCount( "newItemFlavorSparseList" )
+	int numValidSpareListEntries = 0
+
+	printt("--- DEBUG_NEW: BEGIN PRINTING NEWNESS SPARSE LIST --- ")
+
+	for ( int sparseListSlotIndex = 0; sparseListSlotIndex < sparseListSize; sparseListSlotIndex++ )
+	{
+		SettingsAssetGUID storedGuid = player.GetPersistentVarAsInt( "newItemFlavorSparseList[" + sparseListSlotIndex + "]" )
+
+		if ( storedGuid == 0 )
+			continue 
+
+		ItemFlavor ornull flavor = GetItemFlavorOrNullByGUID( storedGuid )
+
+		if ( flavor != null )
+		{
+			++numValidSpareListEntries
+			expect ItemFlavor( flavor )
+
+			printt( "DEBUG_NEW: sparse list itemFlav = " +  ItemFlavor_GetAssetName( flavor ) )
+
+			array<LoadoutEntry> slots = GetAppropriateLoadoutSlotsForItemFlavor( flavor )
+			foreach( slot in slots )
+			{
+				printt( "\tDEBUG_NEW: IsItemFlavorUnlockedForLoadoutSlot = " + IsItemFlavorUnlockedForLoadoutSlot( ToEHI(player), slot, flavor ) + ", slot =  " + slot.id )
+			}
+		}
+		else
+		{
+			printt( "DEBUG_NEW: sparse list itemFlav is null" )
+		}
+	}
+
+	printt("\tDEBUG_NEW: Total number of valid sparse list entries = " + numValidSpareListEntries )
+
+	printt("--- DEBUG_NEW: END PRINTING NEWNESS SPARSE LIST --- ")
+}
+
+void function DEV_Newness_PrintNewItemFlavorSet()
+{
+	printt("--- DEBUG_NEW: BEGIN PRINTING NEW ITEMFLAVOR SET --- ")
+
+	foreach ( ItemFlavor itemFlav, bool isSet in fileLevel.newItemFlavorSet )
+	{
+		string assetName = ItemFlavor_GetAssetName( itemFlav )
+		printt("\tDEBUG_NEW: new set itemflav = " + assetName )
+	}
+
+	printt("--- DEBUG_NEW: END PRINTING NEW ITEMLFAVOR SET --- ")
+}
+
+void function DEV_RebuildNewnessSet()
+{
+	OnPersistentDataReady( null )
+}
+#endif

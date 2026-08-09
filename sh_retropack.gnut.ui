@@ -1,0 +1,853 @@
+
+
+
+global function GRXRetroPack_Init
+global function GRXRetroPack_DebugPrint
+global function GRXRetroPack_IsRetroContainerEnabled
+
+global function GRXRetroPack_GetAllBackfillItemsInCategory
+global function GRXRetroPack_GetBackfillCategoryForItem
+
+global function GRXRetroPack_GetPersonalizedLootPoolItems
+global function GRXRetroPack_FilterRetroContainerContents
+
+
+const bool PROCESS_REFS_ON_INIT = true
+const bool RETRO_CONTAINER_ITEMS = true
+
+typedef CategorizedBackfillItems array< array< ItemFlavor > >
+
+struct FileStruct_GRXRetroPack
+{
+	
+	table< string, bool > allBackfillItemRefs
+
+	array< array< ItemFlavor > > backfillItemsByCategory
+}
+FileStruct_GRXRetroPack& file
+
+
+void function GRXRetroPack_Init()
+{
+	FileStruct_GRXRetroPack newFile
+	file = newFile
+
+	AddCallbackOrMaybeCallNow_OnAllItemFlavorsRegistered( GRXRP_OnAllItemFlavorsRegistered )
+}
+
+void function GRXRetroPack_DebugPrint()
+{
+#if DEV
+	printf( "%i refs\n", file.allBackfillItemRefs.len() )
+
+	foreach ( int arrayIndex, array< ItemFlavor > flavArray in file.backfillItemsByCategory )
+	{
+		printf( "  Category %i has %i flavs\n", arrayIndex, flavArray.len() )
+	}
+#endif
+}
+
+bool function GRXRetroPack_IsRetroContainerEnabled()
+{
+	return RETRO_CONTAINER_ITEMS
+}
+
+array< ItemFlavor > function GRXRetroPack_GetAllBackfillItemsInCategory( int bfCategory )
+{
+	GRXRP_AssertBackfillCategory( bfCategory )
+
+	return file.backfillItemsByCategory[bfCategory]
+}
+
+
+int function GRXRetroPack_GetBackfillCategoryForItem( ItemFlavor flav )
+{
+	int rv
+	
+	
+	const NUM_BACKFILL_ITEM_CATEGORIES = 3
+
+	int type = ItemFlavor_GetType( flav )
+	int quality = ItemFlavor_GetQuality( flav )
+
+
+	if ( type == eItemType.character_skin )
+	{
+		rv = eBackfillPoolCategory.EPIC_CHARACTER_SKIN
+	}
+	else if ( type == eItemType.weapon_skin )
+	{
+		rv = eBackfillPoolCategory.EPIC_WEAPON_SKIN
+	}
+	else
+	{
+		rv = eBackfillPoolCategory.EPIC_NON_SKIN
+	}
+
+	int offsetToUse
+	{
+		
+		Assert( quality >= eRarityTier.EPIC && quality <= eRarityTier.MYTHIC, format( "Unhandled backfill Quality %i for %s", quality, ItemFlavor_GetAssetName( flav ) ) )
+		int tierOffset = quality - eRarityTier.EPIC 
+		offsetToUse = NUM_BACKFILL_ITEM_CATEGORIES * tierOffset
+	}
+
+	rv += offsetToUse
+	return rv
+}
+
+array< UILootPoolItemData > function GRXRetroPack_GetPersonalizedLootPoolItems( ItemFlavor packFlav )
+{
+	Assert( GRXPack_GetIsLootPoolBrowsable( packFlav ) ) 
+	Assert( GRX_IsInventoryReady() )
+
+	array< UILootPoolItemData > rv
+
+	int packType = ItemFlavor_GetAccountPackType( packFlav )
+	array< ItemFlavor > packContents = GRXPack_GetPackContents( packFlav )
+
+	if ( !GRXPack_IsBackfillPack( packFlav ) )
+	{
+		
+		foreach ( ItemFlavor packItem in packContents )
+		{
+			UILootPoolItemData newElem
+			newElem.flav		= packItem
+			newElem.quantity	= 1
+			newElem.isFallback	= false
+			newElem.isOwned		= GRX_IsItemOwnedByPlayer( packItem )
+
+			rv.append( newElem )
+		}
+
+		return rv
+	}
+
+	
+
+	array< ItemFlavor > ornull containerItems = GRX_GetItemFlavsFromRetroContainer( packFlav )
+	Assert( containerItems != null )
+	expect array< ItemFlavor >( containerItems )
+
+	array< ItemFlavor > filteredContainerItems = GRXRetroPack_FilterRetroContainerContents( containerItems, packContents )
+	array< ItemFlavor > nonEventContainerItems = clone filteredContainerItems
+
+	array< ItemFlavor > backfillExclusionList = GRXRP_GetBackfillExclusionList( packFlav, packType )
+#if DEV
+	printf( "%s - %s backfill exclusion list has %d item(s)", FUNC_NAME(), ItemFlavor_GetAssetName( packFlav ), backfillExclusionList.len() )
+#endif
+
+	foreach ( ItemFlavor packItem in packContents )
+	{
+		bool itemIsToBeBackfilled = false
+
+		if ( GRX_IsItemOwnedByPlayer( packItem ) )
+		{
+			if ( filteredContainerItems.contains( packItem ) == false )
+			{
+				
+				itemIsToBeBackfilled = true
+			}
+		}
+
+		if ( backfillExclusionList.contains( packItem ) )
+		{
+#if DEV
+				printt( "  EXCLUDING from backfill: ", ItemFlavor_GetAssetName( packItem ) )
+#endif
+
+			itemIsToBeBackfilled = false
+		}
+
+		nonEventContainerItems.fastremovebyvalue( packItem )
+
+		UILootPoolItemData newElem
+		newElem.flav		= packItem
+		newElem.quantity	= 1
+		newElem.isFallback	= itemIsToBeBackfilled
+		newElem.isOwned		= false
+
+		rv.append( newElem )
+	}
+
+	
+	{
+		CategorizedBackfillItems backfillRewards
+		backfillRewards.resize( eBackfillPoolCategory._COUNT )
+
+		nonEventContainerItems.sort( int function( ItemFlavor a, ItemFlavor b ) {
+			SettingsAssetGUID aGUID = ItemFlavor_GetGUID( a )
+			SettingsAssetGUID bGUID = ItemFlavor_GetGUID( b )
+
+			return ClampInt( aGUID - bGUID, -1, 1 )
+		} )
+
+		foreach ( ItemFlavor nonEventItem in nonEventContainerItems )
+		{
+			int bfCategory = GRXRetroPack_GetBackfillCategoryForItem( nonEventItem )
+			backfillRewards[bfCategory].append( nonEventItem )
+		}
+
+		
+		foreach ( UILootPoolItemData poolItem in rv )
+		{
+			ItemFlavor poolFlav = poolItem.flav
+
+			if ( poolItem.isFallback )
+			{
+				int bfCategory = GRXRetroPack_GetBackfillCategoryForItem( poolFlav )
+
+				if ( backfillRewards[bfCategory].len() > 0 )
+				{
+					
+					poolItem.isOwned = true
+
+					
+					ItemFlavor bfReward = backfillRewards[bfCategory].pop()
+					poolItem.flav = bfReward
+				}
+			}
+			else
+			{
+				
+				poolItem.isOwned = GRX_IsItemOwnedByPlayer( poolFlav )
+			}
+		}
+	}
+
+	return rv
+}
+
+array< ItemFlavor > function GRXRetroPack_FilterRetroContainerContents( array< ItemFlavor > inputFlavs, array< ItemFlavor > secondaryAllowlist )
+{
+	
+
+	array< ItemFlavor > rv
+
+	foreach ( ItemFlavor flav in inputFlavs )
+	{
+		string grxRef = ItemFlavor_GetGRXAlias( flav )
+
+		bool inPrimaryList		= grxRef in file.allBackfillItemRefs
+		bool inSecondaryList	= secondaryAllowlist.contains( flav )
+
+		if ( inPrimaryList || inSecondaryList )
+		{
+			rv.append( flav )
+		}
+	}
+
+	return rv
+}
+
+array< ItemFlavor > function GRXRP_GetBackfillExclusionList( ItemFlavor packFlav, int packType )
+{
+	
+	
+
+	array< ItemFlavor > rv
+	if ( packType != eAccountPackType.RETRO_ESCALATING_BACKFILL_PACK )
+		return rv
+
+	PoolRarityConfig poolConfig = GRXPack_GetRarityConfig( packFlav )
+	rv = poolConfig.specificFlavs.clonekeys()
+
+	return rv
+}
+
+void function GRXRP_AssertBackfillCategory( int bfCategory )
+{
+	Assert( file.backfillItemsByCategory.isvalidindex( bfCategory ), format( "Category %i is invalid", bfCategory ) )
+}
+
+void function GRXRP_OnAllItemFlavorsRegistered()
+{
+	file.backfillItemsByCategory.clear()
+	file.backfillItemsByCategory.resize( eBackfillPoolCategory._COUNT )
+
+	if ( PROCESS_REFS_ON_INIT )
+	{
+		GRXRP_ProcessRefList( eBackfillPoolCategory.MYTHIC_CHARACTER_SKIN, Mythic_CharSkins )
+		GRXRP_ProcessRefList( eBackfillPoolCategory.MYTHIC_WEAPON_SKIN, Mythic_WeapSkins )
+		GRXRP_ProcessRefList( eBackfillPoolCategory.MYTHIC_NON_SKIN, Mythic_NonSkins )
+		GRXRP_ProcessRefList( eBackfillPoolCategory.LEGENDARY_CHARACTER_SKIN,	Legendary_CharSkins	)
+		GRXRP_ProcessRefList( eBackfillPoolCategory.LEGENDARY_WEAPON_SKIN,		Legendary_WeapSkins	)
+		GRXRP_ProcessRefList( eBackfillPoolCategory.LEGENDARY_NON_SKIN,			Legendary_NonSkins	)
+		GRXRP_ProcessRefList( eBackfillPoolCategory.EPIC_CHARACTER_SKIN,		Epic_CharSkins		)
+		GRXRP_ProcessRefList( eBackfillPoolCategory.EPIC_WEAPON_SKIN,			Epic_WeapSkins		)
+		GRXRP_ProcessRefList( eBackfillPoolCategory.EPIC_NON_SKIN,				Epic_NonSkins		)
+	}
+}
+
+void function GRXRP_ProcessRefList( int bfCategory, array< string > refs )
+{
+	GRXRP_AssertBackfillCategory( bfCategory )
+
+	foreach ( string ref in refs )
+	{
+		int grxIndex = GetGRXIndexByGRXRef( ref )
+		if ( IsValidItemFlavorGRXIndex( grxIndex ) )
+		{
+			ItemFlavor flav = GetItemFlavorByGRXIndex( grxIndex )
+			file.backfillItemsByCategory[bfCategory].append( flav )
+
+			file.allBackfillItemRefs[ref] <- true
+		}
+		else
+		{
+			Warning( format( "%s - Invalid GRX Ref %s\n", FUNC_NAME(), ref ) )
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const array< string > Mythic_CharSkins =
+[
+	
+]
+
+const array< string > Mythic_WeapSkins =
+[
+	
+]
+
+const array< string > Mythic_NonSkins =
+[
+	"melee_skin_pathfinder_gloves_rt01",
+	"melee_skin_pathfinder_gloves",
+	"melee_skin_bloodhound_axe_rt01",
+	"melee_skin_bloodhound_axe",
+	"melee_skin_bangalore_heirloom_rt01",
+	"melee_skin_bangalore_heirloom",
+	"melee_skin_octane_knife_rt01",
+	"melee_skin_octane_knife",
+	"melee_skin_crypto_heirloom_rt01",
+	"melee_skin_crypto_heirloom",
+	"melee_skin_revenant_scythe_rt01",
+	"melee_skin_revenant_scythe",
+	"melee_skin_kunai_rt01",
+	"melee_skin_kunai",
+	"melee_skin_loba_fan",
+	"melee_skin_valkyrie_spear",
+	"melee_skin_nunchuck",
+	"melee_skin_horizon_heirloom",
+	"melee_skin_fuse_heirloom",
+	"melee_skin_wattson_gadget",
+	"melee_skin_rampart_wrench",
+	"melee_skin_gibraltar_club",
+	"melee_skin_caustic_hammer",
+	"melee_skin_mirage_statue",
+	"melee_skin_lifeline_baton",
+	"melee_skin_seer_heirloom",
+]
+
+
+
+
+
+
+
+
+
+
+const array< string > Legendary_CharSkins =
+[
+	"character_skin_horizon_lgnd_v22_hunterpredator",
+	"character_skin_octane_lgnd_v22_hunterpredator",
+	"character_skin_fuse_lgnd_v22_hunterpredator",
+	"character_skin_pathfinder_lgnd_v22_hunterpredator",
+	"character_skin_lifeline_lgnd_v22_hunterpredator",
+	"character_skin_rampart_lgnd_v22_hunterpredator",
+	"character_skin_loba_lgnd_v22_hunterpredator",
+	"character_skin_newcastle_lgnd_v22_magicsnowbeast",
+	"character_skin_crypto_lgnd_v22_magicsnowbeast",
+	"character_skin_valkyrie_lgnd_v22_magicsnowbeast",
+	"character_skin_gibraltar_lgnd_v22_anniversary_rt01",
+	"character_skin_bloodhound_lgnd_v19_demon_rt02",
+	"character_skin_bangalore_lgnd_v22_magicsnowbeast",
+	"character_skin_crypto_lgnd_v22_magicwitch",
+	"character_skin_madmaggie_lgnd_v22_magicwitch",
+	"character_skin_horizon_lgnd_v22_magicwitch",
+	"character_skin_mirage_lgnd_v22_magicwitch",
+	"character_skin_fuse_lgnd_v22_magicwitch",
+	"character_skin_seer_lgnd_v22_magicwitch",
+	"character_skin_vantage_lgnd_v22_magicwitch",
+	"character_skin_octane_lgnd_v22_lunarnewyear",
+	"character_skin_ash_lgnd_v22_lunarnewyear",
+	"character_skin_caustic_lgnd_v22_lunarnewyear",
+	"character_skin_pathfinder_lgnd_v22_lunarnewyear",
+	"character_skin_gibraltar_lgnd_v21_diskjockey_rt01",
+	"character_skin_ash_lgnd_v23_anniversary",
+	"character_skin_newcastle_lgnd_v23_anniversary",
+	"character_skin_bangalore_lgnd_v21_thrillseeker_rt01",
+	"character_skin_seer_lgnd_v23_anniversary",
+	"character_skin_wraith_lgnd_v23_anniversary",
+	"character_skin_catalyst_lgnd_v23_anniversary",
+	"character_skin_lifeline_lgnd_v23_anniversary",
+	"character_skin_horizon_lgnd_v23_anniversary",
+	"character_skin_octane_lgnd_v20_arachnoid_rt01",
+	"character_skin_bloodhound_lgnd_v20_boosted_rt01",
+	"character_skin_pathfinder_lgnd_v23_anniversary",
+	"character_skin_loba_lgnd_v21_warlord_rt01",
+	"character_skin_revenant_lgnd_v20_relic_rt02",
+	"character_skin_wraith_lgnd_v22_queensguard",
+	"character_skin_wattson_lgnd_v19_ironcrown_rt01",
+	"character_skin_gibraltar_lgnd_v21_warlord_rt01",
+	"character_skin_octane_lgnd_v21_rebelgladiator_rt01",
+	"character_skin_newcastle_lgnd_v22_partybeach",
+	"character_skin_fuse_lgnd_v22_partybeach",
+	"character_skin_loba_lgnd_v22_partybeach",
+	"character_skin_seer_lgnd_v22_partybeach",
+	"character_skin_catalyst_lgnd_v22_partybeach",
+	"character_skin_ash_lgnd_v22_partybeach",
+	"character_skin_mirage_lgnd_v22_partybeach",
+	"character_skin_wattson_lgnd_v22_partymask",
+	"character_skin_octane_lgnd_v22_partymask",
+	"character_skin_gibraltar_lgnd_v22_partymask",
+	"character_skin_rampart_lgnd_v22_partymask",
+	"character_skin_newcastle_lgnd_v22_ophitman",
+	"character_skin_horizon_lgnd_v22_ophitman",
+	"character_skin_madmaggie_lgnd_v22_ophitman",
+	"character_skin_revenant_lgnd_v22_ophitman",
+	"character_skin_crypto_lgnd_v22_ophitman",
+	"character_skin_loba_lgnd_v22_ophitman",
+	"character_skin_caustic_lgnd_v22_opneon",
+	"character_skin_vantage_lgnd_v22_opneon",
+	"character_skin_gibraltar_lgnd_v22_opneon",
+	"character_skin_lifeline_lgnd_v22_opneon",
+	"character_skin_ash_lgnd_v22_opneon",
+	"character_skin_ballistic_lgnd_v22_opneon",
+	"character_skin_horizon_lgnd_v22_hunterpredator_rt01",
+	"character_skin_rampart_lgnd_v21_herohunter_rt01",
+	"character_skin_wraith_lgnd_v20_assim_rt01",
+	"character_skin_loba_lgnd_v21_herohunter_rt01",
+	"character_skin_catalyst_lgnd_v22_moongoddess_rt01",
+	"character_skin_crypto_lgnd_v22_magicsnowbeast_rt01",
+	"character_skin_ash_lgnd_v23_resharb",
+	"character_skin_bloodhound_lgnd_v23_resharb",
+	"character_skin_gibraltar_lgnd_v23_resharb",
+	"character_skin_bangalore_lgnd_v23_resharb",
+	"character_skin_seer_lgnd_v23_resharb",
+	"character_skin_fuse_lgnd_v23_resharb",
+	"character_skin_vantage_lgnd_v23_resdopb",
+	"character_skin_lifeline_lgnd_v23_resdopb",
+	"character_skin_pathfinder_lgnd_v23_resdopb",
+	"character_skin_wraith_lgnd_v23_resdopb",
+	"character_skin_newcastle_lgnd_v23_resdopb",
+	"character_skin_mirage_lgnd_v23_resdopb",
+	"character_skin_vantage_lgnd_v23_ragb",
+	"character_skin_gibraltar_lgnd_v23_ragb",
+	"character_skin_valkyrie_lgnd_v23_ragb",
+	"character_skin_ballistic_lgnd_v23_ragb",
+	"character_skin_bloodhound_lgnd_v23_ragb",
+	"character_skin_bangalore_lgnd_v23_ragb",
+	"character_skin_octane_lgnd_v20_artdeco_rt02",
+	"character_skin_seer_lgnd_v24_anniversary",
+	"character_skin_bangalore_lgnd_v21_warlord_rt02",
+	"character_skin_wraith_lgnd_v20_ascension_rt01",
+	"character_skin_valkyrie_lgnd_v24_anniversary",
+	"character_skin_fuse_lgnd_v24_anniversary",
+	"character_skin_loba_lgnd_v21_origins_rt01",
+	"character_skin_crypto_lgnd_v24_anniversary",
+	"character_skin_mirage_lgnd_v24_anniversary",
+	"character_skin_wattson_lgnd_v24_anniversary",
+	"character_skin_catalyst_lgnd_v24_anniversary",
+	"character_skin_pathfinder_lgnd_v24_anniversary",
+	"character_skin_caustic_lgnd_v21_origins_rt01",
+	"character_skin_loba_lgnd_v22_rivals_rt01",
+	"character_skin_gibraltar_lgnd_v21_thrillseeker_rt02",
+	"character_skin_octane_lgnd_v21_origins_rt01",
+	"character_skin_bloodhound_lgnd_v21_heroknight_rt02",
+	"character_skin_rampart_lgnd_v21_fox_rt01",
+	"character_skin_loba_lgnd_v23_outurbana",
+	"character_skin_wraith_lgnd_v23_outurbanb",
+	"character_skin_valkyrie_lgnd_v23_outurbana",
+	"character_skin_vantage_lgnd_v23_outurbanb",
+	"character_skin_newcastle_lgnd_v23_outurbanb",
+	"character_skin_rampart_lgnd_v23_outurbana",
+	"character_skin_alter_lgnd_v23_voidswap",
+	"character_skin_revenant_lgnd_v23_voidswap",
+	"character_skin_octane_lgnd_v23_voidswap",
+	"character_skin_crypto_lgnd_v23_voidswap",
+	"character_skin_conduit_lgnd_v23_voidswap",
+	"character_skin_fuse_lgnd_v23_voidswap",
+]
+
+const array< string > Legendary_WeapSkins =
+[
+	"weapon_skin_dragon_lgnd_v22_hunterpredator",
+	"weapon_skin_alternator_lgnd_v22_hunterpredator",
+	"weapon_skin_energy_ar_lgnd_v22_hunterpredator",
+	"weapon_skin_pdw_lgnd_v22_hunterpredator",
+	"weapon_skin_peacekeeper_lgnd_v22_hunterpredator",
+	"weapon_skin_peacekeeper_lgnd_v22_magicsnowbeast",
+	"weapon_skin_tripletake_lgnd_v22_magicsnowbeast",
+	"weapon_skin_r97_lgnd_v22_anniversary_rt01",
+	"weapon_skin_car_lgnd_v22_magicsnowbeast",
+	"weapon_skin_energy_ar_lgnd_v22_magicsnowbeast",
+	"weapon_skin_pdw_lgnd_v19_darkrealm_rt03",
+	"weapon_skin_spitfire_lgnd_v22_magicwitch",
+	"weapon_skin_g7_lgnd_v22_magicwitch",
+	"weapon_skin_dmr_lgnd_v22_magicwitch",
+	"weapon_skin_alternator_lgnd_v22_magicwitch",
+	"weapon_skin_flatline_lgnd_v22_magicwitch",
+	"weapon_skin_volt_smg_lgnd_v23_lunarnewyear",
+	"weapon_skin_wingman_lgnd_v23_lunarnewyear",
+	"weapon_skin_devotion_lgnd_v23_lunarnewyear",
+	"weapon_skin_hemlok_lgnd_v23_lunarnewyear",
+	"weapon_skin_3030repeater_lgnd_v21_rebelgladiator_rt01",
+	"weapon_skin_wingman_lgnd_v19_ironcrown_rt01",
+	"weapon_skin_volt_smg_lgnd_v22_queensguard",
+	"weapon_skin_g7_lgnd_v20_trshunter_rt01",
+	"weapon_skin_kraber_lgnd_v21_warlord_rt01",
+	"weapon_skin_mastiff_lgnd_v21_warlord_rt01",
+	"weapon_skin_wingman_lgnd_v22_partybeach",
+	"weapon_skin_alternator_lgnd_v22_partybeach",
+	"weapon_skin_peacekeeper_lgnd_v22_partybeach",
+	"weapon_skin_flatline_lgnd_v22_partybeach",
+	"weapon_skin_energy_ar_lgnd_v22_partybeach",
+	"weapon_skin_r97_lgnd_v22_partymask",
+	"weapon_skin_spitfire_lgnd_v22_partymask",
+	"weapon_skin_sentinel_lgnd_v22_partymask",
+	"weapon_skin_car_lgnd_v22_partymask",
+	"weapon_skin_nemesis_lgnd_v22_ophitman",
+	"weapon_skin_volt_smg_lgnd_v22_ophitman",
+	"weapon_skin_3030repeater_lgnd_v22_ophitman",
+	"weapon_skin_mastiff_lgnd_v22_ophitman",
+	"weapon_skin_autopistol_lgnd_v22_ophitman",
+	"weapon_skin_spitfire_lgnd_v22_ophitman",
+	"weapon_skin_lstar_lgnd_v22_opneon",
+	"weapon_skin_flatline_lgnd_v22_opneon",
+	"weapon_skin_semipistol_lgnd_v22_opneon",
+	"weapon_skin_volt_smg_lgnd_v22_opneon",
+	"weapon_skin_energy_ar_lgnd_v22_opneon",
+	"weapon_skin_sentinel_lgnd_v22_opneon",
+	"weapon_skin_dragon_lgnd_v22_hunterpredator_rt01",
+	"weapon_skin_dmr_lgnd_v21_herohunterrt01_rt01",
+	"weapon_skin_car_lgnd_v21_herohunter_rt01",
+	"weapon_skin_wingman_lgnd_v22_moongoddess_rt01",
+	"weapon_skin_energy_ar_lgnd_v22_magicsnowbeast_rt01",
+	"weapon_skin_r97_lgnd_v20_assim_rt01",
+	"weapon_skin_dragon_lgnd_v23_resharb",
+	"weapon_skin_chargerifle_lgnd_v23_resharb",
+	"weapon_skin_nemesis_lgnd_v23_resharb",
+	"weapon_skin_pdw_lgnd_v23_resharb",
+	"weapon_skin_alternator_lgnd_v23_resharb",
+	"weapon_skin_dmr_lgnd_v23_resharb",
+	"weapon_skin_g7_lgnd_v23_resdopb",
+	"weapon_skin_sentinel_lgnd_v23_resdopb",
+	"weapon_skin_mastiff_lgnd_v23_resdopb",
+	"weapon_skin_hemlok_lgnd_v23_resdopb",
+	"weapon_skin_spitfire_lgnd_v23_resdopb",
+	"weapon_skin_devotion_lgnd_v23_resdopb",
+	"weapon_skin_wingman_lgnd_v23_ragb",
+	"weapon_skin_peacekeeper_lgnd_v23_ragb",
+	"weapon_skin_energy_ar_lgnd_v23_ragb",
+	"weapon_skin_flatline_lgnd_v23_ragb",
+	"weapon_skin_chargerifle_lgnd_v23_ragb",
+	"weapon_skin_tripletake_lgnd_v23_ragb",
+	"weapon_skin_car_lgnd_v21_heroknight_rt01",
+	"weapon_skin_pdw_lgnd_v21_thrillseeker_rt01",
+	"weapon_skin_wingman_lgnd_v22_huntersafari_rt01",
+	"weapon_skin_spitfire_lgnd_v19_ironcrown_rt01",
+	"weapon_skin_sentinel_lgnd_v20_boosted_rt01",
+	"weapon_skin_r301_lgnd_v22_rivals_rt01",
+	"weapon_skin_nemesis_lgnd_v23_outurbanb",
+	"weapon_skin_alternator_lgnd_v23_outurbana",
+	"weapon_skin_autopistol_lgnd_v23_outurbana",
+	"weapon_skin_lstar_lgnd_v23_outurbanb",
+	"weapon_skin_hemlok_lgnd_v23_outurbana",
+	"weapon_skin_r97_lgnd_v23_outurbanb",
+	"weapon_skin_eva_lgnd_v23_voidswap",
+	"weapon_skin_autopistol_lgnd_v23_voidswap",
+	"weapon_skin_lstar_lgnd_v23_voidswap",
+	"weapon_skin_energy_ar_lgnd_v23_voidswap",
+	"weapon_skin_tripletake_lgnd_v23_voidswap",
+	"weapon_skin_alternator_lgnd_v23_voidswap",
+]
+
+const array< string > Legendary_NonSkins =
+[
+	"character_emote_octane_lgnd_v22_magicwitch_sparkler",
+	"character_emote_ash_lgnd_v22_magicwitch_sparkler",
+	"character_emote_pathfinder_lgnd_v22_magicwitch_sparkler",
+	"character_emote_caustic_lgnd_v22_magicwitch_sparkler",
+	"character_emote_ash_lgnd_v22_partymask_electroslash",
+	"character_emote_wattson_lgnd_v22_partymask_funsparks",
+	"character_emote_octane_lgnd_v22_partymask_batterup",
+	"character_emote_caustic_lgnd_v22_partymask_gasthrower",
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+const array< string > Epic_CharSkins =
+[
+	"character_skin_gibraltar_epicp_v22_hunterpredator",
+	"character_skin_revenant_epicp_v22_hunterpredator",
+	"character_skin_mirage_epicp_v22_magicsnowbeast",
+	"character_skin_horizon_epicp_v22_magicsnowbeast",
+	"character_skin_madmaggie_epicp_v22_magicsnowbeast",
+	"character_skin_wraith_epicp_v22_magicsnowbeast",
+	"character_skin_valkyrie_epicp_v22_magicwitch",
+	"character_skin_ash_epicp_v22_magicwitch",
+	"character_skin_newcastle_epicp_v22_lunarnewyear",
+	"character_skin_wattson_epicp_v22_lunarnewyear",
+	"character_skin_fuse_epicp_v22_queensguard",
+	"character_skin_madmaggie_epicp_v22_partybeach",
+	"character_skin_caustic_epicp_v22_partybeach",
+	"character_skin_valkyrie_epicp_v22_partymask",
+	"character_skin_pathfinder_epicp_v22_partymask",
+	"character_skin_wraith_epicp_v22_partymask",
+	"character_skin_loba_epicp_v22_partymask",
+	"character_skin_rampart_epicp_v22_ophitman",
+	"character_skin_wraith_epicp_v22_ophitman",
+	"character_skin_wattson_epicp_v22_ophitman",
+	"character_skin_horizon_epicp_v22_opneon",
+	"character_skin_bangalore_epicp_v22_opneon",
+	"character_skin_octane_epicp_v22_opneon",
+	"character_skin_vantage_epicp_v23_resanime",
+	"character_skin_seer_epicp_v23_resanime",
+	"character_skin_octane_epicp_v23_resanime",
+	"character_skin_ballistic_epicp_v23_resharb",
+	"character_skin_catalyst_epicp_v23_resharb",
+	"character_skin_loba_epicp_v23_resharb",
+	"character_skin_valkyrie_epicp_v23_resdopb",
+	"character_skin_fuse_epicp_v23_resdopb",
+	"character_skin_ash_epicp_v23_resdopb",
+	"character_skin_madmaggie_epicp_v23_ragb",
+	"character_skin_mirage_epicp_v23_ragb",
+	"character_skin_seer_epicp_v23_ragb",
+	"character_skin_valkyrie_epicp_v23_outbeast",
+	"character_skin_newcastle_epicp_v23_outbeast",
+	"character_skin_mirage_epicp_v23_outbeast",
+	"character_skin_seer_epicp_v23_outurbanb",
+	"character_skin_revenant_epicp_v23_outurbanb",
+	"character_skin_horizon_epicp_v23_outurbanb",
+	"character_skin_ash_epicp_v23_voidswap",
+	"character_skin_caustic_epicp_v23_voidswap",
+	"character_skin_vantage_epicp_v23_voidswap",
+]
+
+const array< string > Epic_WeapSkins =
+[
+	"weapon_skin_car_epicp_v22_hunterpredator",
+	"weapon_skin_hemlok_epicp_v22_hunterpredator",
+	"weapon_skin_dmr_epicp_v22_hunterpredator",
+	"weapon_skin_wingman_epicp_v22_hunterpredator",
+	"weapon_skin_dragon_epicp_v22_magicwitch",
+	"weapon_skin_sentinel_epicp_v22_magicwitch",
+	"weapon_skin_devotion_epicp_v22_magicwitch",
+	"weapon_skin_autopistol_epicp_v22_magicwitch",
+	"weapon_skin_mastiff_epicp_v23_anniversary",
+	"weapon_skin_r97_epicp_v23_anniversary",
+	"weapon_skin_r301_epicp_v23_anniversary",
+	"weapon_skin_nemesis_epicp_v23_anniversary",
+	"weapon_skin_car_epicp_v22_queensguard",
+	"weapon_skin_tripletake_epicp_v22_partybeach",
+	"weapon_skin_devotion_epicp_v22_partybeach",
+	"weapon_skin_volt_smg_epicp_v22_partybeach",
+	"weapon_skin_hemlok_epicp_v22_partybeach",
+	"weapon_skin_tripletake_epicp_v22_ophitman",
+	"weapon_skin_devotion_epicp_v22_ophitman",
+	"weapon_skin_peacekeeper_epicp_v22_ophitman",
+	"weapon_skin_car_epicp_v22_opneon",
+	"weapon_skin_g7_epicp_v22_opneon",
+	"weapon_skin_spitfire_epicp_v22_opneon",
+	"weapon_skin_devotion_epicp_v23_resanime",
+	"weapon_skin_eva_epicp_v23_resanime",
+	"weapon_skin_chargerifle_epicp_v23_resanime",
+	"weapon_skin_flatline_epicp_v23_resharb",
+	"weapon_skin_lstar_epicp_v23_resharb",
+	"weapon_skin_energy_ar_epicp_v23_resharb",
+	"weapon_skin_pdw_epicp_v23_resdopb",
+	"weapon_skin_volt_smg_epicp_v23_resdopb",
+	"weapon_skin_wingman_epicp_v23_resdopb",
+	"weapon_skin_spitfire_epicp_v23_ragb",
+	"weapon_skin_car_epicp_v23_ragb",
+	"weapon_skin_lstar_epicp_v23_ragb",
+	"weapon_skin_alternator_epicp_v24_anniversary",
+	"weapon_skin_sentinel_epicp_v24_anniversary",
+	"weapon_skin_3030repeater_epicp_v24_anniversary",
+	"weapon_skin_volt_smg_epicp_v24_anniversary",
+	"weapon_skin_nemesis_epicp_v23_outbeast",
+	"weapon_skin_peacekeeper_epicp_v23_outbeast",
+	"weapon_skin_tripletake_epicp_v23_outbeast",
+	"weapon_skin_wingman_epicp_v23_outurbanb",
+	"weapon_skin_spitfire_epicp_v23_outurbanb",
+	"weapon_skin_energy_ar_epicp_v23_outurbanb",
+	"weapon_skin_chargerifle_epicp_v23_voidswap",
+	"weapon_skin_semipistol_epicp_v23_voidswap",
+	"weapon_skin_dragon_epicp_v23_voidswap",
+]
+
+const array< string > Epic_NonSkins =
+[
+	"skydive_emote_loba_portjump",
+	"emote_icon_epic_v22_hunterpredator_01",
+	"gcard_frame_horizon_epic_v22_hunterpredator01",
+	"gcard_frame_lifeline_epic_v22_hunterpredator01",
+	"character_emote_wattson_epic_v22_hunterpredator_dancewithtrophy",
+	"character_emote_mirage_epic_v22_hunterpredator_clapping",
+	"emote_icon_epic_v22_bangalore_magicsnowbeast_01",
+	"emote_icon_epic_v22_newcastle_magicsnowbeast_01",
+	"emote_icon_epic_v22_crypto_magicsnowbeast_01",
+	"emote_icon_epic_v22_valkyrie_magicsnowbeast_01",
+	"gcard_frame_newcastle_epic_v22_magicsnowbeast01",
+	"gcard_frame_crypto_epic_v22_magicsnowbeast01",
+	"gcard_frame_valkyrie_epic_v22_magicsnowbeast01",
+	"gcard_frame_bangalore_epic_v22_magicsnowbeast01",
+	"skydive_emote_seer_epic_v22_magicwitch_mothglide",
+	"gcard_frame_fuse_epic_v22_magicwitch01",
+	"gcard_frame_vantage_epic_v22_magicwitch01",
+	"character_emote_crypto_epic_v22_magicwitch_pullups",
+	"character_emote_wattson_epic_v22_magicwitch_dancenowatch",
+	"character_emote_loba_lgnd_v22_magicwitch_freestyle",
+	"weapon_charm_apex_event_v23_lunarnewyear_lunarnewyear03",
+	"weapon_charm_apex_event_v23_lunarnewyear_lunarnewyear02",
+	"emote_icon_epic_v23_lunarnewyear_03",
+	"emote_icon_epic_v23_lunarnewyear_02",
+	"gcard_frame_shared_epic_v23_lunarnewyear02",
+	"gcard_frame_shared_epic_v23_lunarnewyear01",
+	"character_emote_revenant_epic_v22_laughingtaunt",
+	"character_emote_mirage_epic_v22_massage",
+	"character_emote_valkyrie_epic_v22_fightingmoves",
+	"character_emote_lifeline_epic_v22_laughingpointing",
+	"emote_icon_epic_v23_anniversary_04",
+	"emote_icon_epic_v23_anniversary_05",
+	"emote_icon_epic_v23_anniversary_03",
+	"emote_icon_epic_v23_anniversary_06",
+	"gcard_frame_shared_epic_v23_anniversary05",
+	"gcard_frame_shared_epic_v23_anniversary08",
+	"gcard_frame_shared_epic_v23_anniversary06",
+	"gcard_frame_shared_epic_v23_anniversary07",
+	"weapon_charm_apex_asset_v22_misc_queensguard02",
+	"weapon_charm_apex_asset_v22_misc_queensguard01",
+	"emote_icon_epic_v22_queensguard_02",
+	"emote_icon_epic_v22_queensguard_01",
+	"gcard_frame_revenant_epic_v22_queensguard01",
+	"gcard_frame_loba_epic_v22_queensguard01",
+	"gcard_frame_wattson_epic_v22_queensguard01",
+	"gcard_frame_octane_epic_v22_queensguard01",
+	"gcard_frame_gibraltar_epic_v22_queensguard01",
+	"character_emote_gibraltar_epic_v22_dancing",
+	"skydive_emote_catalyst_epic_v23_teatime",
+	"emote_icon_epic_v22_partybeach_01",
+	"gcard_frame_newcastle_epic_v22_partybeach01",
+	"gcard_frame_fuse_epic_v22_partybeach01",
+	"character_emote_seer_epic_v22_partybeach_ngolo",
+	"character_emote_newcastle_epic_v22_funnydance",
+	"gcard_frame_seer_epic_v22_partymask01",
+	"gcard_frame_rampart_epic_v22_partymask01",
+	"gcard_frame_gibraltar_epic_v22_partymask01",
+	"gcard_frame_octane_epic_v22_partymask01",
+	"character_emote_octane_epic_v22_partymask_maracas",
+	"character_emote_rampart_epic_v22_partymask_yoga",
+	"character_emote_loba_epic_v22_partymask_samba",
+	"character_emote_gibraltar_epic_v22_partymask_ukulele",
+	"emote_icon_epic_v22_ophitman_01",
+	"gcard_frame_shared_epic_v22_ophitman01",
+	"gcard_frame_shared_epic_v22_ophitman02",
+	"character_emote_mirage_epic_stretches",
+	"character_emote_vantage_epic_celebrating",
+	"sticker_epic_v22_ophitman_01",
+	"emote_icon_epic_v22_opneon_01",
+	"gcard_frame_shared_epic_v22_opneon02",
+	"gcard_frame_shared_epic_v22_opneon01",
+	"gcard_stance_gibraltar_epic_07",
+	"gcard_stance_ash_s17_1_opneon_epic_01",
+	"sticker_epic_v22_opneon_01",
+	"gcard_frame_rampart_epic_v23_resanime01",
+	"gcard_frame_catalyst_epic_v23_resanime01",
+	"gcard_frame_crypto_epic_v23_resanime01",
+	"gcard_frame_wraith_epic_v23_resanime01",
+	"gcard_frame_loba_epic_v23_resanime01",
+	"gcard_frame_horizon_epic_v23_resanime01",
+	"gcard_frame_bloodhound_epic_v23_resharb01",
+	"gcard_frame_bangalore_epic_v23_resharb01",
+	"gcard_frame_seer_epic_v23_resharb01",
+	"gcard_frame_fuse_epic_v23_resharb01",
+	"gcard_frame_gibraltar_epic_v23_resharb01",
+	"gcard_frame_ash_epic_v23_resharb01",
+	"gcard_frame_mirage_epic_v23_resdopb01",
+	"gcard_frame_pathfinder_epic_v23_resdopb01",
+	"gcard_frame_vantage_epic_v23_resdopb01",
+	"gcard_frame_newcastle_epic_v23_resdopb01",
+	"gcard_frame_wraith_epic_v23_resdopb01",
+	"gcard_frame_lifeline_epic_v23_resdopb01",
+	"gcard_frame_valkyrie_epic_v23_ragb01",
+	"gcard_frame_bloodhound_epic_v23_ragb01",
+	"gcard_frame_bangalore_epic_v23_ragb01",
+	"gcard_frame_vantage_epic_v23_ragb01",
+	"gcard_frame_gibraltar_epic_v23_ragb01",
+	"gcard_frame_ballistic_epic_v23_ragb01",
+	"emote_icon_epic_v24_anniversary_07",
+	"emote_icon_epic_v24_anniversary_04",
+	"emote_icon_epic_v24_anniversary_05",
+	"emote_icon_epic_v24_anniversary_06",
+	"gcard_frame_shared_epic_v24_anniversary06",
+	"gcard_frame_shared_epic_v24_anniversary05",
+	"gcard_frame_shared_epic_v24_anniversary08",
+	"gcard_frame_shared_epic_v24_anniversary07",
+	"gcard_frame_gibraltar_epic_v23_outbeast01",
+	"gcard_frame_caustic_epic_v23_outbeast01",
+	"gcard_frame_loba_epic_v23_outbeast01",
+	"gcard_frame_bloodhound_epic_v23_outbeast01",
+	"gcard_frame_octane_epic_v23_outbeast01",
+	"gcard_frame_rampart_epic_v23_outbeast01",
+	"gcard_frame_loba_epic_v23_outurbanb01",
+	"gcard_frame_vantage_epic_v23_outurbanb01",
+	"gcard_frame_newcastle_epic_v23_outurbanb01",
+	"gcard_frame_valkyrie_epic_v23_outurbanb01",
+	"gcard_frame_rampart_epic_v23_outurbanb01",
+	"gcard_frame_wraith_epic_v23_outurbanb01",
+	"gcard_frame_crypto_epic_v23_voidswap01",
+	"gcard_frame_alter_epic_v23_voidswap01",
+	"gcard_frame_revenant_epic_v23_voidswap01",
+	"gcard_frame_octane_epic_v23_voidswap01",
+	"gcard_frame_conduit_epic_v23_voidswap01",
+	"gcard_frame_fuse_epic_v23_voidswap01",
+]
+
+

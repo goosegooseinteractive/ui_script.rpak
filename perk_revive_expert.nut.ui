@@ -1,0 +1,158 @@
+global function Perk_ReviveExpert_Init
+global function Perk_ReviveExpert_GetExtraReviveHealth
+global function Perk_ReviveExpert_GetExtraReviveShield
+
+
+
+
+
+
+
+
+struct
+{
+	int extraReviveHealth = 80
+	int extraReviveShield = 0
+	float reviveHealTime = 14.0
+	float ringRegenCooldown = 120.0
+} tuning
+
+
+
+
+
+
+
+
+void function Perk_ReviveExpert_Init()
+{
+	PerkInfo reviveExpert
+	reviveExpert.perkId          = ePerkIndex.REVIVE_EXPERT
+	Perks_RegisterClassPerk( reviveExpert )
+
+
+
+
+
+
+
+
+
+
+
+
+
+	if( !Perk_ReviveExpert_IsEnabled() )
+		return
+
+	tuning.extraReviveHealth = GetCurrentPlaylistVarInt( "perk_revive_expert_extra_health", tuning.extraReviveHealth )
+	tuning.extraReviveShield = GetCurrentPlaylistVarInt( "perk_revive_expert_extra_shield", tuning.extraReviveShield )
+	tuning.reviveHealTime = GetCurrentPlaylistVarFloat( "perk_revive_expert_heal_time", tuning.reviveHealTime )
+	tuning.ringRegenCooldown = GetCurrentPlaylistVarFloat( "perk_revive_expert_ring_regen_cooldown", tuning.ringRegenCooldown )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function Perk_ReviveExpert_IsEnabled()
+{
+	return Perks_S23UpdateEnabled() && GetCurrentPlaylistVarBool( "perk_revive_expert_is_enabled", true )
+}
+
+int function Perk_ReviveExpert_GetExtraReviveHealth()
+{
+	if( !Perk_ReviveExpert_IsEnabled() )
+		return 0
+
+	return tuning.extraReviveHealth
+}
+
+int function Perk_ReviveExpert_GetExtraReviveShield()
+{
+	if( !Perk_ReviveExpert_IsEnabled() )
+		return 0
+
+	return tuning.extraReviveShield
+}

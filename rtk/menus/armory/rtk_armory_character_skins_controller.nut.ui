@@ -1,0 +1,155 @@
+global function RTKArmoryCharacterSkinsScreen_OnInitialize
+global function RTKArmoryCharacterSkinsScreen_OnDestroy
+
+global struct RTKArmoryCharacterSkinsScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+	rtk_panel ultimatePlusBPButton
+	rtk_behavior trackChallengeButtonBehavior
+}
+
+global struct RTKArmoryChallengeTrackButtonModel
+{
+	bool cosmeticHasChallenge
+	bool challengeIsTracked
+}
+
+struct PrivateData
+{
+	rtk_struct challengeButtonStruct
+	void functionref( var ) callbackOnTopLevelCustomizeContextChanged
+}
+
+const string MODEL_PATH = "armoryCharacterSkins"
+const string CHARACTER_SKINS_PANEL = "RTKCharacterSkinsPanel"
+const string COSMETIC_CHALLENGE_BUTTON = "challengeButton"
+
+void function RTKArmoryCharacterSkinsScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	RunClientScript( "RefreshPresentationType" )
+	RunClientScript( "EnableModelTurn" )
+	RunClientScript( "UIToClient_StartCharacterModelBaseFX", true )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( self ) { RTKArmoryCharacterSkinsScreen_OnItemPreview( self, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemFavorite( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKCosmeticEquipScreen_GenericOnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	rtk_behavior challengeButton = self.PropGetBehavior( "trackChallengeButtonBehavior" )
+	self.AutoSubscribe( challengeButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKArmoryCharacterSkinsScreen_OnTrackChallengeButtonPressed( self )
+	} )
+
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH, "RTKCosmeticEquipScreenModel" )
+	if ( RTKStruct_HasProperty( screenStruct, COSMETIC_CHALLENGE_BUTTON ) )
+	{
+		p.challengeButtonStruct = RTKStruct_GetStruct( screenStruct, COSMETIC_CHALLENGE_BUTTON )
+	}
+	else
+	{
+		p.challengeButtonStruct = RTKStruct_AddStructProperty( screenStruct, COSMETIC_CHALLENGE_BUTTON, "RTKArmoryChallengeTrackButtonModel" )
+	}
+
+	RTKArmoryCharacterSkinsScreen_UpdateCharacter( self )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip ) } )
+
+	var panel = GetPanel( CHARACTER_SKINS_PANEL )
+
+	p.callbackOnTopLevelCustomizeContextChanged = void function( var panel ) : ( self ) { RTKArmoryCharacterSkinsScreen_UpdateCharacter( self )	}
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSortFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddShowHideUIToggleFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddUnlockFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddZoomFooterOption( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddFavoriteFooterOptions( cosmeticEquip, panel )
+	UpdateFooterOptions()
+}
+
+void function RTKArmoryCharacterSkinsScreen_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	var panel = GetPanel( CHARACTER_SKINS_PANEL )
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+	ClearPanelFooterOptions( panel )
+}
+
+void function RTKArmoryCharacterSkinsScreen_UpdateCharacter( rtk_behavior self )
+{
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+	ItemFlavor characterFlav   = GetTopLevelCustomizeContext()
+
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ Loadout_CharacterSkin( characterFlav ) ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.sortOrdinalFunc = CharacterSkin_GetSortOrdinal
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+
+	rtk_panel ultimatePlusBPButton = self.PropGetPanel( "ultimatePlusBPButton" )
+	bool showBPButton = !GRX_IsOfferRestricted() && !Character_IsCharacterOwnedByPlayer( characterFlav ) && !Character_IsUnlockableInNewPlayerPass( characterFlav )
+	ultimatePlusBPButton.SetActiveAndVisible( showBPButton )
+}
+
+void function RTKArmoryCharacterSkinsScreen_OnItemPreview( rtk_behavior self, int guid )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+	RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid )
+
+	
+	ItemFlavor skinFlav = GetItemFlavorByGUID( guid )
+	RTKArmoryChallengeTrackButtonModel buttonModel = RTKArmoryCharacterSkinsScreen_GetChallengeButtonModel( skinFlav )
+	RTKStruct_SetValue( p.challengeButtonStruct, buttonModel )
+}
+
+RTKArmoryChallengeTrackButtonModel function RTKArmoryCharacterSkinsScreen_GetChallengeButtonModel( ItemFlavor skinFlav )
+{
+	RTKArmoryChallengeTrackButtonModel buttonModel
+	if ( ItemFlavor_GetQuality( skinFlav ) != eRarityTier.MYTHIC || GRX_IsItemOwnedByPlayer( skinFlav ) )
+		return buttonModel
+
+	entity player = GetLocalClientPlayer()
+	ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+	if ( !Loadout_IsCharacterUnlockedForPlayer( player, characterFlav ) )
+		return buttonModel
+
+	ItemFlavor challengeFlav = Mythics_GetChallengeForCharacter( characterFlav )
+	buttonModel.cosmeticHasChallenge = true
+	buttonModel.challengeIsTracked  = IsFavoriteChallenge( challengeFlav )
+
+	return buttonModel
+}
+
+void function RTKArmoryCharacterSkinsScreen_OnTrackChallengeButtonPressed( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	ItemFlavor challengeFlav = Mythics_GetChallengeForCharacter( GetTopLevelCustomizeContext() )
+	Mythics_ToggleTrackChallenge( challengeFlav )
+	RTKStruct_SetBool( p.challengeButtonStruct, "challengeIsTracked", !RTKStruct_GetBool( p.challengeButtonStruct, "challengeIsTracked" ) )
+}

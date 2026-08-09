@@ -1,0 +1,119 @@
+
+
+
+global function TutorialHint_PopulateTutorialOverviewScreen
+global function TutorialHint_PopulateRingScreen
+global function TutorialHint_PopulateWeaponScreen
+global function TutorialHint_PopulateHealingScreen
+global function TutorialHint_GetHeader
+global function TutorialHint_PopulateAbilityScreen
+
+global function TutorialHint_OnClosed
+
+
+array< featureTutorialTab > function TutorialHint_PopulateTutorialOverviewScreen()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"TUTORIAL"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#COMBATRANGE_CUSTOMIZE_HEADER", 	"#COMBATRANGE_CUSTOMIZE_BODY", 		$"rui/hud/gametype_icons/gametype_icons/apex_logo" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}
+
+
+array< featureTutorialTab > function TutorialHint_PopulateRingScreen()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#SURVIVAL_TRAINING_RING_TAB"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_RING_1_HEADER", 	"#SURVIVAL_TRAINING_RING_1_BODY", 		$"rui/about_images/tutorial/about_tutorial_ring_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_RING_2_HEADER", 	"#SURVIVAL_TRAINING_RING_2_BODY", 		$"rui/about_images/tutorial/about_tutorial_ring_2" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}
+
+
+array< featureTutorialTab > function TutorialHint_PopulateWeaponScreen()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#SURVIVAL_TRAINING_WEAPONS_TAB"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_WEAPON_TYPES_HEADER", 	"#SURVIVAL_TRAINING_WEAPON_TYPES_BODY", 		$"rui/about_images/tutorial/about_tutorial_weapon_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_AMMO_TYPES_HEADER", 	"#SURVIVAL_TRAINING_AMMO_TYPES_BODY", 		$"rui/about_images/tutorial/about_tutorial_weapon_2" ) )
+
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}
+
+array< featureTutorialTab > function TutorialHint_PopulateHealingScreen()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#SURVIVAL_TRAINING_HEALTH_TAB"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_HEALTH_HEADER", 	"#SURVIVAL_TRAINING_HEALTH_BODY", 		$"rui/about_images/tutorial/about_tutorial_healing_shield_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_SHIELD_HEADER", 	"#SURVIVAL_TRAINING_SHIELD_BODY", 		$"rui/about_images/tutorial/about_tutorial_healing_shield_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_EVO_HEADER", 	"#SURVIVAL_TRAINING_EVO_BODY", 		$"rui/about_images/tutorial/about_tutorial_healing_shield_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}
+
+array< featureTutorialTab > function TutorialHint_PopulateAbilityScreen()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#SURVIVAL_TRAINING_ABILITY_TAB"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_ABILITY_PASSIVE_HEADER", 	"#SURVIVAL_TRAINING_ABILITY_PASSIVE_BODY", 		$"rui/about_images/tutorial/about_tutorial_abilities_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_ABILITY_TACTICAL_HEADER", 	"#SURVIVAL_TRAINING_ABILITY_TACTICAL_BODY", 		$"rui/about_images/tutorial/about_tutorial_abilities_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_TRAINING_ABILITY_ULTIMATE_HEADER", 	"#SURVIVAL_TRAINING_ABILITY_ULTIMATE_BODY", 		$"rui/about_images/tutorial/about_tutorial_abilities_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}
+
+string function TutorialHint_GetHeader()
+{
+	return "#SURVIVAL_TRAINING_HEADER"
+}
+
+void function TutorialHint_OnClosed( string modalName )
+{
+	RunClientScript( "TrainingModalClosed" )
+}
+
+
+      

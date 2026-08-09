@@ -1,0 +1,1180 @@
+global function InitProgressionTray
+global function OpenProgressionTray
+global function CloseProgressionTray
+global function GetProgressionTray
+global function IsProgressionTrayOpen
+global function IsProgressionTrayEnabled
+
+global function RTKProgressionTray_OnInitialize
+global function RTKProgressionTray_OnPreDestroy
+
+global function RTKProgressionTray_UpdateModel
+
+global function AddCallback_OnProgressionTrayClosed
+global function RemoveCallback_OnProgressionTrayClosed
+global function AddCallback_OnProgressionTrayOpened
+global function RemoveCallback_OnProgressionTrayOpened
+
+const int MAX_TRAY_CHALLENGES = 5
+const string TRAY_OPEN_SOUND = "UI_Menu_RewardsTab_Slide_Open"
+const string TRAY_CLOSE_SOUND = "UI_Menu_RewardsTab_Slide_Close"
+
+global enum eProgressionTrayPage
+{
+	TRACKED,
+	DAILY,
+	NEWPLAYER,
+	RETURNING_PLAYER,
+	ROAD_TO_RANKED,
+
+	RANKED,
+
+	EVENT_SHOP,
+	EVENT_BUFFET,
+	EVENT_CUSTOM,
+	CHALLENGE_TRIAL,
+	LEGEND_PASS,
+	BATTLEPASS_WEEKLY,
+	REPUTATION
+}
+
+global struct RTKProgressionTray_Properties
+{
+	rtk_panel paginationNav
+	rtk_behavior deepLinkButton0
+	rtk_behavior deepLinkButton1
+}
+
+global struct RTKProgressionTrayDeepLinkButtons 
+{
+	string linkType 
+	string link 
+	string label 
+}
+
+global struct RTKProgressionTrayHeaderData
+{
+	string categoryTitle
+	string sectionTitle
+	string sectionDescription
+	string goalText
+
+	vector categoryBackgroundColor
+	asset sectionBackground
+
+	vector progressBarBGColor
+	vector progressBarFillColor
+	int currentProgress
+	int maxProgress
+
+	asset customCenterImage
+
+	asset rewardIcon
+	int rewardQuantity
+	int mythicTier = -1
+	RTKBattlepassTrackItemStruct& passReward
+	asset badgeIcon
+	RTKBadgeModel& badgeReward
+
+	bool hasMythicFrame = false
+}
+
+global struct RTKProgressionTrayPage
+{
+	RTKProgressionTrayHeaderData& header
+	array<RTKChallengeItemModel> challenges
+	RTKProgressionTrayButtonModel& trayButton
+
+	int endDate
+
+	array<RTKProgressionTrayDeepLinkButtons> deeplinkButtons
+	int category 
+	int tileID = -1 
+
+
+		bool hasBoost
+
+	bool isBRMode
+	bool isNBRMode
+}
+
+global struct RTKProgressionTrayModel
+{
+	array<RTKProgressionTrayPage> pages
+
+	int pageIndex
+	bool isOpen
+	array<RTKChallengesPaginationPip> navPipArray
+	int trackedCount
+}
+
+struct PrivateData
+{
+	void functionref() OnTileUpdate
+	int pageIndexPropertyListener
+}
+
+struct
+{
+	array<void functionref()> Callbacks_OnProgressionTrayClosed
+	array<void functionref()> Callbacks_OnProgressionTrayOpened
+}callback
+
+struct
+{
+	var parentMenu
+	var parentPanel
+	var button
+	var overlay
+	var tray
+
+	LobbyPopup lobbyPopup
+	bool isOpen
+	int lastPage = 0
+} file
+
+void function RTKProgressionTray_OnInitialize( rtk_behavior self )
+{
+	if ( !IsProgressionTrayEnabled() )
+		return
+
+	rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+	file.lastPage = RTKProgressTrayButton_GetLatestPage()
+	RTKProgressionTray_UpdatePaginationPips( trayModel )
+	RTKProgresionTray_UpdateBindPath( file.lastPage, self )
+	RTKProgresionTrayButton_UpdateBindPath( file.lastPage )
+	rtk_behavior pagController = self.PropGetPanel( "paginationNav" ).FindBehaviorByTypeName( "PaginationBinder" )
+	RTKPaginationBinder_SetInitPageIndex( pagController, file.lastPage )
+	RTKStruct_SetInt( trayModel, "trackedCount", GetFavoriteChallenges( GetLocalClientPlayer() ).len() )
+	RTKProgressionTray_CallbackDeeplinkButtons( self )
+
+	PrivateData p
+	self.Private( p )
+	p.pageIndexPropertyListener = RTKStruct_AddPropertyListener( trayModel, "pageIndex", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self, trayModel ) {
+		file.lastPage = expect int(propValue)
+		RTKProgressTrayButton_SetLatestPage( file.lastPage )
+		RTKProgressionTray_UpdatePaginationPips( trayModel )
+		RTKProgresionTrayButton_UpdateBindPath( file.lastPage )
+		RTKProgresionTray_UpdateBindPath( file.lastPage, self )
+	} )
+
+	p.OnTileUpdate = void function() : ( self ) {
+		file.lastPage = 0
+		rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+		RTKProgressionTray_UpdatePaginationPips( trayModel )
+		RTKProgresionTray_UpdateBindPath( file.lastPage, self )
+		rtk_behavior pagController = self.PropGetPanel( "paginationNav" ).FindBehaviorByTypeName( "PaginationBinder" )
+		RTKPaginationBinder_SetInitPageIndex( pagController, file.lastPage )
+		RTKStruct_SetBool( trayModel, "isOpen", file.isOpen )
+		RTKStruct_SetInt( trayModel, "trackedCount", GetFavoriteChallenges( GetLocalClientPlayer() ).len() )
+	}
+
+	AddCallback_OnChallengeTileAdded( p.OnTileUpdate )
+	AddCallback_OnUpdateFavoriteChallenge( p.OnTileUpdate )
+	Hud_AddEventHandler( file.overlay, UIE_CLICK, CloseProgressionTray_OnActivate )
+}
+
+void function RTKProgressionTray_OnPreDestroy( rtk_behavior self )
+{
+	if ( !IsProgressionTrayEnabled() )
+		return
+
+	PrivateData p
+	self.Private( p )
+	rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+	RTKStruct_RemovePropertyListener( trayModel, "pageIndex", p.pageIndexPropertyListener )
+	RemoveCallback_OnChallengeTileAdded( p.OnTileUpdate )
+	RemoveCallback_OnUpdateFavoriteChallenge( p.OnTileUpdate )
+	Hud_RemoveEventHandler( file.overlay, UIE_CLICK, CloseProgressionTray_OnActivate )
+}
+
+void function RTKProgressionTray_UpdateModel()
+{
+	if ( !IsLocalClientEHIValid() )
+		return
+
+	RTKProgressionTrayModel model
+	model.pages = RTKProgressTray_GetPagesData()
+	for ( int i = 0; i < model.pages.len(); i++ )
+	{
+		RTKChallengesPaginationPip pip
+		model.navPipArray.append( pip )
+	}
+
+	rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+	RTKStruct_SetValue( trayModel, model )
+	RTKProgresionTrayButton_UpdateBindPath( file.lastPage )
+}
+
+array<RTKProgressionTrayPage> function RTKProgressTray_GetPagesData()
+{
+	array<RTKProgressionTrayPage> entries
+	array<ChallengeTile> activeTileData = ChallengeTile_GetActiveTilesSorted()
+	entity player = GetLocalClientPlayer()
+
+	foreach ( int index, tile in activeTileData )
+	{
+		if ( !tile.isFeatured )
+			continue
+
+		RTKProgressionTrayPage page = RTKProgressTray_GetPageDataFromTile( tile )
+		entries.append( page )
+	}
+
+	
+	return entries
+}
+
+
+RTKProgressionTrayPage function RTKProgressTray_GetPageDataFromTile( ChallengeTile tile )
+{
+	float startTime = UITime()
+
+	entity player = GetLocalClientPlayer()
+	EHI localEHI = LocalClientEHI()
+	RTKProgressionTrayPage page
+	RTKProgressionTrayHeaderData headerData
+	RTKProgressionTrayButtonModel trayButton
+
+	ChallengeTile_LobbyWidgetConfig widgetConfig = tile.lobbyWidgetConfig
+
+	
+	headerData.goalText = tile.lobbyWidgetConfig.sectionGoalLabel
+	headerData.sectionBackground = tile.lobbyWidgetConfig.sectionImageBackground
+	headerData.sectionTitle = tile.lobbyWidgetConfig.sectionLabel
+	headerData.sectionDescription = tile.lobbyWidgetConfig.sectionDescriptionLabel
+
+
+	
+	headerData.categoryBackgroundColor = tile.lobbyWidgetConfig.categoryBackgroundColor
+	headerData.categoryTitle = tile.lobbyWidgetConfig.categoryChallengeLabel
+	if ( headerData.categoryTitle == "" )
+		headerData.categoryTitle = tile.title
+
+	headerData.progressBarBGColor = tile.lobbyWidgetConfig.sectionProgressBarBGColor
+	headerData.progressBarFillColor = tile.lobbyWidgetConfig.sectionProgressBarFillColor
+
+	page.deeplinkButtons = RTKProgressionTray_GetDeepLinkButtonsFromConfig( tile.lobbyWidgetConfig.deeplinkButtons )
+
+
+		page.hasBoost = ChallengeTile_HasBoostedChallenges( tile )
+
+
+	page.isBRMode = ChallengeTile_HasBRChallenges( tile )
+	page.isNBRMode = ChallengeTile_HasNBRChallenges( tile )
+
+	page.endDate = tile.endDate
+
+	array<ItemFlavor> tileChallenges = ChallengeTile_GetAllChallengesSortedByCompletion( tile )
+	
+	if ( tile.tileCategory != eChallengeTileCategory.TRACKED )
+		tileChallenges = RTKProgressionTray_FilterChallenges( tileChallenges )
+	page.challenges = RTKProgressionTray_GetChallengeDataModel( tileChallenges, player, tile.tileCategory )
+	ItemFlavor nextRewardChallenge
+	if ( tileChallenges.len() > 0 )
+	{
+		nextRewardChallenge = tileChallenges[0]
+		page.isBRMode  = Challenges_HasBRChallenge( tileChallenges )
+		page.isNBRMode = Challenges_HasNBRChallenge( tileChallenges )
+	}
+	else
+	{
+		return page
+	}
+
+	
+	if ( !IsItemFlavorStructValid( nextRewardChallenge.guid, eValidation.DONT_ASSERT ) || !Challenge_IsAssigned( player, nextRewardChallenge ) )
+		return page
+
+	switch ( tile.tileCategory )
+	{
+		case eChallengeTileCategory.TRACKED:
+		{
+			page.category = eProgressionTrayPage.TRACKED
+
+			if ( tileChallenges.len() == 0 )
+				return page
+
+			int activeTier = Challenge_GetActiveTier( player, nextRewardChallenge )
+			ItemFlavorBag rewards = Challenge_GetRewards( nextRewardChallenge, activeTier )
+			if ( rewards.flavors.len() > 0 )
+			{
+				ItemFlavor rewardFlav = rewards.flavors[0] 
+				headerData.rewardIcon = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+				headerData.rewardQuantity = ItemFlavorBag_GetRewardQuantityFromRewards( rewards )
+
+				if ( Mythics_IsItemFlavorMythicSkin( rewardFlav ) )
+				{
+					headerData.mythicTier = Mythics_GetSkinTierIntForSkin( rewardFlav )
+					trayButton.mythicTierRight = headerData.mythicTier
+				}
+
+				trayButton.rewardIconRight =  headerData.rewardIcon
+				trayButton.rewardQuantityRight = headerData.rewardQuantity
+				headerData.maxProgress     = Challenge_GetGoalVal( nextRewardChallenge, activeTier )
+				headerData.currentProgress = Challenge_GetProgressValue( player, nextRewardChallenge, activeTier )
+			}
+
+			headerData.sectionTitle = Localize( "#YOUR_CHALLENGES" )
+			headerData.sectionDescription = Localize( "#TRACK_SLOTS_FILLED_N_N", tileChallenges.len(), NUM_FAVORITE_CHALLENGES )
+			headerData.categoryTitle = tile.title
+			headerData.goalText = "#BATTLEPASS_TRACK_NEXT"
+			trayButton.rewardIconLeft = $"ui_image/rui/menu/common/icon_favorite_small.rpak"
+			trayButton.currentProgress 	= headerData.currentProgress
+			trayButton.maxProgress 		= headerData.maxProgress
+			page.endDate = 0
+		}
+			break
+
+		case eChallengeTileCategory.DAILY:
+		{
+			page.category = eProgressionTrayPage.DAILY
+
+			headerData.categoryTitle = tile.title
+			headerData.sectionTitle = Localize( "#MIXED_CHALLENGES" )
+			headerData.sectionDescription = Localize( "#TOP_5_NEAR_COMPLETION" )
+			headerData.goalText = Localize( "#BATTLEPASS_TRACK_NEXT" )
+			int activeTier = Challenge_GetActiveTier( player, nextRewardChallenge )
+			ItemFlavorBag rewards = Challenge_GetRewards( nextRewardChallenge, activeTier )
+
+			if ( rewards.flavors.len() > 0 )
+			{
+				ItemFlavor rewardFlav = rewards.flavors[0] 
+				headerData.rewardIcon = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+				headerData.rewardQuantity = ItemFlavorBag_GetRewardQuantityFromRewards( rewards )
+				trayButton.rewardIconRight =  headerData.rewardIcon
+				if ( headerData.rewardQuantity > 0 )
+				{
+					trayButton.rewardQuantityRight = headerData.rewardQuantity
+				}
+
+				headerData.maxProgress     = Challenge_GetGoalVal( nextRewardChallenge, activeTier )
+				headerData.currentProgress = Challenge_GetProgressValue( player, nextRewardChallenge, activeTier )
+			}
+			trayButton.currentProgress = headerData.currentProgress
+			trayButton.maxProgress 	= 	headerData.maxProgress
+			trayButton.rewardIconLeft = GetSeasonStyle().seasonBannerLogo
+			page.endDate = Challenge_GetDailyExpirationTimeWithOffset( player )
+		}
+			break
+
+		case eChallengeTileCategory.BEGINNER:
+		{
+			page.category = eProgressionTrayPage.NEWPLAYER
+			ItemFlavor ornull newPlayerPass = GetPass( ePassType.NEWPLAYER )
+			if ( newPlayerPass == null ) 
+				break
+
+			expect ItemFlavor(newPlayerPass)
+
+			int currentLevelProgress = PlayerPass_GetCurrentLevelProgress( player, newPlayerPass )
+			int currentLevel 	= PlayerPass_GetPassLevel( player, newPlayerPass )
+			currentLevel 		+= 1 
+			int nextLevel    	= currentLevel + 1
+			int maxTokens    	= PLAYER_PASSES_XP_PER_LEVEL
+
+			RTKBattlepassTrackItemStruct reward = GetNextPassRewardData( ePassType.NEWPLAYER )
+
+			headerData.sectionTitle       = Localize( "#HUD_LEVEL_N", currentLevel )
+			headerData.goalText           = Localize( "#HUD_LEVEL_N", nextLevel )
+			headerData.sectionDescription = Localize( "#PASS_EARN_N_N", currentLevelProgress, maxTokens )
+			headerData.currentProgress    = currentLevelProgress
+			headerData.maxProgress        = maxTokens
+			headerData.passReward		  = RTKProgressionTray_GetNextPassRewardDataModel( ePassType.NEWPLAYER )
+
+			
+			trayButton.rewardIconLeft 	= $"ui_image/rui/menu/progression_tray/ProgressionTray_number_graphic.rpak"
+			trayButton.rewardStringLeft = string(currentLevel)
+			trayButton.rewardRight 		= RTKProgressionTrayButton_GetNextPassRewardDataModel( ePassType.NEWPLAYER )
+			trayButton.currentProgress 	= headerData.currentProgress
+			trayButton.maxProgress 		= headerData.maxProgress
+			page.endDate = 0
+		}
+			break
+
+		case eChallengeTileCategory.RETURNING_PLAYER:
+		{
+			page.category = eProgressionTrayPage.RETURNING_PLAYER
+			ItemFlavor ornull returningPass 		= GetPass( ePassType.RETURNING_PLAYER )
+			if ( returningPass == null ) 
+				break
+			expect ItemFlavor(returningPass)
+
+			int currentLevelProgress = PlayerPass_GetCurrentLevelProgress( player, returningPass )
+			int currentLevel 	= PlayerPass_GetPassLevel( player, returningPass )
+			currentLevel 		+= 1 
+			int nextLevel 		= currentLevel + 1
+			int maxTokens		= PLAYER_PASSES_XP_PER_LEVEL
+
+			RTKBattlepassTrackItemStruct reward = GetNextPassRewardData( ePassType.RETURNING_PLAYER )
+
+			headerData.passReward		  = RTKProgressionTray_GetNextPassRewardDataModel( ePassType.RETURNING_PLAYER )
+			headerData.sectionTitle 		= Localize( "#HUD_LEVEL_N", currentLevel )
+			headerData.goalText 			= Localize( "#HUD_LEVEL_N", nextLevel )
+			headerData.sectionDescription 	= Localize( "#PASS_EARN_N_N", currentLevelProgress, maxTokens )
+			headerData.currentProgress 		= currentLevelProgress
+			headerData.maxProgress			= maxTokens
+
+			
+			trayButton.rewardIconLeft =  $"ui_image/rui/menu/progression_tray/ProgressionTray_number_graphic.rpak"
+			trayButton.rewardStringLeft = string(currentLevel)
+			trayButton.rewardRight = RTKProgressionTrayButton_GetNextPassRewardDataModel( ePassType.RETURNING_PLAYER )
+			trayButton.currentProgress 	= headerData.currentProgress
+			trayButton.maxProgress 		= headerData.maxProgress
+			page.endDate = 0
+		}
+			break
+
+		case eChallengeTileCategory.ROAD_TO_RANKED:
+		{
+			page.category = eProgressionTrayPage.ROAD_TO_RANKED
+			int completedChallengeCount 	= ChallengeTile_GetCompletedChallengeCount( tile, player )
+			headerData.categoryTitle 	  	= Localize( "#ROAD_TO_RANKED" )
+			headerData.sectionTitle		  	= Localize( "#CHALLENGE_TRIAL" )
+			headerData.sectionDescription   = Localize( "#CHALLENGES_N_N", completedChallengeCount, tile.totalChallenges )
+			headerData.goalText           	= Localize( "#GOAL" )
+			headerData.currentProgress    	= completedChallengeCount
+			headerData.maxProgress        	= tile.totalChallenges
+
+			headerData.badgeIcon = $"ui_image/rui/ranked/ranked_icon_unlock.rpak"
+
+			
+			trayButton.rewardIconLeft =   $"ui_image/rui/ranked/ranked_icon.rpak" 
+			trayButton.rewardIconRight = $"ui_image/rui/ranked/generic_ranked_icon_small_unlock.rpak" 
+			trayButton.currentProgress = completedChallengeCount
+			trayButton.maxProgress = tile.totalChallenges
+			page.endDate = 0
+		}
+			break
+
+
+		case eChallengeTileCategory.RANKED:
+		{
+			page.category = eProgressionTrayPage.RANKED
+			int completedChallengeCount 	= ChallengeTile_GetCompletedChallengeCount( tile, player )
+			headerData.categoryTitle 	  	= Localize( "#CHALLENGE_RANKED" )
+			headerData.sectionDescription   = Localize( "#CHALLENGES_N_N", completedChallengeCount, tile.totalChallenges )
+			headerData.goalText           	= Localize( "#GOAL" )
+			headerData.currentProgress    	= completedChallengeCount
+			headerData.maxProgress        	= tile.totalChallenges
+
+			
+			trayButton.currentProgress = completedChallengeCount
+			trayButton.maxProgress = tile.totalChallenges
+		}
+			break
+
+
+		case eChallengeTileCategory.EVENT:
+		{
+			switch ( tile.eventTileType )
+			{
+				case eEventTileType.EVENT_SHOP:
+					ItemFlavor ornull activeEventShop = EventShop_GetCurrentActiveEventShop()
+					if ( activeEventShop == null )
+						return page
+					page.category = eProgressionTrayPage.EVENT_SHOP
+					expect ItemFlavor(activeEventShop)
+					string currencyIcon = "%$" + string(ItemFlavor_GetIcon( EventShop_GetEventShopCurrency( activeEventShop ) )) + "%"
+					array<EventShopTierData> tiersData = EventShop_GetTiersData( activeEventShop )
+					EventShopTierData nextTierData = EventShop_GetNextUnlockTierData( tiersData, player )
+
+					headerData.sectionTitle     	= "#EVENTS_EVENT_SHOP"
+					headerData.currentProgress 		= EventShopStats_GetCurrencyTotal( player )
+					headerData.maxProgress 			= nextTierData.unlockValue
+
+					string sectionDescription 		= Localize( "#EVENT_EARN_N_N", currencyIcon, FormatAndLocalizeNumber( "1", float( headerData.currentProgress ), true ), FormatAndLocalizeNumber( "1", float( headerData.maxProgress ), true ) )
+					headerData.sectionDescription 	= sectionDescription
+
+					if ( nextTierData.badges.len() > 0 )
+						trayButton.rewardIconRight		= ItemFlavor_GetIcon( nextTierData.badges[0] )
+
+					headerData.badgeIcon = trayButton.rewardIconRight
+
+					int lastBadgeIndex = tiersData.len() - 1
+					if ( lastBadgeIndex < tiersData.len() && lastBadgeIndex > 0 )
+					{
+						EventShopTierData lastTierData = tiersData[lastBadgeIndex]
+						if ( lastTierData.badges.len() > 0 )
+							trayButton.rewardIconLeft		= ItemFlavor_GetIcon( lastTierData.badges[0] )
+					}
+
+					trayButton.currentProgress 	= headerData.currentProgress
+					trayButton.maxProgress 		= headerData.maxProgress
+					break
+
+				case eEventTileType.BUFFET:
+					ItemFlavor ornull activeBuffetEvent = GetActiveBuffetEvent()
+					if ( activeBuffetEvent == null )
+						return page
+					expect ItemFlavor(activeBuffetEvent)
+
+					page.category = eProgressionTrayPage.EVENT_BUFFET
+					headerData.sectionTitle       = "#PRIZE_TRACK"
+					BuffetEventModesAndChallengesData buffetData = BuffetEvent_GetModesAndChallengesData( activeBuffetEvent )
+					ItemFlavor mainChallenge 	= expect ItemFlavor(buffetData.mainChallengeFlav)
+
+					if ( !IsItemFlavorStructValid( mainChallenge.guid, eValidation.DONT_ASSERT ) || !Challenge_IsAssigned( player, mainChallenge ) )
+						return page
+
+					int maxTierCount  = Challenge_GetTierCount( mainChallenge )
+					int activeTier    = Challenge_GetActiveTier( player, mainChallenge )
+					headerData.maxProgress     = Challenge_GetGoalVal( mainChallenge, maxTierCount - 1 )
+					headerData.currentProgress = Challenge_GetProgressValue( player, mainChallenge, activeTier )
+
+					asset chaseRewardIcon = BuffetEvent_GetAsset( activeBuffetEvent, "chaseItemIcon" )
+					string currencyIcon = "%$rui/events/s03e03/dinner_party_score_voucher_icon%"
+					string sectionDescription 		= Localize( "#EVENT_EARN_N_N", currencyIcon, headerData.currentProgress, headerData.maxProgress )
+					headerData.sectionDescription 	= sectionDescription
+					headerData.badgeIcon = chaseRewardIcon
+					headerData.hasMythicFrame = true
+
+					int lastBadgeIndex =  buffetData.badges.len() - 1
+					if ( lastBadgeIndex < buffetData.badges.len() && lastBadgeIndex > 0 )
+						trayButton.rewardIconLeft = ItemFlavor_GetIcon( buffetData.badges[lastBadgeIndex] )
+
+					trayButton.rewardIconRight	= headerData.badgeIcon
+					trayButton.currentProgress 	= headerData.currentProgress
+					trayButton.maxProgress 		= headerData.maxProgress
+					break
+
+				case eEventTileType.CUSTOM:
+					page.category = eProgressionTrayPage.EVENT_CUSTOM
+					ItemFlavor ornull featuredChallenge = tile.lobbyWidgetConfig.featuredChallenge
+					if ( featuredChallenge == null )
+					{
+						headerData.categoryTitle = tile.title
+						headerData.sectionTitle = "#CHALLENGE_TRIAL"
+						headerData.sectionDescription = "#TOP_5_NEAR_COMPLETION"
+						headerData.goalText = "#BATTLEPASS_TRACK_NEXT"
+
+						if ( tileChallenges.len() > 0 )
+						{
+							int activeTier = Challenge_GetActiveTier( player, nextRewardChallenge )
+							ItemFlavorBag rewards = Challenge_GetRewards( nextRewardChallenge, activeTier )
+							if ( rewards.flavors.len() > 0 )
+							{
+								ItemFlavor rewardFlav = rewards.flavors[0]
+								headerData.rewardIcon = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+								headerData.rewardQuantity = ItemFlavorBag_GetRewardQuantityFromRewards( rewards )
+								trayButton.rewardIconRight =  headerData.rewardIcon
+							}
+
+							SeasonStyleData seasonStyleData = GetSeasonStyle()
+							headerData.maxProgress     = Challenge_GetGoalVal( nextRewardChallenge, activeTier )
+							headerData.currentProgress = Challenge_GetProgressValue( player, nextRewardChallenge, activeTier )
+
+							if ( headerData.rewardQuantity > 0 )
+							{
+								trayButton.rewardQuantityRight = headerData.rewardQuantity
+							}
+
+							trayButton.rewardIconLeft = seasonStyleData.seasonBannerLogo
+							trayButton.currentProgress = headerData.currentProgress
+							trayButton.maxProgress 	= 	headerData.maxProgress
+						}
+					}
+					else
+					{
+						expect ItemFlavor( featuredChallenge )
+						if ( !IsItemFlavorStructValid( featuredChallenge.guid, eValidation.DONT_ASSERT ) || !Challenge_IsAssigned( player, featuredChallenge ) )
+							return page
+
+						int featuredActiveTier        	= Challenge_GetActiveTier( player, featuredChallenge )
+						ItemFlavorBag featuredRewards 	= Challenge_GetRewards( featuredChallenge, featuredActiveTier )
+
+						int activeTier = Challenge_GetActiveTier( player, nextRewardChallenge )
+						ItemFlavorBag rewards = Challenge_GetRewards( nextRewardChallenge, activeTier )
+
+						if ( featuredRewards.flavors.len() > 0 )
+						{
+							ItemFlavor featuredRewardFlav 	= featuredRewards.flavors[0]
+							headerData.rewardIcon     = ItemFlavor_GetChallengeRewardButtonImage( featuredRewardFlav )
+							headerData.rewardQuantity  = GetRewardQuantityFromRewards( featuredRewards )
+
+							trayButton.rewardIconLeft =  headerData.rewardIcon
+							if ( headerData.rewardQuantity > 0 )
+								trayButton.rewardStringLeft = Localize( "#PLUS_N", headerData.rewardQuantity )
+						}
+						headerData.maxProgress     = Challenge_GetGoalVal( featuredChallenge, activeTier )
+						headerData.currentProgress = Challenge_GetProgressValue( player, featuredChallenge, activeTier )
+
+						if ( rewards.flavors.len() > 0 )
+						{
+							ItemFlavor rewardFlav = rewards.flavors[0]
+							headerData.rewardIcon = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+							int rightRewardQuantity =  ItemFlavorBag_GetRewardQuantityFromRewards( rewards )
+							if ( headerData.rewardQuantity > 0 )
+							{
+								trayButton.rewardQuantityRight = headerData.rewardQuantity
+							}
+
+							trayButton.rewardIconRight = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+
+							trayButton.currentProgress = Challenge_GetProgressValue( player, nextRewardChallenge, activeTier )
+							trayButton.maxProgress     = Challenge_GetGoalVal( nextRewardChallenge, activeTier )
+						}
+
+						if ( Challenge_IsMetaChallenge( featuredChallenge ) )
+						{
+							headerData.sectionTitle       = ItemFlavor_GetLongName( featuredChallenge )
+							headerData.sectionDescription = Challenge_GetDescription( featuredChallenge, activeTier )
+						}
+						else
+						{
+							headerData.sectionTitle 	  = tile.title
+							headerData.sectionDescription = Challenge_GetDescription( featuredChallenge, activeTier )
+						}
+					}
+					break
+			}
+		}
+			break
+
+		case eChallengeTileCategory.WEEKLY: 
+		{
+			ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+			ItemFlavor ornull battlePass    = GetPass( ePassType.SEASONAL )
+			if ( battlePass == null )
+				return page
+			expect ItemFlavor(battlePass)
+			int currentStars = GetPlayerBattlePassXPProgress( localEHI, battlePass, false ) % STARS_TO_COMPLETE_BP_LEVEL
+			int currentLevel = GetPlayerBattlePassLevel( player, battlePass, false ) + 1
+			int nextLevel    = currentLevel + 1
+			int maxStars     = GetXPToCompleteBPLevel( battlePass )
+
+			headerData.sectionTitle       = Localize( "#HUD_LEVEL_N", currentLevel )
+			headerData.goalText           = Localize( "#HUD_LEVEL_N", nextLevel )
+			headerData.sectionDescription = Localize( "#BATTLEPASS_EARN_N_N", currentStars, maxStars )
+			headerData.currentProgress    = currentStars
+			headerData.maxProgress        = maxStars
+			headerData.categoryTitle      = tile.title
+
+			trayButton.badgeLeft = RTKProgressionTrayButton_GetBattlePassBadgeDataModel()
+			
+
+
+			ItemFlavor ornull activePass = GetActiveBattlePass()
+			if ( activePass != null )
+			{
+				expect ItemFlavor( activePass )
+				int passLevel = GetPassLevel( player, activePass, ePassType.SEASONAL, false ) + 1
+				if ( passLevel < 60 ) 
+				{
+					headerData.passReward	= RTKProgressionTray_GetNextPassRewardDataModel( ePassType.SEASONAL )
+					trayButton.rewardRight 	= RTKProgressionTrayButton_GetNextPassRewardDataModel( ePassType.SEASONAL )
+				}
+				else
+				{
+					if ( passLevel % 10 == 9 ) 
+					{
+						GladCardBadgeDisplayData gcbdd = GetBadgeData( localEHI, null, 0, GetBattlePassProgressBadge( activePass )
+						, null, false )
+						trayButton.badgeRight.tier = passLevel + 1
+						trayButton.badgeRight.badgeRuiAsset = gcbdd.ruiAsset
+
+						headerData.badgeReward.tier = passLevel + 1
+						headerData.badgeReward.badgeRuiAsset = gcbdd.ruiAsset
+					}
+					else if ( passLevel >= 100 ) 
+					{
+						GladCardBadgeDisplayData gcbdd = GetBadgeData( localEHI, null, 0, GetBattlePassProgressBadge( activePass )
+							, null, false )
+						trayButton.badgeRight.tier = 100
+						trayButton.badgeRight.badgeRuiAsset = gcbdd.ruiAsset
+						headerData.badgeReward.tier = 100
+						headerData.badgeReward.badgeRuiAsset = gcbdd.ruiAsset
+						headerData.maxProgress        = 0
+						headerData.sectionDescription = Localize( "#BATTLE_PASS_REACHED_MAX_LEVEL" )
+						headerData.goalText = ""
+					}
+				}
+			}
+
+			trayButton.currentProgress 	= headerData.currentProgress
+			trayButton.maxProgress 		= headerData.maxProgress
+			break
+		}
+
+		case eChallengeTileCategory.LEGEND_PASS:
+		{
+			ItemFlavor loudoutCharacter = LoadoutSlot_GetItemFlavor( localEHI, Loadout_Character() )
+			ItemFlavor ornull passOrNull = null
+			int maxXP = -1
+
+			page.endDate = 0
+			foreach ( ItemFlavor pass in GetAllItemFlavorsOfType( eItemType.battlepass ) )
+			{
+				ItemFlavor ornull parentItem = ItemFlavor_GetParentFlavor( pass )
+				if ( parentItem == null )
+					continue
+
+				expect ItemFlavor( parentItem )
+				if ( ItemFlavor_GetType( parentItem ) == eItemType.character )
+				{
+					if ( !PlayerPass_IsAssigned( player, pass ) )
+						continue
+
+					
+					if ( PlayerPass_GetPassLevel( player, pass ) >= PlayerPass_GetMaxLevelIndex( pass ) )
+						continue
+
+					int passXP = PlayerPass_GetProgress( player, pass )
+
+					
+					if ( parentItem == loudoutCharacter )
+					{
+						passOrNull = pass
+						break
+					}
+					else if ( passXP > maxXP )
+					{
+						passOrNull = pass
+						maxXP = passXP
+					}
+				}
+			}
+
+			if ( passOrNull != null )
+			{
+				expect ItemFlavor( passOrNull )
+				ItemFlavor parentItem = expect ItemFlavor( ItemFlavor_GetParentFlavor( passOrNull ) )
+				array<BattlePassReward> rewards = GetBattlePassV2Rewards( passOrNull, PlayerPass_GetPassLevel( player, passOrNull ), eBattlePassV2RewardTier.FREE, player, false )
+				ItemFlavor linkedChallengeCollection = expect ItemFlavor( PlayerPass_GetLinkedChallengeCollection( passOrNull ) )
+				ChallengeCollection collection = ChallengeCollection_GetByGUID( linkedChallengeCollection.guid )
+				array<ItemFlavor> challenges = ChallengeCollection_GetAllChallenges( collection )
+
+				int currentLevelProgress = PlayerPass_GetCurrentLevelProgress( player, passOrNull )
+				int currentLevel 	= PlayerPass_GetPassLevel( player, passOrNull )
+				currentLevel 		+= 1 
+				int nextLevel 		= currentLevel + 1
+				int maxTokens		= PLAYER_PASSES_XP_PER_LEVEL
+
+				headerData.sectionTitle       = Localize( "#HUD_LEVEL_N", currentLevel )
+				headerData.goalText           = Localize( "#HUD_LEVEL_N", nextLevel )
+				headerData.sectionDescription = Localize( "#LEGEND_PASS_EARN_N_N", currentLevelProgress, maxTokens )
+				headerData.currentProgress    = currentLevelProgress
+				headerData.maxProgress        = maxTokens
+				headerData.categoryTitle 	  = Localize( "#N_PASS", Localize( ItemFlavor_GetLongName( parentItem ) ) )
+				headerData.passReward		  = RTKProgressionTray_GetNextPassRewardDataModel( ePassType.LEGEND, passOrNull )
+				headerData.customCenterImage = ItemFlavor_GetIcon( parentItem )
+
+				trayButton.rewardRight = RTKProgressionTrayButton_GetNextPassRewardDataModel( ePassType.LEGEND, passOrNull )
+				trayButton.currentProgress    = currentLevelProgress
+				trayButton.maxProgress = maxTokens
+				trayButton.rewardIconLeft = headerData.customCenterImage
+
+				array<RTKChallengeItemModel> challengesModel
+				foreach ( challenge in challenges )
+				{
+					if ( !IsItemFlavorStructValid( challenge.guid, eValidation.DONT_ASSERT ) || !Challenge_IsAssigned( player, challenge ) )
+						continue
+
+					if ( challengesModel.len() == MAX_TRAY_CHALLENGES )
+						break
+
+					RTKChallengeItemModel data = RTKProgressionTray_GetChallengeData( challenge, player )
+					challengesModel.append( data )
+				}
+
+				
+				RTKProgressionTrayDeepLinkButtons button
+				button.linkType = "legendpass"
+				button.link = ItemFlavor_GetGUIDString( parentItem )
+				button.label = "#VIEW_LEGEND_PASS"
+				page.deeplinkButtons.append( button )
+
+				RTKProgressionTrayDeepLinkButtons button2
+				button2.linkType = "challenges"
+				button2.link = "legend_pass"
+				button2.label = "#VIEW_LEGEND_CHALLENGES"
+				page.deeplinkButtons.append( button2 )
+
+				
+				page.challenges = challengesModel
+			}
+			break
+		}
+	}
+
+	page.header = headerData
+	page.trayButton = trayButton
+
+	float endTime = UITime()
+
+	
+	printf( "%s: Tile='%d' (%f seconds)\n", FUNC_NAME(), tile.tileId, endTime - startTime )
+
+	return page
+}
+array<RTKProgressionTrayDeepLinkButtons> function RTKProgressionTray_GetDeepLinkButtonsFromConfig( array<ChallengeTile_DeepLinkConfig> cfg )
+{
+	array<RTKProgressionTrayDeepLinkButtons> outputs
+	foreach ( entry in cfg )
+	{
+		RTKProgressionTrayDeepLinkButtons output
+		output.label = entry.label
+		output.link = entry.link
+		output.linkType = entry.linkType
+		outputs.append( output )
+	}
+	return outputs
+}
+
+RTKBattlepassTrackItemStruct function RTKProgressionTray_GetNextPassRewardDataModel( int passType, ItemFlavor ornull pass = null )
+{
+	RTKBattlepassTrackItemStruct reward = GetNextPassRewardData( passType, pass )
+
+	return reward
+}
+
+
+void function InitProgressionTray( var menu )
+{
+	RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+
+	file.parentMenu = menu
+	file.parentPanel = Hud_GetChild( menu, "ProgressionTray" )
+	file.button = Hud_GetChild( menu, "ProgressionTrayButton" )
+
+	file.overlay = Hud_GetChild( file.parentPanel, "TrayDarkOverlay" )
+	file.tray =  Hud_GetChild( file.parentPanel, "ProgressionPanel" )
+
+
+	file.lobbyPopup.onClose = CloseProgressionTray
+	file.lobbyPopup.checkBlocksInput = ProgressionTray_CheckBlocksInput
+	file.lobbyPopup.handleInput = ProgressionTray_HandleInput
+
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.parentPanel, "ScreenFrame" ), true )
+}
+
+void function OpenProgressionTray()
+{
+	if ( RTKTutorialOverlay_IsActive() )
+		return
+
+	if ( file.isOpen )
+		return
+
+	EmitUISound( TRAY_OPEN_SOUND )
+
+	Hud_SetEnabled( file.parentPanel, true )
+	Hud_Show( file.parentPanel )
+	Hud_Show( file.overlay )
+
+	if ( HasActiveLobbyPopup() )
+		ClearActiveLobbyPopup()
+
+	SetActiveLobbyPopup( file.lobbyPopup )
+
+	rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+	RTKStruct_SetBool( trayModel, "isOpen", true )
+	thread ProgresstionTray_PlayOpenActivationAnimation()
+}
+
+void function CloseProgressionTray()
+{
+	ClearActiveLobbyPopup()
+	if ( !file.isOpen )
+		return
+
+	EmitUISound( TRAY_CLOSE_SOUND )
+
+	thread ProgresstionTray_PlayCloseActivationAnimation()
+}
+
+void function CloseProgressionTray_OnActivate( var button )
+{
+	CloseProgressionTray()
+}
+
+var function GetProgressionTray()
+{
+	return file.parentPanel
+}
+
+bool function IsProgressionTrayOpen()
+{
+	return file.isOpen
+}
+
+bool function ProgressionTray_CheckBlocksInput( int inputID )
+{
+	return true
+}
+
+bool function ProgressionTray_HandleInput( int inputID )
+{
+	int closeInputID = IsControllerModeActive() ? BUTTON_B : KEY_ESCAPE
+	if ( inputID == closeInputID )
+	{
+		CloseProgressionTray()
+	}
+	return true
+}
+
+const float MY_ANIMATE_IN_TIME = 0.15
+void function ProgresstionTray_PlayOpenActivationAnimation()
+{
+	float startTime = UITime()
+	float animateInFrac = 0
+
+	var lobbyMenu = GetMenu( "LobbyMenu" )
+	var playPanel = Hud_GetChild( lobbyMenu, "PlayPanel" )
+
+	int progressionPanelWidth = Hud_GetWidth( file.tray )
+	float scaleFactor = progressionPanelWidth/500.0
+
+	
+	foreach ( void functionref() cb in callback.Callbacks_OnProgressionTrayOpened )
+		cb()
+
+	while ( animateInFrac <= 1 )
+	{
+		float now = UITime()
+		float elapsedTime = (now - startTime)
+		animateInFrac = Tween_QuadEaseOut( Clamp( elapsedTime, 0.0, MY_ANIMATE_IN_TIME) / MY_ANIMATE_IN_TIME )
+
+		float newPositionX = (-Hud_GetWidth( file.tray ) ) * animateInFrac
+		Hud_SetX( file.button, newPositionX )
+		Hud_SetX( file.tray, newPositionX )
+		if ( animateInFrac >= 0.99 )
+		{
+			file.isOpen = true
+			return
+		}
+
+		WaitFrame()
+	}
+}
+
+const float MY_ANIMATE_IN_OUT = 0.1
+void function ProgresstionTray_PlayCloseActivationAnimation()
+{
+	float startTime = UITime()
+	float animateInFrac = 0
+	int initialPositionButton = Hud_GetX( file.button )
+	int initalPositionPanel = Hud_GetX( file.tray )
+	while ( animateInFrac <= 1 )
+	{
+		float now = UITime()
+		float elapsedTime = (now - startTime)
+		animateInFrac =  Tween_ExpoEaseIn( Clamp( elapsedTime, 0.0, MY_ANIMATE_IN_OUT) / MY_ANIMATE_IN_OUT )
+
+		Hud_SetX( file.button, initialPositionButton * (1 - animateInFrac) )
+		Hud_SetX( file.tray, initalPositionPanel * (1 - animateInFrac) )
+		if ( animateInFrac >= 0.99 )
+		{
+			Hud_SetEnabled( file.parentPanel, false )
+			Hud_Hide( file.parentPanel )
+			Hud_Hide( file.overlay )
+			rtk_struct trayModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_COMMON, "progressionTray", "RTKProgressionTrayModel" )
+			file.isOpen = false
+			RTKStruct_SetBool( trayModel, "isOpen", file.isOpen )
+
+			foreach ( void functionref() cb in callback.Callbacks_OnProgressionTrayClosed )
+				cb()
+
+			return
+		}
+		WaitFrame()
+	}
+}
+
+int function GetRewardQuantityFromRewards( ItemFlavorBag rewards )
+{
+	if ( rewards.flavors.len() > 0 )
+	{
+		ItemFlavor rewardFlav = rewards.flavors[0] 
+		if ( ItemFlavor_GetType( rewardFlav ) == eItemType.voucher )
+		{
+			int bpStars = Voucher_GetEffectBattlepassStars( rewardFlav )
+			if ( bpStars > 0 )
+			{
+				return bpStars
+			}
+			else if ( Voucher_GetEffectStatRef( rewardFlav ) != null )
+			{
+				
+				return maxint( Voucher_GetEffectStatAmount( rewardFlav ), rewards.quantities[0] )
+			}
+			else if ( rewards.quantities[0] > 1 )
+			{
+				return rewards.quantities[0]
+			}
+		}
+	}
+	return 0
+}
+
+EventShopTierData function EventShop_GetNextUnlockTierData( array<EventShopTierData> tiersData, entity player )
+{
+	EventShopTierData tierData
+	foreach ( int index, tier in tiersData )
+	{
+		if ( tier.unlockValue > EventShopStats_GetCurrencyTotal( player ) )
+		{
+			return tier
+		}
+	}
+	return tierData
+}
+
+array<RTKChallengeItemModel> function RTKProgressionTray_GetChallengeDataModel( array<ItemFlavor> challenges, entity player, int tileCategory )
+{
+	array<RTKChallengeItemModel> challengesModel
+	foreach ( challenge in challenges )
+	{
+		if ( !Challenge_IsAssigned( player, challenge ) )
+			continue
+
+		if ( challengesModel.len() == MAX_TRAY_CHALLENGES )
+			break
+
+		RTKChallengeItemModel data = RTKProgressionTray_GetChallengeData( challenge, player )
+		challengesModel.append( data )
+	}
+
+	if ( challengesModel.len() != MAX_TRAY_CHALLENGES && eChallengeTileCategory.TRACKED == tileCategory )
+	{
+		int remainingSlots = MAX_TRAY_CHALLENGES - challengesModel.len()
+		for ( int i = 0; i < remainingSlots; i++ )
+		{
+			RTKChallengeItemModel data
+			challengesModel.append( data )
+		}
+	}
+	return challengesModel
+}
+RTKChallengeItemModel function RTKProgressionTray_GetChallengeData( ItemFlavor challenge, entity player )
+{
+	RTKChallengeItemModel challengeModel
+	int activeTier = Challenge_GetActiveTier( player, challenge )
+
+	challengeModel.challengeItemType = RTKChallenges_GetChallengeListItemButtonDisplayType( challenge )
+	
+
+	bool altIsHigherProgress = false
+	if ( Challenge_IsEitherOr( challenge ) )
+	{
+		float progressFrac = Challenge_GetProgressPercent( player, challenge, activeTier )
+		if ( Challenge_IsEitherOr( challenge ) )
+		{
+			float progressFracAlt = Challenge_GetProgressPercent( player, challenge, activeTier, true )
+			if ( progressFracAlt > progressFrac )
+				altIsHigherProgress = true
+		}
+	}
+
+	ItemFlavorBag rewards = Challenge_GetRewards( challenge, activeTier )
+	challengeModel.currentProgress = Challenge_GetProgressValue( player, challenge, activeTier, altIsHigherProgress )
+	challengeModel.maxProgress = Challenge_GetGoalVal( challenge, activeTier, altIsHigherProgress )
+	challengeModel.description = Challenge_GetDescription( challenge, activeTier, altIsHigherProgress )
+	challengeModel.title = ItemFlavor_GetLongName( challenge )
+
+	challengeModel.challengeGUID = challenge.guid
+	challengeModel.isTracked = IsFavoriteChallenge( challenge )
+	challengeModel.isBRMode = Challenge_isBRChallenge( challenge, altIsHigherProgress )
+	challengeModel.isNBRMode = Challenge_isNBRChallenge( challenge, altIsHigherProgress )
+	challengeModel.currentTier = Challenge_GetCurrentTier( player, challenge )
+	challengeModel.maxTier = Challenge_GetTierCount( challenge )
+	challengeModel.isCompleted = Challenge_IsComplete( player, challenge )
+	challengeModel.isInfinite = Challenge_LastTierIsInfinite( challenge )
+
+
+		challengeModel.hasBoost = Challenge_HasBoost( challenge )
+
+
+	if ( rewards.flavors.len() > 0 )
+	{
+		ItemFlavor rewardFlav = rewards.flavors[0] 
+		challengeModel.rewardItemGUID = rewardFlav.guid
+		challengeModel.rewardIcon = ItemFlavor_GetChallengeRewardButtonImage( rewardFlav )
+		challengeModel.rewardQuantity = ItemFlavorBag_GetRewardQuantityFromRewards( rewards )
+		if ( Mythics_IsItemFlavorMythicSkin( rewardFlav ) )
+			challengeModel.mythicTier = Mythics_GetSkinTierIntForSkin( rewardFlav )
+	}
+	return challengeModel
+}
+
+void function RTKProgressionTray_CallbackDeeplinkButtons( rtk_behavior self )
+{
+	rtk_behavior ornull deeplinkButton0 = self.PropGetBehavior( "deepLinkButton0" )
+	if ( deeplinkButton0 != null )
+	{
+		expect rtk_behavior( deeplinkButton0 )
+		RTKDeepLinkButton_AddCallbackOnClick( deeplinkButton0, CloseProgressionTray )
+	}
+
+	rtk_behavior ornull deeplinkButton1 = self.PropGetBehavior( "deepLinkButton1" )
+	if ( deeplinkButton1 != null )
+	{
+		expect rtk_behavior( deeplinkButton1 )
+		RTKDeepLinkButton_AddCallbackOnClick( deeplinkButton1, CloseProgressionTray )
+	}
+}
+
+void function RTKProgresionTray_UpdateBindPath( int pageIndex, rtk_behavior self )
+{
+	string modelPath = "&common.progressionTray.pages[" + pageIndex + "]"
+	if ( RTKDataModel_HasDataModel( modelPath ) )
+	{
+		self.GetPanel().SetBindingRootPath( modelPath )
+	}
+}
+
+void function RTKProgressionTray_UpdatePaginationPips( rtk_struct trayModel )
+{
+	rtk_array pipArray = RTKStruct_GetArray( trayModel, "navPipArray" )
+	for ( int i = 0; i < RTKArray_GetCount( pipArray ); i++ )
+	{
+		rtk_struct pipStruct = RTKArray_GetStruct( pipArray, i )
+		RTKStruct_SetBool( pipStruct, "isActive", i == file.lastPage )
+	}
+}
+
+array<ItemFlavor> function RTKProgressionTray_FilterChallenges( array<ItemFlavor> challenges )
+{
+	array<ItemFlavor> needRemovedChallenges
+	foreach ( challenge in challenges )
+	{
+		if ( Challenge_ShouldExcludeFromProgressionTray( challenge ) )
+		{
+			needRemovedChallenges.append( challenge )
+		}
+	}
+	foreach ( challenge in needRemovedChallenges )
+	{
+		challenges.removebyvalue( challenge )
+	}
+	return challenges
+}
+
+bool function IsProgressionTrayEnabled()
+{
+	return GetConVarBool( "progression_tray_enabled" )
+}
+
+void function AddCallback_OnProgressionTrayClosed( void functionref() callbackFunc )
+{
+	if( !callback.Callbacks_OnProgressionTrayClosed.contains( callbackFunc ) )
+		callback.Callbacks_OnProgressionTrayClosed.append( callbackFunc )
+}
+
+void function RemoveCallback_OnProgressionTrayClosed( void functionref() callbackFunc )
+{
+	Assert( callback.Callbacks_OnProgressionTrayClosed.contains( callbackFunc ), "No function with name " + string( callbackFunc ) + " was found in Callbacks_OnProgressionTrayClosed" )
+	callback.Callbacks_OnProgressionTrayClosed.fastremovebyvalue( callbackFunc )
+}
+
+void function AddCallback_OnProgressionTrayOpened( void functionref() callbackFunc )
+{
+	if( !callback.Callbacks_OnProgressionTrayClosed.contains( callbackFunc ) )
+		callback.Callbacks_OnProgressionTrayOpened.append( callbackFunc )
+}
+
+void function RemoveCallback_OnProgressionTrayOpened( void functionref() callbackFunc )
+{
+	Assert( callback.Callbacks_OnProgressionTrayOpened.contains( callbackFunc ), "No function with name " + string( callbackFunc ) + " was found in Callbacks_OnProgressionTrayOpened" )
+	callback.Callbacks_OnProgressionTrayOpened.fastremovebyvalue( callbackFunc )
+}

@@ -1,0 +1,706 @@
+global function InitFeatureTutorialDialog
+
+global function OpenFeatureTutorialDialog
+global function FeatureHasTutorialTabs
+global function FeatureTutorial_GetGameModeName
+global function GetPlaylist_UIRules
+global function GetCurrentPlaylist_UIRules
+global function OpenPlaylistTutorialDialog
+global function FeatureTutorialDialog_GetPlaylistName
+global function UI_SetCurrentPlaylistUIRulesAsFeatureTutorial
+global function UI_CurrentPlaylistHasFeatureTutorialTabs
+
+global function UI_OpenFeatureTutorialDialog
+global function UI_CloseFeatureTutorialDialog
+global function UI_FeatureTutorialDialog_RefreshEmbeddedPanel
+global function UI_FeatureTutorialDialog_IsEmbeddedActive
+global function AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode
+global function AddCallback_UI_FeatureTutorialDialog_SetTitle
+global function AddCallback_UI_FeatureTutorialDialog_SetHeader
+global function AddCallback_UI_FeatureTutorialDialog_OnClose
+global function UI_FeatureTutorialDialog_BuildDetailsData
+
+global function RTKFeatureTutorialDialog_OnInitialize
+global function RTKFeatureTutorialDialog_OnDestroy
+
+global function FeatureTutorial_GetFeatureTabs
+global function FeatureTutorial_GetLocalizedDescription
+
+const string SFX_MENU_OPENED = "UI_Menu_Focus_Large"
+
+
+const int MAX_ARG_COUNT 	 = 6
+
+global struct RTKFeatureTutorialDialog_Properties
+{
+	rtk_panel footers
+}
+
+global struct featureTutorialTableData
+{
+	string leftString
+	string rightString
+}
+
+global struct featureTutorialData
+{
+	string          title
+	string		 	description
+	asset			image
+	array< string >	descArgs
+	array< featureTutorialTableData > tableData
+
+	
+	bool 			hasImage
+	float			columnWidth
+}
+
+global struct featureTutorialFooterData
+{
+	string             title
+	string             titleGamepad
+	void functionref( var ) callbackFunc
+}
+
+
+global struct featureTutorialTab
+{
+	string                       tabName
+	string 						 footerNote
+	array< featureTutorialData > rules
+	array< featureTutorialFooterData > footerData
+}
+
+global struct dialogFooterData
+{
+	string label
+}
+
+global struct featureTutorialTabDataModel
+{
+	string                       tabName
+	string 						 footerNote
+	array< featureTutorialData > rules
+	array< dialogFooterData > dialogFooterData
+}
+
+struct PrivateData
+{
+	void functionref( bool input ) inputChangedFunc
+	void functionref() tabChangedFunc
+	bool callbacksRegistered = false
+}
+
+struct {
+	var                         menu
+	var                         hostPanel = null
+	array< featureTutorialTab > tabs
+	var                         contentElm
+	string                      feature = ""
+
+	
+	string						playlist = ""
+
+	table < string, array< featureTutorialTab > functionref() > featureTutorialPopulateTabsFunction
+	table < string, string functionref() > featureTutorialSetTitleFunction
+	table < string, string functionref() > featureTutorialSetHeaderFunction
+	table < string, void functionref( string ) > featureTutorialOnClosed
+	bool isControllerActive
+
+	
+	bool wasClientInputOnly = false
+	bool inputWasCaptured = false
+
+} file
+
+void function InitFeatureTutorialDialog( var newMenuArg )
+{
+	var menu = newMenuArg
+	file.menu = menu
+	file.hostPanel = null
+
+	SetPopup( menu, true )
+	file.contentElm = Hud_GetChild( menu, "DialogContent" )
+}
+
+void function FeatureTutorial_EnsureCurrentPlaylistFeature()
+{
+	if ( file.feature != "" || !IsFullyConnected() )
+		return
+
+	file.playlist = GamemodeUtility_GetPlaylist()
+	file.feature = GetPlaylist_UIRules( file.playlist )
+}
+
+var function FeatureTutorial_GetHostPanel()
+{
+	if ( file.hostPanel != null )
+		return file.hostPanel
+
+	return file.menu
+}
+
+var function FeatureTutorial_GetOwnerMenu()
+{
+	var hostPanel = FeatureTutorial_GetHostPanel()
+	if ( hostPanel != null && hostPanel != file.menu )
+		return GetParentMenu( hostPanel )
+
+	return file.menu
+}
+
+bool function UI_FeatureTutorialDialog_IsEmbeddedActive()
+{
+	if ( file.hostPanel == null || file.hostPanel == file.menu )
+		return false
+
+	if ( GetActiveMenu() != FeatureTutorial_GetOwnerMenu() )
+		return false
+
+	return IsPanelActive( file.hostPanel )
+}
+
+var function FeatureTutorial_GetHostPanelFromPanel( var panel )
+{
+	if ( panel != null )
+	{
+		var parentPanel = Hud_GetParent( panel )
+		if ( parentPanel != null && Hud_HasChild( parentPanel, "TabsCommon" ) && Hud_HasChild( parentPanel, "TabsBackground" ) )
+			return parentPanel
+	}
+
+	return file.menu
+}
+
+var function FeatureTutorial_GetHostPanelFromBehavior( rtk_behavior self )
+{
+	return FeatureTutorial_GetHostPanel()
+}
+
+void function FeatureTutorial_ShowHostTabs( var hostPanel )
+{
+	if ( hostPanel == null )
+		return
+
+	if ( Hud_HasChild( hostPanel, "TabsCommon" ) )
+		Hud_Show( Hud_GetChild( hostPanel, "TabsCommon" ) )
+
+	if ( Hud_HasChild( hostPanel, "TabsBackground" ) )
+		Hud_Show( Hud_GetChild( hostPanel, "TabsBackground" ) )
+}
+
+void function RTKFeatureTutorialDialog_OnInitialize( rtk_behavior self )
+{
+	FeatureTutorial_EnsureCurrentPlaylistFeature()
+
+	var hostPanel = file.hostPanel
+	if ( hostPanel == null )
+		hostPanel = FeatureTutorial_GetHostPanelFromBehavior( self )
+	file.hostPanel = hostPanel != file.menu ? hostPanel : null
+	if ( hostPanel == file.menu )
+		file.contentElm = Hud_GetChild( file.menu, "DialogContent" )
+	else
+		file.contentElm = null
+
+	PrivateData p
+	self.Private( p )
+	file.isControllerActive = IsControllerModeActive()
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "featureTutorial", true ) )
+
+	if ( !p.callbacksRegistered )
+	{
+		SetFooterOption( self )
+		p.inputChangedFunc = void function( bool input ) : ( self ) { FeatureTutorialDialog_OnInputModeUpdated( self ) }
+		p.tabChangedFunc = void function() : ( self ) { FeatureTutorialDialog_OnTabChanged( self ) }
+		AddUICallback_InputModeChanged( p.inputChangedFunc )
+		AddCallback_OnTabChanged( p.tabChangedFunc )
+		p.callbacksRegistered = true
+	}
+
+	FeatureTutorial_RebuildCurrentDialog( self.GetPanel() )
+	if ( file.tabs.len() == 0 )
+		return
+
+	EmitUISound( SFX_MENU_OPENED )
+
+	
+	FeatureTutorial_ForceInputActive()
+}
+
+void function SetTitles()
+{
+	if ( file.contentElm == null )
+		return
+
+	string title = ""
+	if( FeatureHasTutorialTitle( file.feature ) )
+	{
+		string functionref() populateTitleFunc = file.featureTutorialSetTitleFunction[ file.feature ]
+		title = populateTitleFunc()
+	}
+
+	string header = "#ABOUT_GAMEMODE"
+	if ( FeatureHasTutorialHeader( file.feature ) )
+	{
+		string functionref() populateHeaderFunc = file.featureTutorialSetHeaderFunction[ file.feature ]
+		header = populateHeaderFunc()
+	}
+
+	RuiSetString( Hud_GetRui( file.contentElm ), "messageText", title )
+	RuiSetString( Hud_GetRui( file.contentElm ), "headerText", header )
+}
+
+void function FeatureTutorial_RebuildCurrentDialog( rtk_panel ornull rtkPanel = null )
+{
+	var hostPanel = FeatureTutorial_GetHostPanel()
+	if ( hostPanel == null )
+		return
+
+	int currentTabIndex = 0
+	TabData prevTabData = GetTabDataForPanel( hostPanel )
+	if ( prevTabData.tabDefs.len() > 0 )
+		currentTabIndex = prevTabData.activeTabIdx
+
+	file.tabs = GetFeatureTutorial()
+	if ( file.tabs.len() == 0 )
+	{
+		ClearTabs( hostPanel )
+		UpdateMenuTabs()
+
+		if ( GetActiveMenu() == file.menu )
+		{
+			Warning( format( "menu_FeatureTutorialDialog: Attempted to Open About Screen for feature %s1, but it has no Tabs, Closing", file.feature ) )
+			CloseActiveMenu()
+		}
+		return
+	}
+
+	ClearTabs( hostPanel )
+	UpdateMenuTabs()
+
+	TabData tabData = GetTabDataForPanel( hostPanel )
+	tabData.centerTabs = true
+
+	foreach( int idx, tab in file.tabs )
+	{
+		if ( tab.rules.len() > 0 )
+			AddHeaderOnlyTab( hostPanel, tab.tabName )
+	}
+
+	if ( rtkPanel != null )
+	{
+		expect rtk_panel( rtkPanel )
+		rtkPanel.SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "featureTutorial", true ) )
+	}
+
+	SetTabDefsToSeasonal( tabData )
+	SetTabBackground( tabData, Hud_GetChild( hostPanel, "TabsBackground" ), eTabBackground.STANDARD )
+	FeatureTutorial_ShowHostTabs( hostPanel )
+	SetTabNavigationEnabled( hostPanel, true )
+
+	int tabToNavigateTo = 0
+	if ( currentTabIndex >= 0 && currentTabIndex < tabData.tabDefs.len() )
+		tabToNavigateTo = currentTabIndex
+
+	if ( file.tabs.len() > 1 )
+		ActivateTab( tabData, tabToNavigateTo )
+
+	UpdateMenuTabs()
+	SetTitles()
+	SetRTKDataModel( tabToNavigateTo )
+}
+
+void function FeatureTutorialDialog_RefreshCurrentDialog( rtk_behavior self )
+{
+	FeatureTutorial_RebuildCurrentDialog( self.GetPanel() )
+}
+
+void function UI_FeatureTutorialDialog_RefreshEmbeddedPanel( var panel )
+{
+	if ( !IsFullyConnected() )
+		return
+
+	UI_SetCurrentPlaylistUIRulesAsFeatureTutorial()
+
+	var hostPanel = FeatureTutorial_GetHostPanelFromPanel( panel )
+	file.hostPanel = hostPanel != file.menu ? hostPanel : null
+	file.contentElm = hostPanel == file.menu ? Hud_GetChild( file.menu, "DialogContent" ) : null
+	file.isControllerActive = IsControllerModeActive()
+	Hud_Show( panel )
+
+	FeatureTutorial_RebuildCurrentDialog()
+}
+
+void function FeatureTutorialDialog_OnInputModeUpdated( rtk_behavior self )
+{
+	file.isControllerActive = IsControllerModeActive()
+	FeatureTutorialDialog_RefreshCurrentDialog( self )
+
+	TabData tabData = GetTabDataForPanel( FeatureTutorial_GetHostPanel() )
+	int index = tabData.activeTabIdx
+	rtk_struct featureTutorialModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "featureTutorial", "featureTutorialTabDataModel" )
+	if ( index <= file.tabs.len() - 1 )
+	{
+		rtk_array ornull footers = RTKStruct_GetArray( featureTutorialModel, "dialogFooterData" )
+		if ( footers == null )
+			return
+		expect rtk_array( footers )
+		featureTutorialTab tab = file.tabs[index]
+		foreach ( int i, featureTutorialFooterData footerData in file.tabs[index].footerData )
+		{
+			if ( i <= RTKArray_GetCount( footers ) )
+			{
+				rtk_struct footerStruct = RTKArray_GetStruct( footers, i )
+				RTKStruct_SetString( footerStruct, "label", file.isControllerActive ? footerData.titleGamepad : footerData.title )
+			}
+		}
+	}
+}
+
+void function RTKFeatureTutorialDialog_OnDestroy( rtk_behavior self )
+{
+	var hostPanel = file.hostPanel
+	if ( hostPanel == null )
+	{
+		hostPanel = FeatureTutorial_GetHostPanelFromBehavior( self )
+	}
+
+	ClearTabs( hostPanel )
+	UpdateMenuTabs()
+
+	PrivateData p
+	self.Private( p )
+	if ( p.callbacksRegistered )
+	{
+		RemoveUICallback_InputModeChanged( p.inputChangedFunc )
+		RemoveCallback_OnTabChanged( p.tabChangedFunc )
+		p.callbacksRegistered = false
+
+		if ( FeatureHasOnClosedCallback( file.feature ) )
+		{
+			void functionref( string ) OnClosedCallback = file.featureTutorialOnClosed[ file.feature ]
+			OnClosedCallback( file.feature )
+		}
+	}
+
+	file.tabs.clear()
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "featureTutorial" )
+	file.hostPanel = null
+	file.contentElm = Hud_GetChild( file.menu, "DialogContent" )
+
+	FeatureTutorial_RestoreInputPriority()
+}
+
+void function FeatureTutorialDialog_OnTabChanged( rtk_behavior self )
+{
+	if ( GetActiveMenu() != FeatureTutorial_GetOwnerMenu() )
+		return
+
+	var hostPanel = FeatureTutorial_GetHostPanel()
+	if ( hostPanel != file.menu && !IsPanelActive( hostPanel ) )
+		return
+
+	TabData tabData = GetTabDataForPanel( hostPanel )
+	SetRTKDataModel( tabData.activeTabIdx )
+}
+
+void function SetRTKDataModel( int index )
+{
+	rtk_struct featureTutorialModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "featureTutorial", "featureTutorialTabDataModel" )
+	if ( index <= file.tabs.len() - 1 )
+	{
+		featureTutorialTabDataModel dataModel
+		featureTutorialTab tab = file.tabs[index]
+		dataModel.rules = tab.rules
+		dataModel.tabName = tab.tabName
+		dataModel.footerNote = tab.footerNote
+
+		if ( tab.footerData.len() == 0 )
+		{
+			if ( !UI_FeatureTutorialDialog_IsEmbeddedActive() )
+			{
+				dialogFooterData footerModel
+				footerModel.label = "#B_BUTTON_BACK"
+				dataModel.dialogFooterData.append( footerModel )
+			}
+		}
+		else
+		{
+			foreach ( featureTutorialFooterData footerData in file.tabs[index].footerData )
+			{
+				dialogFooterData footerModel
+				footerModel.label = file.isControllerActive ? footerData.titleGamepad : footerData.title
+				dataModel.dialogFooterData.append( footerModel )
+			}
+		}
+		RTKStruct_SetValue( featureTutorialModel, dataModel )
+	}
+}
+void function SetFooterOption( rtk_behavior self )
+{
+	rtk_panel footersContainer = self.PropGetPanel( "footers" )
+	self.AutoSubscribe( footersContainer, "onChildAdded", function( rtk_panel newChild, int newChildIndex ) : ( self )
+	{
+		rtk_behavior button = newChild.FindBehaviorByTypeName( "Button" )
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newChildIndex )
+		{
+			TabData tabData = GetTabDataForPanel( FeatureTutorial_GetHostPanel() )
+			if ( tabData.activeTabIdx >= 0 && tabData.activeTabIdx <= file.tabs.len() - 1 )
+			{
+				featureTutorialTab tab = file.tabs[tabData.activeTabIdx]
+
+				if ( tab.footerData.len() == 0 )
+				{
+					UICodeCallback_NavigateBack()
+				}
+				else
+				{
+					if ( newChildIndex <= tab.footerData.len() )
+					{
+						tab.footerData[newChildIndex].callbackFunc( null )
+					}
+				}
+			}
+			else
+			{
+				UICodeCallback_NavigateBack()
+			}
+		} )
+	})
+}
+
+string function FeatureTutorial_GetGameModeName()
+{
+	return GetPlaylistVarString( file.playlist, "name", "" )
+}
+
+
+void function AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( array< featureTutorialTab > functionref() func, string ruleSet )
+{
+	file.featureTutorialPopulateTabsFunction[ ruleSet ] <- func
+}
+
+void function AddCallback_UI_FeatureTutorialDialog_SetTitle( string functionref() func, string ruleSet )
+{
+	file.featureTutorialSetTitleFunction[ ruleSet ] <- func
+}
+
+void function AddCallback_UI_FeatureTutorialDialog_SetHeader( string functionref() func, string ruleSet )
+{
+	file.featureTutorialSetHeaderFunction[ ruleSet ] <- func
+}
+
+void function AddCallback_UI_FeatureTutorialDialog_OnClose( void functionref( string ) func, string ruleSet)
+{
+	file.featureTutorialOnClosed[ ruleSet ] <- func
+}
+
+void function OpenFeatureTutorialDialog( var button, string feature = "" )
+{
+	UI_OpenFeatureTutorialDialog( feature )
+}
+
+void function OpenPlaylistTutorialDialog( string playlist = "" )
+{
+	if ( !IsFullyConnected() )
+		return
+
+	file.playlist = playlist
+	file.feature = GetPlaylist_UIRules( playlist )
+
+	if( !FeatureHasTutorialTabs( file.feature ) )
+		return
+
+	AdvanceMenu( GetMenu( "FeatureTutorialDialog" ) )
+
+}
+
+string function FeatureTutorialDialog_GetPlaylistName()
+{
+	if ( file.playlist != "" )
+		return file.playlist
+	else
+		return GamemodeUtility_GetPlaylist()
+	return ""
+}
+
+void function UI_OpenFeatureTutorialDialog( string feature = "" )
+{
+	if ( !IsFullyConnected() )
+		return
+
+	file.playlist = GamemodeUtility_GetPlaylist()
+	file.feature = feature
+
+	if( !FeatureHasTutorialTabs( file.feature ) )
+		return
+
+	AdvanceMenu( GetMenu( "FeatureTutorialDialog" ) )
+}
+
+void function UI_SetCurrentPlaylistUIRulesAsFeatureTutorial()
+{
+	if ( !IsFullyConnected() )
+		return
+
+	file.playlist = GamemodeUtility_GetPlaylist()
+	file.feature = GetPlaylist_UIRules( file.playlist )
+}
+
+
+void function UI_CloseFeatureTutorialDialog()
+{
+	if ( GetActiveMenu() == file.menu )
+	{
+		CloseActiveMenu()
+	}
+	else if ( MenuStack_Contains( file.menu ) )
+	{
+		if( IsDialog( GetActiveMenu() ) )
+		{
+			
+			CloseAllMenus()
+		}
+		else
+		{
+			
+			MenuStack_Remove( file.menu )
+		}
+	}
+}
+
+
+void function FeatureTutorialDialog_Cancel( var button )
+{
+	CloseAllToTargetMenu( file.menu )
+	CloseActiveMenu()
+}
+
+string function GetPlaylist_UIRules( string playlist )
+{
+	if( !IsFullyConnected() )
+		return ""
+	return GetPlaylistVarString( playlist, "ui_rules", "" )
+}
+
+string function GetCurrentPlaylist_UIRules()
+{
+	if( !IsFullyConnected() )
+		return ""
+
+	return GetPlaylistVarString( file.playlist, "ui_rules", "" )
+}
+
+bool function FeatureHasTutorialTabs( string feature )
+{
+	return (feature in file.featureTutorialPopulateTabsFunction)
+}
+
+bool function UI_CurrentPlaylistHasFeatureTutorialTabs()
+{
+	if ( !IsFullyConnected() )
+		return false
+
+	string playlist = GamemodeUtility_GetPlaylist()
+	if ( !GetPlaylistVarBool( playlist, "show_feature_tutorial_about_tabs", false ) )
+		return false
+
+	return FeatureHasTutorialTabs( GetPlaylist_UIRules( playlist ) )
+}
+
+bool function FeatureHasTutorialTitle( string feature )
+{
+	return (feature in file.featureTutorialSetTitleFunction)
+}
+
+bool function FeatureHasTutorialHeader( string feature )
+{
+	return (feature in file.featureTutorialSetHeaderFunction)
+}
+
+bool function FeatureHasOnClosedCallback( string feature )
+{
+	return (feature in file.featureTutorialOnClosed)
+}
+
+array< featureTutorialTab > function GetFeatureTutorial()
+{
+	array< featureTutorialTab > tabs
+
+	if ( !FeatureHasTutorialTabs( file.feature ) )
+		return tabs
+
+	array< featureTutorialTab > functionref() populateTabsFunc = file.featureTutorialPopulateTabsFunction[ file.feature ]
+	tabs = populateTabsFunc()
+	return tabs
+}
+
+featureTutorialData function UI_FeatureTutorialDialog_BuildDetailsData( string title = "", string description = "", asset image = $"", array< string > descArgs = ["", "", "", "", "", ""], table< string, string > tableData = {}, float columnWidth = 400 )
+{
+	featureTutorialData data
+	data.title = title
+	data.description = description
+	data.image = image
+	for ( int i = 0; i < MAX_ARG_COUNT; i++ )
+		data.descArgs.append( ( descArgs.len() > i ) ? descArgs[i] : "" )
+
+	foreach ( string leftString, string rightString in tableData )
+	{
+		featureTutorialTableData td
+		td.leftString = leftString
+		td.rightString = tableData[leftString]
+		data.tableData.append( td )
+	}
+
+	
+	data.hasImage = image != $""
+	data.columnWidth = columnWidth
+
+	return data
+}
+
+
+array< featureTutorialTab > function FeatureTutorial_GetFeatureTabs( string feature )
+{
+	array< featureTutorialTab > tabs
+
+	if ( !FeatureHasTutorialTabs( feature ) )
+		return tabs
+
+	array< featureTutorialTab > functionref() populateTabsFunc = file.featureTutorialPopulateTabsFunction[ feature ]
+	tabs = populateTabsFunc()
+	return tabs
+}
+
+string function FeatureTutorial_GetLocalizedDescription( featureTutorialData data )
+{
+	int descArgsCount = data.descArgs.len()
+
+	string descArg0 = descArgsCount > 0 ? data.descArgs[0] : ""
+	string descArg1 = descArgsCount > 1 ? data.descArgs[1] : ""
+	string descArg2 = descArgsCount > 2 ? data.descArgs[2] : ""
+	string descArg3 = descArgsCount > 3 ? data.descArgs[3] : ""
+	string descArg4 = descArgsCount > 4 ? data.descArgs[4] : ""
+	string descArg5 = descArgsCount > 5 ? data.descArgs[5] : ""
+
+	return Localize( data.description, descArg0, descArg1, descArg2, descArg3, descArg4, descArg5 )
+}
+
+void function FeatureTutorial_ForceInputActive()
+{
+	file.wasClientInputOnly = GetConVarBool( "input_only_allow_client" )
+	file.inputWasCaptured = true
+	if ( file.wasClientInputOnly )
+	{
+		SetConVarBool( "input_only_allow_client", false )
+	}
+}
+
+void function FeatureTutorial_RestoreInputPriority()
+{
+	if ( file.inputWasCaptured )
+	{
+		SetConVarBool( "input_only_allow_client", file.wasClientInputOnly )
+		file.inputWasCaptured = false
+	}
+}

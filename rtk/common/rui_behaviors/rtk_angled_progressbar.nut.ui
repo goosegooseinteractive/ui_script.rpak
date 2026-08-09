@@ -1,0 +1,71 @@
+global function RTKAngledProgressBar_OnInitialize
+global function RTKAngledProgressBar_OnDrawBegin
+
+global struct RTKAngledProgressBar_Properties
+{
+	asset rui = $""
+
+	float current = 0
+	float max = 0
+
+	vector progressBarColor
+	vector progressBgColor
+
+	float progressBarAlpha
+	float progressBgAlpha
+
+	float angle
+
+	bool isDoubleSided = false
+	bool isForwardLeaning = false
+	bool isDraining = false
+}
+
+void function RTKAngledProgressBar_OnInitialize( rtk_behavior self )
+{
+	self.AddPropertyCallback( "rui", UpdateRuiAsset )
+	self.AddPropertyCallback( "isDoubleSided", UpdateRuiAsset )
+
+	UpdateRuiAsset( self )
+}
+
+void function UpdateRuiAsset( rtk_behavior self )
+{
+	asset ruiAsset
+	if( self.PropGetAssetPath( "rui" ) != $"" )
+		ruiAsset = self.PropGetAssetPath( "rui" )
+	else if( self.PropGetBool( "isDoubleSided" ) && self.PropGetBool( "isForwardLeaning" ) )
+		ruiAsset = $"ui/rtk_slanted_progressbar_double_forward.rpak"
+	else if( self.PropGetBool( "isDoubleSided" ) )
+		ruiAsset = $"ui/rtk_slanted_progressbar_double.rpak"
+	else if( self.PropGetBool( "isForwardLeaning" ) )
+		ruiAsset = $"ui/rtk_slanted_progressbar_forward.rpak"
+	else
+		ruiAsset = $"ui/rtk_slanted_progressbar.rpak"
+
+	if ( ruiAsset != "" )
+		self.CreateRui( ruiAsset )
+	else if ( self.HasRui() )
+		self.DestroyRui()
+}
+
+void function RTKAngledProgressBar_OnDrawBegin( rtk_behavior self )
+{
+	if ( self.HasRui() )
+	{
+		rtk_panel panel = self.GetPanel()
+
+		self.SetRuiArgFloat( "width", panel.GetWidth() )
+		self.SetRuiArgFloat( "height", panel.GetHeight() )
+		self.SetRuiArgFloat( "current", self.PropGetFloat( "current" ) )
+		self.SetRuiArgFloat( "max", self.PropGetFloat( "max" ) )
+
+		self.SetRuiArgColorRGB( "progressBarColor", self.PropGetFloat3( "progressBarColor" ) )
+		self.SetRuiArgColorRGB( "progressBgColor", self.PropGetFloat3( "progressBgColor" ) )
+		self.SetRuiArgFloat( "progressBarAlpha", self.PropGetFloat( "progressBarAlpha" ) )
+		self.SetRuiArgFloat( "progressBgAlpha", self.PropGetFloat( "progressBgAlpha" ) )
+
+		self.SetRuiArgFloat( "angle", self.PropGetFloat( "angle" ) )
+		self.SetRuiArgBool( "isDraining", self.PropGetBool( "isDraining" ) )
+	}
+}

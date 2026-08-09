@@ -1,0 +1,68 @@
+global function StatsRegister_BuffetEventStats
+global function BuffetEventStats_GetBuffetPointsTotal
+
+const string BUFFET_EVENT_CURRENT_GUID_PVAR= "buffetevent_current_guid"
+
+void function StatsRegister_BuffetEventStats()
+{
+	Assert( GetActiveBuffetEventArray( GetUnixTimestamp() ).len() <= 1 )
+	CAREER_STATS.buffetevent_point_total = RegisterGuardedStat_Int( null, "buffetevent_point_total", CHALLENGE_GAME_MODE_NON_MODE, CHALLENGES_CALC_DEPENDS, BuffetEventPointsTotal_Guard_Set, BuffetEventPointsTotal_Guard_Get )
+}
+
+int function BuffetEventStats_GetBuffetPointsTotal( entity player, string buffetEventGUID )
+{
+	if ( GetAllBuffetEventsArray().len() > 0 )
+	{
+		return GetStat_Int( player, ResolveStatEntry( CAREER_STATS.buffetevent_point_total ) )
+	}
+
+	Assert( false, format( "Attempted to query for buffet point total for event GUID: %s, but no events were registered.", buffetEventGUID ) )
+	return 0
+}
+
+int function BuffetEventPointsTotal_Guard_Set( entity player )
+{
+
+		Assert( false, "Cannot write to a statref from CLIENT or UI VMs; can only be done on SERVER.")
+		return eGuardedStatStateForNextOperation.ERROR
+
+
+
+
+}
+
+int function BuffetEventPointsTotal_Guard_Get( entity player )
+{
+	return _BuffetEventPointsTotal_Guard_Shared( player, false )
+}
+
+int function _BuffetEventPointsTotal_Guard_Shared( entity player, bool isSet )
+{
+
+		Assert( !isSet )
+
+
+	array<ItemFlavor> activeEvents = GetActiveBuffetEventArray( GetUnixTimestamp() )
+	Assert( activeEvents.len() <= 1 )
+	if ( activeEvents.len() == 0 )
+	{
+		return eGuardedStatStateForNextOperation.RESET
+	}
+
+	int currentBuffetEventGUID = ItemFlavor_GetGUID( activeEvents[0] )
+	int lastBuffetEventGUID = player.GetPersistentVarAsInt( format( "%s.%s", DYNAMIC_CHALLENGE_DATA_PERSISTENCE_STRUCT, BUFFET_EVENT_CURRENT_GUID_PVAR ) )
+
+	if ( currentBuffetEventGUID != lastBuffetEventGUID )
+	{
+
+
+
+
+
+
+
+		return eGuardedStatStateForNextOperation.RESET
+	}
+
+	return eGuardedStatStateForNextOperation.OK
+}

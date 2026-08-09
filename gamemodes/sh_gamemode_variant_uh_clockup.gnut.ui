@@ -1,0 +1,43 @@
+
+
+
+
+global function GamemodeVariant_UH_ClockUp_IsClockUpEnabled
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function GamemodeVariant_UH_ClockUp_IsClockUpEnabled()
+{
+	return GetCurrentPlaylistVarBool( "gamemodevariant_uh_clockup_enabled", false )
+}
+
+
+
+
+
+
+
+
+
+
+

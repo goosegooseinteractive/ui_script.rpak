@@ -1,0 +1,68 @@
+
+
+global function Arenas_PopulateAboutText
+
+
+array< featureTutorialTab > function Arenas_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+	string playlistUiRules = GetCurrentPlaylist_UIRules()
+
+	if ( playlistUiRules != GAMEMODE_ARENAS )
+		return tabs
+
+	featureTutorialTab tab1
+	featureTutorialTab tab2
+
+	array< featureTutorialData > tab1Rules
+	array< featureTutorialData > tab2Rules
+
+	string currentPlaylist = GamemodeUtility_GetPlaylist()
+	bool isUsingOriginalTunings = GetPlaylistVarBool( currentPlaylist, "arenas_is_using_original_tunings", false )
+	bool isWinBy2 = GetPlaylistVarBool( currentPlaylist, "rounds_win_by_2_enabled", false )
+
+	
+	tab1.tabName = "#GAMEMODE_RULES_OVERVIEW_TAB_NAME"
+	
+	if ( isUsingOriginalTunings )
+	{
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ORIGINAL_ABOUT_HEADER_1", "#ARENAS_ORIGINAL_ABOUT_BODY_1", $"rui/hud/gametype_icons/arenas/about_original_arenas" ) )
+	}
+	else
+	{
+		int maxPlayerPerTeam = GetPlaylistVarInt( currentPlaylist, "max_team_size", 3 )
+		string t1Body1Text = Localize( "#ARENAS_ABOUT_BODY_1", string( maxPlayerPerTeam ) )
+		tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_HEADER_1", t1Body1Text, $"rui/hud/gametype_icons/arenas/about_welcome_arenas" ) )
+	}
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_HEADER_2", "#ARENAS_ABOUT_BODY_2", $"rui/hud/gametype_icons/arenas/about_rounds_arenas" ) )
+	int roundsToWin = isWinBy2 ? GetPlaylistVarInt( currentPlaylist, "rounds_win_by_2_min_score", 3 ) : GetPlaylistVarInt( currentPlaylist, "roundscorelimit", 3 )
+	int maxTies = GetPlaylistVarInt( currentPlaylist, "rounds_win_by_2_max_ties", 3 )
+	string t1Body3Text = Localize( "#ARENAS_ABOUT_BODY_3_OLD_WIN", string( roundsToWin ), string( maxTies ) )
+	if ( !isWinBy2 )
+	{
+		t1Body3Text = isUsingOriginalTunings ? Localize( "#ARENAS_ABOUT_BODY_3_ORIGINAL_NEW_WIN", string( roundsToWin ) ) : Localize( "#ARENAS_ABOUT_BODY_3_NEW_WIN", string( roundsToWin ) )
+	}
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_HEADER_3", t1Body3Text, $"rui/hud/gametype_icons/arenas/about_victory_arenas" ) )
+	tab1.rules = tab1Rules
+
+	
+	tab2.tabName = "#ARENAS_TAB2_HEADER"
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_T2_HEADER_1", "#ARENAS_ABOUT_T2_BODY_1", $"rui/hud/gametype_icons/arenas/about_currency_arenas" ) )
+	string weaponBanText = ""
+	if ( GetPlaylistVarBool( currentPlaylist, "ban_weapon_on_use", false ) )
+	{
+		weaponBanText = GetPlaylistVarBool( currentPlaylist, "ban_weapon_on_use_permanently", true ) ? Localize( "#ARENAS_ABOUT_WEAPON_BAN_PER_MATCH" ) : Localize( "#ARENAS_ABOUT_WEAPON_BAN_PER_ROUND" )
+	}
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_T2_HEADER_2", Localize( "#ARENAS_ABOUT_T2_BODY_2", weaponBanText ), $"rui/hud/gametype_icons/arenas/about_buy_arenas" ) )
+	bool areLootbinsEnabled = GetPlaylistVarBool( currentPlaylist, "arenas_lootbins_enabled", true )
+	string lootbinText = areLootbinsEnabled ? Localize("#ARENAS_ABOUT_LOOTBINS") : ""
+	tab2Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ARENAS_ABOUT_T2_HEADER_3", Localize( "#ARENAS_ABOUT_T2_BODY_3", lootbinText ), $"rui/hud/gametype_icons/arenas/about_map_arenas" ) )
+	tab2.rules = tab2Rules
+
+	tabs.append( tab1 )
+	tabs.append( tab2 )
+
+	return tabs
+}
+
+      

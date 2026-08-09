@@ -1,0 +1,125 @@
+global function InitRankedInfoMenu
+global function OpenRankedInfoPage
+global function RankedInfo_SetInitialTab
+global function RankedInfo_IsTabVisible
+
+struct
+{
+	var menu
+	string previousMenuName
+	bool tabsInitialized
+} file
+
+void function InitRankedInfoMenu( var menu )
+{
+	file.menu = menu
+	SetDialog( menu, false )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, RankedInfo_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, RankedInfo_OnShow )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, RankedInfo_OnClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, RankedInfo_OnNavigateBack )
+}
+
+void function OpenRankedInfoPage( var button )
+{
+	if ( GetActiveMenu() == file.menu )
+		return
+
+	file.previousMenuName = GetActiveMenuName()
+	if ( file.previousMenuName == "GamemodeSelectDialog" )
+	{
+		 CloseActiveMenu()
+	}
+	AdvanceMenu( file.menu )
+}
+
+void function RankedInfo_OnOpen()
+{
+	CupBakeryAssetData ornull cupData = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+	Cups_SetCurrentMenuCup( cupData != null ? expect CupBakeryAssetData( cupData ).cupID : INVALID_CUPID )
+
+	SetTabs()
+
+
+		RankedInfo_CacheRumbleLeaderboardData()
+
+}
+
+void function RankedInfo_OnShow()
+{
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( file.menu, "WeekTimer" ) )
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+	RunClientScript( "UIToClient_StopBattlePassScene" )
+}
+
+void function RankedInfo_OnClose()
+{
+	ClearTabs( file.menu )
+	Cups_SetCurrentMenuCup( INVALID_CUPID )
+}
+
+void function RankedInfo_OnNavigateBack()
+{
+	if ( file.previousMenuName == "GamemodeSelectDialog" )
+	{
+		GamemodeSelect_JumpToPublicMatches( null )
+	}
+	else
+	{
+		CloseActiveMenu()
+	}
+}
+
+bool function RankedInfo_IsTabVisible( string tabName )
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+	return Tab_GetTabIndexByBodyName( tabData, tabName ) != -1
+}
+
+void function RankedInfo_SetInitialTab( string tabName )
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+	ActivateTab( tabData, Tab_GetTabIndexByBodyName( tabData, tabName ) )
+}
+
+
+void function RankedInfo_CacheRumbleLeaderboardData()
+{
+	CupBakeryAssetData ornull cupData = RankedEvent_GetRevealedCup( GetLocalClientPlayer() )
+	if ( cupData == null )
+		return
+
+	expect CupBakeryAssetData( cupData )
+
+	Cups_GetCupLeaderboardData( cupData.cupID, 1, 1 )
+}
+
+
+void function SetTabs()
+{
+
+		if ( RankedEvent_GetRevealedCup( GetLocalClientPlayer() ) != null && RankedEvent_GetRumbleRankedState() != eRankedRumbleState.CROSSPLAY_DISABLED )
+		{
+			TabDef overviewTab = AddTab( file.menu, Hud_GetChild( file.menu, "OverviewPanel" ), "#LADDER_TAB_OVERVIEW" )
+			SetTabBaseWidth( overviewTab, 300 )
+
+			TabDef leaderboardTab = AddTab( file.menu, Hud_GetChild( file.menu, "LeaderboardPanel" ), "#LADDER_TAB_LEADERBOARD" )
+			SetTabBaseWidth( leaderboardTab, 300 )
+
+			TabDef topMatchesTab = AddTab( file.menu, Hud_GetChild( file.menu, "TopMatchesPanel" ), "#LADDER_TAB_TOP_MATCHES" )
+			SetTabBaseWidth( topMatchesTab, 300 )
+		}
+
+
+	TabDef rankedInfoTab = AddTab( file.menu, Hud_GetChild( file.menu, "RankedInfoPanel" ), "#RANKED_TAB_INFO" )
+	SetTabBaseWidth( rankedInfoTab, 300 )
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	tabData.centerTabs = true
+	tabData.forcePrimaryNav = true
+	tabData.activeTabIdx = 0
+	SetTabDefsToSeasonal( tabData )
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.STANDARD )
+	ActivateTab( tabData, tabData.activeTabIdx )
+}

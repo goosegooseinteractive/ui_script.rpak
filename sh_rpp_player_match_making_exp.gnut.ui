@@ -1,0 +1,340 @@
+
+global function RPPMatchMaking_IsEnabled
+
+global function RPPMatchMaking_IsInMatchMakingFlow
+global function RPPMatchMaking_IsPreInitializationPlayer
+global function RPPMatchMaking_GetMatchMakingStage
+
+
+
+global function RPPMatchMaking_SetMatchMakingStage
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function RPPMatchMaking_DialogFlowCheck
+global function RPPMatchMaking_DialogFlow
+global function RPPMatchMaking_IsGameModeLocked
+
+global function RPPMatchMaking_GetLobbyPlaylistRecommendation
+global function RPPMatchMaking_GetLobbyMessage
+
+global function RPPMatchMaking_PartyMemberJoinedOrLeft
+
+
+const string RPP_MATCH_MAKING_FLOW_CONVAR_KILLSWITCH = "rpp_match_making_enabled"
+
+
+
+
+
+global enum eRPPMatchMakingStage
+{
+	PRE_RPP_PLAYER = 0,
+	BOT_MATCH = 1,
+	WE_ARE_SO_BACK = 2,
+	COUNT = 3,
+}
+
+global enum eRPPMatchMakingExperiment
+{
+	NONE = 0,
+	SINGLE_BOT_MATCH = 1,
+}
+
+global enum eRPPMatchMakingExperimentInitializationStage
+{
+	NONE = 0,
+	PRE_INITIALIZATION = 1,
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function RPPMatchMaking_GetMatchMakingStage( entity player )
+{
+#if UI_AUTOMATION
+		
+		if ( UIAutomation_IsAutomateQueueForPlaylists() )
+		{
+			return eRPPMatchMakingStage.WE_ARE_SO_BACK
+		}
+#endif
+
+	if ( !RPPMatchMaking_IsEnabled( player ) )
+	{
+		return eRPPMatchMakingStage.PRE_RPP_PLAYER
+	}
+
+	if ( RPPMatchMaking_IsPreInitializationPlayer( player ) )
+	{
+		return eRPPMatchMakingStage.BOT_MATCH
+	}
+
+	return player.GetPersistentVarAsInt( "activeRPXMatchMakingStage" )
+}
+
+
+
+void function RPPMatchMaking_SetMatchMakingStage( entity player, int stage )
+{
+
+		if ( !IsFullyConnected() )
+			return
+
+		Remote_ServerCallFunction( "UICallback_RPPMatchMaking_SetMatchMakingStage", stage )
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+bool function RPPMatchMaking_IsInMatchMakingFlow( entity player )
+{
+	if ( !RPPMatchMaking_IsEnabled( player ) )
+	{
+		return false
+	}
+
+	if ( RPPMatchMaking_IsPreInitializationPlayer( player ) )
+	{
+		return true
+	}
+
+	int flowStage = RPPMatchMaking_GetMatchMakingStage( player )
+	return flowStage > eRPPMatchMakingStage.PRE_RPP_PLAYER && flowStage < eRPPMatchMakingStage.WE_ARE_SO_BACK
+}
+
+
+
+bool function RPPMatchMaking_IsEnabled( entity player )
+{
+	if ( RPPMatchMaking_IsConVarDisabled() )
+	{
+		return false
+	}
+
+
+		if ( !IsFullyConnected() )
+			return true
+
+
+	return true
+}
+
+
+
+bool function RPPMatchMaking_IsConVarDisabled()
+{
+	if ( !GetConVarBool( RPP_MATCH_MAKING_FLOW_CONVAR_KILLSWITCH ) || GetConVarBool( "orientation_matches_disabled" ) )
+	{
+		return true
+	}
+
+
+
+
+
+
+
+#if DEV
+		if ( GetConVarBool( "skip_training" ) )
+		{
+			return true
+		}
+#endif
+
+
+	return false
+}
+
+
+
+bool function RPPMatchMaking_IsPreInitializationPlayer( entity player )
+{
+	return player.GetPersistentVar( "preRPXMatchMakingInitPlayer" ) == eRPPMatchMakingExperimentInitializationStage.PRE_INITIALIZATION
+}
+
+
+
+bool function RPPMatchMaking_DialogFlowCheck( entity player )
+{
+	if ( RPPMatchMaking_IsInMatchMakingFlow( player ) )
+	{
+		return true
+	}
+
+	if ( RPPMatchMaking_IsConVarDisabled() && RPPMatchMaking_GetMatchMakingStage( player ) != eRPPMatchMakingStage.WE_ARE_SO_BACK )
+	{
+		RPPMatchMaking_SetMatchMakingStage( player, eRPPMatchMakingStage.WE_ARE_SO_BACK )
+	}
+	return false
+}
+
+
+
+bool function RPPMatchMaking_DialogFlow()
+{
+	int RPPMMStage = RPPMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+
+	switch ( RPPMMStage )
+	{
+		case eRPPMatchMakingStage.BOT_MATCH:
+			table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in slotToPlaylistNameMap )
+			{
+				LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[TRIOS_SLOT] )
+				return true
+			}
+			break
+		default:
+			break
+	}
+
+	return false
+}
+
+
+
+bool function RPPMatchMaking_IsSingleBotMatchPlayer( entity player )
+{
+	return Kepler_IsPlayerInVariant( player, eKeplerScenario.RPP_MATCH_MAKING_29_0, "treatment-a" )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function RPPMatchMaking_IsGameModeLocked()
+{
+	int rppMatchMakingStage = RPPMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+	if ( rppMatchMakingStage == eRPPMatchMakingStage.BOT_MATCH )
+	{
+		return true
+	}
+
+	return false
+}
+
+
+
+string function RPPMatchMaking_GetLobbyPlaylistRecommendation()
+{
+	int rppMMStage = RPPMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+
+	switch ( rppMMStage )
+	{
+		case eRPPMatchMakingStage.BOT_MATCH:
+		{
+			table<string, string> playlists = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in playlists )
+				return playlists[ TRIOS_SLOT ]
+			else
+				return ""
+		}
+		default:
+			return ""
+	}
+
+	unreachable
+}
+
+
+
+RTKFTUEMessageModel function RPPMatchMaking_GetLobbyMessage()
+{
+	entity player = GetLocalClientPlayer()
+
+	RTKFTUEMessageModel model
+	int rppMMStage = RPPMatchMaking_GetMatchMakingStage( player )
+	bool isPreInitialization = RPPMatchMaking_IsPreInitializationPlayer( player )
+
+	if ( rppMMStage == eRPPMatchMakingStage.BOT_MATCH && !isPreInitialization )
+	{
+		model.title = "#RPPMM_EXPERIMENT_LOBBY_RECOMMENDATION_TITLE_A"
+		model.description = "#RPPMM_EXPERIMENT_LOBBY_RECOMMENDATION_DESCRIPTION_A"
+	}
+	else
+	{
+		model.title = ""
+		model.description = ""
+	}
+
+	return model
+}
+
+
+
+void function RPPMatchMaking_PartyMemberJoinedOrLeft()
+{
+	RPPMatchMaking_SetMatchMakingStage( GetLocalClientPlayer(), eRPPMatchMakingStage.WE_ARE_SO_BACK )
+}
+

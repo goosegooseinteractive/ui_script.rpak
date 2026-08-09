@@ -1,0 +1,116 @@
+global function RTKArmoryCharacterGarmentsScreen_OnInitialize
+global function RTKArmoryCharacterGarmentsScreen_OnDestroy
+
+global struct RTKArmoryCharacterGarmentsScreen_Properties
+{
+	rtk_behavior cosmeticEquipScreenBehavior
+}
+
+struct PrivateData
+{
+	void functionref( var ) callbackOnTopLevelCustomizeContextChanged
+}
+
+const string GARMENTS_PANEL = "RTKGarmentsPanel"
+
+void function RTKArmoryCharacterGarmentsScreen_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	
+	RunClientScript( "RefreshPresentationType" )
+	RunClientScript( "EnableModelTurn" )
+	RunClientScript( "UIToClient_StartCharacterModelBaseFX", true )
+
+	rtk_behavior cosmeticEquip = self.PropGetBehavior( "cosmeticEquipScreenBehavior" )
+
+	
+	RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		cosmeticEquip,
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemEquip( cosmeticEquip, guid ) },
+		void function( int guid ) : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericOnItemHighlight( cosmeticEquip, guid ) },
+		null,
+		void function( int guid ) : ( cosmeticEquip ) { RTKArmoryCharacterGarmentsScreen_OnItemTryUnlock( cosmeticEquip, guid ) }
+	)
+
+	
+	RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( cosmeticEquip, void function( rtk_behavior button, int keycode, int prevState ) : ( cosmeticEquip ) {
+		RTKArmoryCharacterGarmentsScreen_OnItemTryUnlock( cosmeticEquip, RTKCosmeticEquipScreen_GetPreviewGUID( cosmeticEquip ) )
+	} )
+
+	CosmeticEquipScreenInitSettings initSettings
+	initSettings.loadoutEntries = [ Loadout_DigitalGarment() ]
+	initSettings.sortFuncNames = RTKCosmeticEquip_GetDefaultSortFuncNames()
+	initSettings.getItemFlavListFuncOverride = DigitalGarments_GetSortedGarmentsList
+	initSettings.ignoreDefaultItemForOwnedCount = true
+	initSettings.shouldIgnoreOtherSlotsForOwnedCount = true
+
+	RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+	RTKCosmeticEquipScreen_OverrideGRXCallbacks( cosmeticEquip, void function() : ( cosmeticEquip ) { RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip ) } )
+
+	var panel = GetPanel( GARMENTS_PANEL )
+	RTKCosmeticEquipScreen_AddBackFooterOptions( cosmeticEquip, panel )
+	RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( cosmeticEquip, panel )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK_LEGEND", "#X_BUTTON_UNLOCK_LEGEND", null, bool function () : ( cosmeticEquip ) { return GarmentsPanel_IsFocusedItemParentItemLocked( cosmeticEquip ) } )
+	AddPanelFooterOption( panel, LEFT, -1, true, "#RANKED_GARMENT_MORE_INFO", "#RANKED_GARMENT_MORE_INFO", void function ( var panel ) : ( ) {
+		OpenRankedInfoPage( null )
+		RankedInfo_SetInitialTab( "RankedInfoPanel" )
+	} )
+	RTKCosmeticEquipScreen_AddZoomFooterOption( cosmeticEquip, panel )
+	UpdateFooterOptions()
+
+	p.callbackOnTopLevelCustomizeContextChanged = void function( var panel ) : ( cosmeticEquip, initSettings )
+	{
+		RTKCosmeticEquipScreen_GenericInitItemList( cosmeticEquip, initSettings )
+	}
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+}
+
+void function RTKArmoryCharacterGarmentsScreen_OnDestroy( rtk_behavior self )
+{
+	var panel = GetPanel( GARMENTS_PANEL )
+
+	PrivateData p
+	self.Private( p )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, p.callbackOnTopLevelCustomizeContextChanged )
+	p.callbackOnTopLevelCustomizeContextChanged = null
+
+	ClearPanelFooterOptions( panel )
+}
+
+bool function GarmentsPanel_IsFocusedItemParentItemLocked( rtk_behavior cosmeticEquip )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ItemFlavor parentFlav = GetTopLevelCustomizeContext()
+
+	return !Character_IsUnlockableInNewPlayerPass( parentFlav ) && !Character_IsCharacterOwnedByPlayer( parentFlav, null )
+}
+
+void function RTKArmoryCharacterGarmentsScreen_OnItemPreview( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	RTKCosmeticEquipScreen_GenericOnItemPreview( cosmeticEquip, flavGUID )
+}
+
+void function RTKArmoryCharacterGarmentsScreen_OnItemTryUnlock( rtk_behavior cosmeticEquip, int flavGUID )
+{
+	ItemFlavor character = GetTopLevelCustomizeContext()
+
+	if ( Character_IsCharacterOwnedByPlayer( character, null ) )
+		return
+
+	PurchaseDialogConfig pdc
+	pdc.flav = character
+	pdc.quantity = 1
+	pdc.markAsNew = false
+	pdc.onPurchaseResultCallback = void function( bool wasPurchaseSuccessful ) : ( cosmeticEquip ) {
+		RTKCosmeticEquipScreen_GenericRefreshItemList( cosmeticEquip )
+	}
+
+	PurchaseDialog( pdc )
+}

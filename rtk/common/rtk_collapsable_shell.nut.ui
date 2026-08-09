@@ -1,0 +1,47 @@
+global function RTKCollapsableShell_OnInitialize
+global function RTKCollapsableShell_AddOnCategoryButtonListener
+
+global struct RTKCollapsableShell_Properties
+{
+	rtk_panel categoryPanel
+	rtk_panel contentPanel
+
+	void functionref( rtk_panel collapsableShellContentPanel, bool isOpen ) onCategoryButtonPressed = null
+}
+
+int function RTKCollapsableShell_AddOnCategoryButtonListener( rtk_behavior self, void functionref( rtk_panel, bool ) handler )
+{
+	return self.AddEventListener( "onCategoryButtonPressed", handler )
+}
+
+void function RTKCollapsableShell_OnInitialize( rtk_behavior self )
+{
+	rtk_panel categoryPanel = self.PropGetPanel( "categoryPanel" )
+	rtk_panel contentPanel = self.PropGetPanel( "contentPanel" )
+
+	rtk_behavior ornull categoryButton = categoryPanel.FindBehaviorInDescendantsByTypeName( "Button" )
+
+	if ( categoryButton != null )
+	{
+		expect rtk_behavior( categoryButton )
+		self.AutoSubscribe( categoryButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, categoryPanel, contentPanel ) {
+			if ( categoryPanel.IsVisible() )
+			{
+				RTKCollapsableShell_ToggleContent( self, contentPanel )
+			}
+		} )
+	}
+}
+
+void function RTKCollapsableShell_ToggleContent( rtk_behavior self, rtk_panel contentPanel )
+{
+	if ( contentPanel.GetChildCount() > 0 )
+	{
+		bool isOpen = !RTKStruct_GetBool( contentPanel.GetProperties(), "visible" )
+
+		contentPanel.SetVisible( isOpen )
+		contentPanel.SetActive( isOpen )
+
+		self.InvokeEvent( "onCategoryButtonPressed", contentPanel, isOpen )
+	}
+}

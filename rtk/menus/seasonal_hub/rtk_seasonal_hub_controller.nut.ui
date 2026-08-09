@@ -1,0 +1,80 @@
+global function InitAccountHub
+global function InitAccountTrackPanel
+global function AccountTrack_OpenInfoDialog
+global function AccountTrack_PopulateAboutText
+
+global const string FEATURE_ACCOUNT_PASS_TUTORIAL = "account_pass"
+
+struct {
+	var    menu
+
+	ItemFlavor ornull currentSeason
+	ItemFlavor ornull currentAccountPass
+	int expirationTimestamp
+} file
+
+void function InitAccountHub( var newMenuArg )
+{
+	var menu = newMenuArg
+	file.menu = menu
+
+	
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, RTKAccountHubModal_OnOpen )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, RTKAccountHubModal_OnClose )
+}
+
+void function InitAccountTrackPanel( var panel )
+{
+	AddCallback_UI_FeatureTutorialDialog_PopulateTabsForMode( AccountTrack_PopulateAboutText, FEATURE_ACCOUNT_PASS_TUTORIAL )
+	AddCallback_UI_FeatureTutorialDialog_SetTitle( AccountTrack_PopulateAboutTitle, FEATURE_ACCOUNT_PASS_TUTORIAL )
+
+	SetPanelTabTitle( panel, "#STATS_CAREER_REPUTATION" )
+	RTKBattlepass_InitializeMenuPanel( panel, ePassType.ACCOUNT )
+}
+
+void function RTKAccountHubModal_OnOpen()
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+	tabData.centerTabs = true
+	tabData.useGRXData = true
+	SetTabDefsToSeasonal( tabData )
+	SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.CAPSTONE )
+
+	ActivateTab( tabData, 0 )
+	UpdateMenuTabs()
+}
+
+void function RTKAccountHubModal_OnClose()
+{
+	ClearTabs( file.menu )
+}
+
+void function AccountTrack_OpenInfoDialog( var button )
+{
+	UI_OpenFeatureTutorialDialog( FEATURE_ACCOUNT_PASS_TUTORIAL )
+	Remote_ServerCallFunction( "ClientCallback_MarkAccountPassInfoDialogAsSeen" )
+}
+
+string function AccountTrack_PopulateAboutTitle()
+{
+	return "#ACCOUNT_PASS_ABOUT_TITLE"
+}
+
+array< featureTutorialTab > function AccountTrack_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#ACCOUNT_PASS_TUTORIAL_TAB_1"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ACCOUNT_PASS_TUTORIAL_HEADER_1", "#ACCOUNT_PASS_TUTORIAL_DESC_1", $"rui/menu/challenges/about_images/about_progression_01" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ACCOUNT_PASS_TUTORIAL_HEADER_2", "#ACCOUNT_PASS_TUTORIAL_DESC_2", $"rui/menu/challenges/about_images/about_progression_02" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#ACCOUNT_PASS_TUTORIAL_HEADER_3", "#ACCOUNT_PASS_TUTORIAL_DESC_3", $"rui/menu/challenges/about_images/about_progression_03" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	return tabs
+}

@@ -1,0 +1,1064 @@
+global function InitLobbyMenu
+
+global function MenuLobbyLevelInit
+
+global function Lobby_IsInputBlocked
+global function SetActiveLobbyPopup
+global function ClearActiveLobbyPopup
+global function HasActiveLobbyPopup
+global function PostGameFlow
+global function LobbyMenu_OpenDefaultTab
+global function LobbyMenu_IsDefaultTabOpen
+
+global function Lobby_UpdateSelectedPlaylistUsingUISlot
+global function GetLobbyMenuOpenedTime
+global function UpdateEventTabVisibility
+global function UpdateSeasonTabVisibility
+
+
+global function Lobby_EnableMinimapCoordsOnConnect
+
+
+global function Lobby_AdjustScreenFrameToMaxSize
+global function Lobby_AdjustBlackBarsFrameToMaxSize
+global const int LOBBY_MENU_MAX_WIDTH = 2700
+global const int LOBBY_STORE_MENU_MAX_WIDTH = 2224
+global const int CHAR_SELECT_MENU_MAX_WIDTH = 2600
+
+
+global const int LOBBY_PLAY_TAB_WIDTH = 145
+global const int LOBBY_EVENT_TAB_WIDTH = 170
+global const int LOBBY_SEASONAL_TAB_WIDTH = 235
+
+global struct LobbyPopup
+{
+	bool functionref( int inputID ) checkBlocksInput
+	bool functionref( int inputID ) handleInput
+	void functionref()              onClose
+}
+
+global struct RTKLobbyModelStruct
+{
+	int inGameFriendCount
+	string inGameFriendLocKey
+}
+
+struct
+{
+	var  menu
+	bool updatingLobbyUI = false
+	bool inputsRegistered = false
+	bool tabsInitialized = false
+
+	var socialButtonGlobal
+	var progressionTrayButton
+	var accountHub
+	var gameMenuButton
+	var bonusXp
+	var socialEventPopup
+	var serverDebugID
+	var dx12Text
+	var gameModeSelectButton
+
+	int nextRotationTime = -1
+
+	bool firstSessionEntry = true
+	string lastPlayedAudioPlaylist = ""
+
+	LobbyPopup ornull  activeLobbyPopup = null
+	bool lobbyPopupInputBlocked = false
+
+	TabDef& playPanelTabDef
+	TabDef& eventsPanelTabDef
+	TabDef& seasonalPanelTabDef
+
+	Newness_Query ornull armoryQuery
+
+	float lobbyMenuOpenTime
+} file
+
+
+void function Lobby_EnableMinimapCoordsOnConnect( string name )
+{
+	int forceWatermarkInLobby = GetCurrentPlaylistVarInt( "force_watermark_in_lobby", 0 ) 
+	int forceHiddenWatermarkInLobby = GetCurrentPlaylistVarInt( "force_hidden_watermark_in_lobby", 0 ) 
+	if ( (forceWatermarkInLobby == 0 && IsTakeHomeBuild()) || forceWatermarkInLobby == 1 )
+	{
+		var minimapCoords = Hud_GetChild( file.menu, "MinimapCoords" )
+		Hud_SetVisible( minimapCoords, true )
+		Hud_SetEnabled( minimapCoords, true )
+
+		var minimapCoordsRui = Hud_GetRui( minimapCoords )
+		InitializeMinimapCoords( minimapCoordsRui, true )
+		RuiSetString( minimapCoordsRui, "name", name )
+
+		float watermarkTextScale = GetCurrentPlaylistVarFloat( "watermark_text_scale", 0.5 )
+		float watermarkAlphaScale = GetCurrentPlaylistVarFloat( "watermark_alpha_scale", 0.2 )
+		RuiSetFloat( minimapCoordsRui, "watermarkTextScale", watermarkTextScale )
+		RuiSetFloat( minimapCoordsRui, "watermarkAlphaScale", watermarkAlphaScale )
+	}
+	if ( (forceHiddenWatermarkInLobby == 0 && IsTakeHomeBuild()) || forceHiddenWatermarkInLobby == 1 )
+	{
+		var minimapID = Hud_GetChild( file.menu, "MinimapID" )
+		Hud_SetVisible( minimapID, true )
+		Hud_SetEnabled( minimapID, true )
+
+		var minimapIDRui = Hud_GetRui( minimapID )
+		RuiSetString( minimapIDRui, "name", GetPlayerName() )
+		RuiSetString( minimapIDRui, "uid", GetUIDHex() )
+	}
+}
+
+void function Lobby_RefreshMinimapCoords()
+{
+	if ( IsLobby() && IsFullyConnected() )
+	{
+		Lobby_EnableMinimapCoordsOnConnect( GetPlayerName() )
+	}
+}
+
+
+void function InitLobbyMenu( var menu )
+{
+	file.menu = menu
+
+	RegisterSignal( "LobbyMenuUpdate" )
+
+	RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "lobby", "RTKLobbyModelStruct" )
+
+
+	AddUICallback_OnResolutionChanged( Lobby_RefreshMinimapCoords )
+
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_OPEN, OnLobbyMenu_Open )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, OnLobbyMenu_Close )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, OnLobbyMenu_Show )
+	AddMenuEventHandler( menu, eUIEvent.MENU_HIDE, OnLobbyMenu_Hide )
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_GET_TOP_LEVEL, OnLobbyMenu_GetTopLevel )
+	
+
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, OnLobbyMenu_NavigateBack )
+
+	AddMenuVarChangeHandler( "isFullyConnected", UpdateFooterOptions )
+	AddMenuVarChangeHandler( "isPartyLeader", UpdateFooterOptions )
+
+
+
+
+
+
+		AddMenuVarChangeHandler( "ORIGIN_isEnabled", UpdateFooterOptions )
+		AddMenuVarChangeHandler( "ORIGIN_isJoinable", UpdateFooterOptions )
+
+
+
+
+		var accountHub = Hud_GetChild( menu, "SeasonalHubButton" )
+		HudElem_SetRuiArg( accountHub, "borderImage", $"rui/menu/common/nav_button_right" )
+		HudElem_SetRuiArg( accountHub, "focusedBorderImage", $"rui/menu/common/nav_button_right_hover_outline" )
+		HudElem_SetRuiArg( accountHub, "borderGlowImage", $"rui/menu/common/nav_button_right_hover" )
+		HudElem_SetRuiArg( accountHub, "gradientImage", $"rui/menu/common/nav_button_right_gradient" )
+		UpdateProgressionTray()
+
+		Hud_AddEventHandler( accountHub, UIE_CLICK, AccountHubButton_OnClick )
+		Hud_AddEventHandler( accountHub, UIE_GET_FOCUS, AccountHubButton_OnHover )
+		Hud_AddEventHandler( accountHub, UIE_LOSE_FOCUS, AccountHubButton_OnIdle )
+
+	var gameMenuButton = Hud_GetChild( menu, "GameMenuButton" )
+	ToolTipData gameMenuToolTip
+	gameMenuToolTip.descText = "#GAME_MENU"
+	Hud_SetToolTipData( gameMenuButton, gameMenuToolTip )
+	HudElem_SetRuiArg( gameMenuButton, "icon", $"rui/menu/lobby/settings_icon" )
+	HudElem_SetRuiArg( gameMenuButton, "borderImage", $"rui/menu/common/nav_button_right" )
+	HudElem_SetRuiArg( gameMenuButton, "focusedBorderImage", $"rui/menu/common/nav_button_right_hover_outline" )
+	HudElem_SetRuiArg( gameMenuButton, "borderGlowImage", $"rui/menu/common/nav_button_right_hover" )
+	HudElem_SetRuiArg( gameMenuButton, "gradientImage", $"rui/menu/common/nav_button_right_gradient" )
+	
+	Hud_AddEventHandler( gameMenuButton, UIE_CLICK, GameMenuButton_OnActivate )
+
+	var socialEventPopup = Hud_GetChild( menu, "SocialPopupPanel" )
+
+	var serverDebugID = Hud_GetChild( menu, "LobbyServerIDText" )
+	file.serverDebugID = serverDebugID
+
+	var dx12Text = Hud_GetChild( menu, "DirectX12Text" )
+	file.dx12Text = dx12Text
+
+	InitSocialEventPopup( socialEventPopup )
+
+	var socialButtonGlobal = Hud_GetChild( menu, "SocialButtonGlobal" )
+	file.socialButtonGlobal = socialButtonGlobal
+	HudElem_SetRuiArg( socialButtonGlobal, "borderImage", $"rui/menu/lobby/social/friend_btn_default_outline" )
+	HudElem_SetRuiArg( socialButtonGlobal, "focusedBorderImage", $"rui/menu/lobby/social/friend_btn_hover_outline" )
+	HudElem_SetRuiArg( socialButtonGlobal, "buttonMask", $"rui/menu/lobby/social/friend_btn_bg" )
+	HudElem_SetRuiArg( socialButtonGlobal, "borderGlowImage", $"rui/menu/lobby/social/friend_btn_hover" )
+	HudElem_SetRuiArg( socialButtonGlobal, "gradientImage", $"rui/menu/lobby/social/friend_btn_gradient" )
+	Hud_AddEventHandler( socialButtonGlobal, UIE_CLICK, SocialButton_OnActivate )
+	var tutorialOverlay = Hud_GetChild( menu, "TutorialOverlay" )
+	InitTutorialOverlay( tutorialOverlay )
+
+	PerfInitLabel( 1, "1" )
+	PerfInitLabel( 2, "2" )
+	PerfInitLabel( 3, "3" )
+	PerfInitLabel( 4, "4" )
+	PerfInitLabel( 5, "5" )
+	PerfInitLabel( 6, "6" )
+}
+
+	void function AccountHubButton_OnClick( var button )
+	{
+		OpenStatsHub( button, "RTKAccountTrackPanel" )
+	}
+
+	void function AccountHubButton_OnHover( var button )
+	{
+		TabData tabData = GetTabDataForPanel( file.menu )
+		var tabBackgroundRUI = Hud_GetRui( tabData.background )
+		RuiSetBool( tabBackgroundRUI, "isHovered", true )
+	}
+
+	void function AccountHubButton_OnIdle( var button )
+	{
+		TabData tabData = GetTabDataForPanel( file.menu )
+		var tabBackgroundRUI = Hud_GetRui( tabData.background )
+		RuiSetBool( tabBackgroundRUI, "isHovered", false )
+	}
+
+void function MenuLobbyLevelInit()
+{
+	file.nextRotationTime = -1
+}
+
+void function OnLobbyMenu_Open()
+{
+	if ( !file.tabsInitialized )
+	{
+		SetConVarBool( "input_only_allow_client", false )
+		{
+			var panel = Hud_GetChild( file.menu, "PlayPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			file.playPanelTabDef = tab
+			tab.isBannerLogoSmall = false
+			SetTabBaseWidth( tab, 125 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "EventPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			file.eventsPanelTabDef = tab
+			tab.isBannerLogoSmall = false
+			SetTabBaseWidth( tab, 170 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "ChallengesPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = false
+			SetTabBaseWidth( tab, 235 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "SeasonPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			file.seasonalPanelTabDef = tab
+			tab.isBannerLogoSmall = false
+			SetTabBaseWidth( tab, 225 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "ArmoryPanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 260 )
+		}
+		{
+			var panel = Hud_GetChild( file.menu, "StorePanel" )
+			TabDef tab = AddTab( file.menu, panel, GetPanelTabTitle( panel ) )
+			tab.isBannerLogoSmall = true
+			SetTabBaseWidth( tab, 160 )
+		}
+
+
+
+
+
+
+
+
+		TabData tabData = GetTabDataForPanel( file.menu )
+
+		tabData.customFirstTabButton = false
+		tabData.activeTabIdx = GetLobbyDefaultTabIndex()
+		tabData.centerTabs = true
+		tabData.useGRXData = true
+#if SUPPORTS_COMPACT_UI
+
+
+
+            bool useCompactUILayout = IsUsingCompactUILayout()
+
+
+            if ( useCompactUILayout )
+            {
+                tabData.callToActionWidth = 180
+            }
+#endif
+            {
+                tabData.callToActionWidth = 210
+            }
+		SetTabBackground( tabData, Hud_GetChild( file.menu, "TabsBackground" ), eTabBackground.HUB )
+		SetTabDefsToSeasonal( tabData )
+		AddCallback_OnTabChanged( Lobby_OnTabChanged )
+		file.tabsInitialized = true
+	}
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		ActivateTab( tabData, GetLobbyDefaultTabIndex() )
+	}
+	else
+	{
+		ActivateTab( tabData, tabData.activeTabIdx )
+	}
+
+	UpdateNewnessCallbacks()
+
+	thread UpdateLobbyUI()
+
+	Lobby_ResetAreLobbyButtonsUpdating()
+	Lobby_UpdatePlayPanelPlaylists()
+
+	AddCallbackAndCallNow_OnGRXOffersRefreshed( OnGRXStateChanged )
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( OnGRXStateChanged )
+
+#if UI_AUTOMATION
+		if ( UIAutomation_IsAutomateChallenges() || UIAutomation_IsAutomatePacks() || UIAutomation_IsAutomateStore() )
+		{
+			UIAutomation_AddThinkFunc( file.menu, UIAutomation_LobbyAutomationThink )
+		}
+#endif
+}
+
+void function Lobby_AdjustScreenFrameToMaxSize( var elm, bool center = false )
+{
+	UISize screenSize = GetScreenSize()
+	if( elm != null )
+	{
+		if( IsLobby() )
+		{
+			int presentationType = UI_GetPresentationType()
+			int maxWidth = ( presentationType == ePresentationType.STORE_INSPECT || presentationType == ePresentationType.STORE_INSPECT_LOOT_POOL ) ? LOBBY_STORE_MENU_MAX_WIDTH : LOBBY_MENU_MAX_WIDTH
+			float widthToUse =  min( ContentScaledXAsInt( maxWidth ) , screenSize.width )
+			float leftOverWidth = screenSize.width - widthToUse
+
+			Hud_SetWidth( elm, widthToUse )
+			if( center && leftOverWidth > 0 )
+				Hud_SetX(elm, leftOverWidth / 2 )
+			else
+				Hud_SetX(elm, 0 )
+		}
+		else
+		{
+			Hud_SetWidth( elm, screenSize.width )
+		}
+	}
+}
+
+void function Lobby_AdjustBlackBarsFrameToMaxSize( var menu )
+{
+	if( Hud_HasChild(menu, "SideBars" ) )
+	{
+		var sideBars = Hud_GetChild( menu, "SideBars" )
+		int maxWidth = GetScreenSize().width
+		int presentationType = UI_GetPresentationType()
+
+		bool shouldShow = false
+
+		if (MenuStack_Contains( GetMenu( "CharacterSelectMenu" ))) {
+			maxWidth = CHAR_SELECT_MENU_MAX_WIDTH
+			shouldShow= true
+		}
+		else if (( presentationType == ePresentationType.STORE_INSPECT || presentationType == ePresentationType.STORE_INSPECT_LOOT_POOL ))
+		{
+			maxWidth = LOBBY_STORE_MENU_MAX_WIDTH
+			shouldShow= true
+		}
+		else if (IsLobby())
+		{
+			maxWidth = LOBBY_MENU_MAX_WIDTH
+			shouldShow= true
+		}
+
+		Hud_SetVisible( sideBars, shouldShow )
+		HudElem_SetRuiArg( sideBars, "safeWidth", float( maxWidth ), eRuiArgType.FLOAT )
+	}
+}
+
+void function OnLobbyMenu_Show()
+{
+	thread LobbyMenuUpdate()
+	SocialEventUpdate()
+	UpdateNewnessCallbacks()
+	RegisterInputs()
+	Chroma_Lobby()
+	UpdateProgressionTray()
+	thread TryActivateRankedUnlockedTutorial_Thread()
+}
+
+void function Lobby_OnTabChanged()
+{
+	if ( GetActiveMenu() != file.menu )
+		return
+
+	UpdateGlobalWidgets()
+	UpdateCornerButtons()
+}
+
+void function OnLobbyMenu_GetTopLevel()
+{
+	file.lobbyMenuOpenTime = UITime()
+	DialogFlow()
+	thread BlockLobbyPopupInput()
+}
+
+
+void function OnLobbyMenu_Hide()
+{
+	Signal( uiGlobal.signalDummy, "LobbyMenuUpdate" )
+	ClearNewnessCallbacks()
+	DeregisterInputs()
+}
+
+
+void function OnLobbyMenu_Close()
+{
+	ClearActiveLobbyPopup()
+	ClearNewnessCallbacks()
+	DeregisterInputs()
+
+	RemoveCallback_OnGRXOffersRefreshed( OnGRXStateChanged )
+	RemoveCallback_OnGRXInventoryStateChanged( OnGRXStateChanged )
+}
+
+
+void function OnGRXStateChanged()
+{
+	bool ready = GRX_IsInventoryReady() && GRX_AreOffersReady()
+
+	array<var> panels = [
+		GetPanel( "EventPanel" ),
+		GetPanel( "ChallengesPanel" ),
+		GetPanel( "SeasonPanel" ),
+		GetPanel( "ArmoryPanel" ),
+		GetPanel( "StorePanel" ),
+	]
+
+	foreach ( var panel in panels )
+	{
+		SetPanelTabEnabled( panel, ready )
+	}
+
+	TabData tabData = GetTabDataForPanel( file.menu )
+	SetTabDefsToSeasonal(tabData)
+	RefreshTabsSeasonalData()
+	RefreshTabsGRXData( tabData )
+	OnGRXStoreUpdate()
+	OnGRXSeasonUpdate()
+	OnGRXEventUpdate()
+}
+
+void function UpdateEventTabVisibility( bool isVisible )
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+
+	SetTabDefVisible(file.eventsPanelTabDef, isVisible )
+	SetTabDefEnabled(file.eventsPanelTabDef, isVisible )
+
+	
+	if( !isVisible && file.eventsPanelTabDef.isActive )
+		ActivateTabNext( tabData )
+}
+
+
+void function UpdateSeasonTabVisibility( bool isVisible )
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+
+	SetTabDefVisible(file.seasonalPanelTabDef, isVisible )
+	SetTabDefEnabled(file.seasonalPanelTabDef, isVisible )
+
+	
+	if( !isVisible && file.seasonalPanelTabDef.isActive )
+		ActivateTabNext( tabData )
+}
+
+void function UpdateNewnessCallbacks()
+{
+	ClearNewnessCallbacks()
+
+	Newness_Query armoryQuery
+	armoryQuery.cb = OnNewnessQueryChangedUpdatePanelTab
+	armoryQuery.panelOrButton = GetPanel( "ArmoryPanel" )
+	Newness_AddCallbackAndCallNow_OnQueryUpdated( armoryQuery )
+	file.armoryQuery = armoryQuery
+}
+
+
+void function ClearNewnessCallbacks()
+{
+	if ( file.armoryQuery == null )
+		return
+
+	Newness_Query ornull nq = file.armoryQuery
+	expect Newness_Query( nq )
+	Newness_RemoveCallback_OnQueryUpdated( nq )
+	file.armoryQuery = null
+}
+
+
+void function UpdateLobbyUI()
+{
+	if ( file.updatingLobbyUI )
+		return
+
+	file.updatingLobbyUI = true
+
+	thread UpdateMatchmakingStatus()
+
+	WaitSignal( uiGlobal.signalDummy, "CleanupInGameMenus" )
+	file.updatingLobbyUI = false
+}
+
+
+void function LobbyMenuUpdate()
+{
+	Signal( uiGlobal.signalDummy, "LobbyMenuUpdate" )
+	EndSignal( uiGlobal.signalDummy, "LobbyMenuUpdate" )
+	EndSignal( uiGlobal.signalDummy, "CleanupInGameMenus" )
+
+	thread LobbyMenuUpdateLowFrequencyElements()
+
+	while ( true )
+	{
+		PlayPanelUpdate()
+		TrackPlaylistRotation()
+		HandleCrossplayPartyInvalid()
+
+		WaitFrame()
+	}
+}
+
+
+
+
+
+void function LobbyMenuUpdateLowFrequencyElements()
+{
+	EndSignal( uiGlobal.signalDummy, "LobbyMenuUpdate" )
+	EndSignal( uiGlobal.signalDummy, "CleanupInGameMenus" )
+
+	while ( true )
+	{
+		UpdateCornerText()
+		UpdateGlobalWidgets()
+		UpdateCornerButtons()
+		UpdatePromoToast()
+
+		Boost_LowFreqUpdate()
+		wait 1.0
+	}
+}
+
+bool function IsSameVendorPlatform( string hardware1, string hardware2 )
+{
+	if ( hardware1 != hardware2 )
+	{
+		if( hardware1 == "PS4" || hardware1 == "PS5" )
+		{
+			if( hardware2 == "PS4" || hardware2 == "PS5" )
+				return true
+		}
+		else if( hardware1 == "X1" || hardware1 == "XB5" )
+		{
+			if( hardware2 == "X1" || hardware2 == "XB5" )
+				return true
+		}
+
+		return false
+	}
+	return true
+}
+
+void function HandleCrossplayPartyInvalid()
+{
+	
+	if ( GetPersistentVar( "showGameSummary" ) && IsPostGameMenuValid( true ) )
+		return
+
+	if ( CrossplayUserOptIn() || GetPartySize() == 1 )
+		return
+
+	if( IsDialog( GetActiveMenu() ) )
+		return
+
+	
+	string hardware   = GetPlayerHardware()
+	Party myParty     = GetParty()
+	foreach ( p in myParty.members )
+	{
+		if ( !IsSameVendorPlatform( hardware , p.hardware  ) )
+		{
+			LeaveParty()
+
+			ConfirmDialogData data
+			data.headerText = "#CROSSPLAY_DIALOG_INVALID_PARTY_HEADER"
+			data.messageText = Localize( "#CROSSPLAY_DIALOG_INVALID_PARTY_MSG" )
+			OpenOKDialogFromData( data )
+			break
+		}
+	}
+}
+
+void function Lobby_UpdateSelectedPlaylistUsingUISlot( string previousPlaylist )
+{
+	
+	
+	string ornull playlistSchedule      = GetScheduleFromPlaylist( previousPlaylist )
+	string newPlaylist = playlistSchedule != null ? GetCurrentPlaylistForSchedule( expect string( playlistSchedule ) ) : ""
+	if ( playlistSchedule != null )
+		printf("Found new playlist '%s' for ui_slot %s", newPlaylist, expect string( playlistSchedule ) )
+
+	if ( newPlaylist == "" || !Lobby_IsPlaylistAvailable( newPlaylist ) )
+		newPlaylist = GetDefaultPlaylist()
+
+	string mapChangeAlias = GetPlaylistVarString( newPlaylist, "map_change_VO_alias", "" )
+	if ( mapChangeAlias != "" && file.lastPlayedAudioPlaylist != mapChangeAlias )
+	{
+		file.lastPlayedAudioPlaylist = mapChangeAlias
+		PlayLobbyCharacterDialogue( mapChangeAlias )
+	}
+
+	LobbyPlaylist_SetSelectedPlaylist( newPlaylist )
+	printf("Changed selected playlist from '%s' to '%s'", previousPlaylist, newPlaylist)
+}
+
+void function TrackPlaylistRotation()
+{
+	if ( file.nextRotationTime < GetSoonestPlaylistRotationTime() )
+	{
+		ForceRefreshVisiblePlaylists()
+		file.nextRotationTime = GetSoonestPlaylistRotationTime()
+		if ( IsModeSelectMenuOpen() )
+		{
+			
+			
+			if ( PrivateMatchMapSelect_IsEnabled() )
+				UpdatePrivateMatchMapSelectDialog()
+			else if ( GamemodeSelect_IsEnabled() )
+				UpdateOpenModeSelectDialog()
+		}
+
+		string selectedPlaylist = LobbyPlaylist_GetSelectedPlaylist()
+
+		if ( !Lobby_IsPlaylistAvailable( selectedPlaylist ) && !AreWeMatchmaking() && !uiGlobal.isLevelShuttingDown )
+		{
+			Lobby_UpdateSelectedPlaylistUsingUISlot( selectedPlaylist )
+		}
+		ServerCallback_GamemodeSelectorInitialize()
+	}
+}
+
+void function UpdateProgressionTray()
+{
+	file.progressionTrayButton = Hud_GetChild( file.menu, "ProgressionTrayButton" )
+	if ( !IsProgressionTrayEnabled() )
+	{
+		var progressionTray = Hud_GetChild( file.menu, "ProgressionTray" )
+		Hud_SetVisible( progressionTray, false )
+		Hud_SetEnabled( progressionTray, false )
+		Hud_SetVisible( file.progressionTrayButton, false )
+		Hud_SetEnabled( file.progressionTrayButton, false )
+		return
+	}
+
+	InitProgressionTray( file.menu )
+}
+
+void function UpdateGlobalWidgets()
+{
+	bool isPlayPanelActive  = GetMenuActiveTabIndex(file.menu) == 0
+
+	var storePanel = GetPanel( "StorePanel" )
+	if ( IsProgressionTrayEnabled() )
+	{
+		bool isUnallowedPanelForTrayOpen = IsPanelActive( storePanel )
+		if ( IsProgressionTrayOpen() && isUnallowedPanelForTrayOpen )
+			CloseProgressionTray()
+
+		Hud_SetVisible( file.progressionTrayButton, !isUnallowedPanelForTrayOpen )
+	}
+
+	int count = GetOnlineFriendCount( )
+	HudElem_SetRuiArg( file.socialButtonGlobal, "buttonText", Localize( "#SOCIAL_BUTTON_PROMPT" ) + " " + count )
+	Hud_SetVisible( file.socialButtonGlobal, isPlayPanelActive )
+
+	rtk_struct lobbyMenuModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "lobby", "RTKLobbyModelStruct" )
+	RTKStruct_SetInt( lobbyMenuModel, "inGameFriendCount", isPlayPanelActive ? GetInGameFriendCount( true ) : 0 )
+
+	int inGameCount = isPlayPanelActive ? GetInGameFriendCount(true) : 0
+
+	RTKStruct_SetInt(lobbyMenuModel, "inGameFriendCount", inGameCount)
+
+	string locKey = (inGameCount == 1) ? "#N_FRIEND_INGAME" : "#N_FRIENDS_INGAME"
+	string localizedText = inGameCount + " " + Localize( locKey )
+
+	RTKStruct_SetString(lobbyMenuModel, "inGameFriendLocKey", localizedText)
+}
+
+void function UpdateCornerText()
+{
+	string str = ( IsNetGraphEnabled() ? Localize( "#NETGRAPH_SERVERID", GetServerDebugId() ) : "")
+	Hud_SetText( file.serverDebugID, str )
+
+
+		Hud_SetText( file.dx12Text, IsDirectX12() ? "" : Localize( "#DIRECTX11" ) )
+
+}
+
+void function RegisterInputs()
+{
+	if ( file.inputsRegistered )
+		return
+
+	RegisterButtonPressedCallback( BUTTON_START, GameMenuButton_OnActivate )
+	RegisterButtonPressedCallback( BUTTON_A, ButtonA_OnActivate )
+	RegisterButtonPressedCallback( BUTTON_X, ButtonX_OnActivate )
+	RegisterButtonPressedCallback( BUTTON_Y, ButtonY_OnActivate )
+	RegisterButtonPressedCallback( BUTTON_STICK_LEFT, ButtonStickL_OnActivate )
+	RegisterButtonPressedCallback( KEY_Y, KeyY_OnActivate )
+	RegisterButtonPressedCallback( KEY_N, KeyN_OnActivate )
+	RegisterButtonPressedCallback( KEY_B, KeyB_OnActivate )
+	RegisterButtonPressedCallback( KEY_SPACE, KeySpace_OnActivate )
+	RegisterButtonPressedCallback( MOUSE_LEFT, MouseLeft_OnActivate )
+	RegisterButtonPressedCallback( KEY_ENTER, OnLobbyMenu_FocusChat )
+	RegisterButtonPressedCallback( KEY_F1, OpenStatsHub )
+	RegisterButtonPressedCallback( KEY_F3, SettingsMenu_OnActivate )
+	if ( IsProgressionTrayEnabled() )
+	{
+		RegisterButtonPressedCallback( KEY_F4, ProgressionTrayButton_OnActivate )
+		RegisterButtonPressedCallback( BUTTON_STICK_RIGHT, ProgressionTrayButton_OnActivate )
+	}
+
+	file.inputsRegistered = true
+}
+
+
+void function DeregisterInputs()
+{
+	if ( !file.inputsRegistered )
+		return
+
+	DeregisterButtonPressedCallback( BUTTON_START, GameMenuButton_OnActivate )
+	DeregisterButtonPressedCallback( BUTTON_A, ButtonA_OnActivate )
+	DeregisterButtonPressedCallback( BUTTON_X, ButtonX_OnActivate )
+	DeregisterButtonPressedCallback( BUTTON_Y, ButtonY_OnActivate )
+	DeregisterButtonPressedCallback( BUTTON_STICK_LEFT, ButtonStickL_OnActivate )
+	DeregisterButtonPressedCallback( KEY_Y, KeyY_OnActivate )
+	DeregisterButtonPressedCallback( KEY_N, KeyN_OnActivate )
+	DeregisterButtonPressedCallback( KEY_B, KeyB_OnActivate )
+	DeregisterButtonPressedCallback( KEY_SPACE, KeySpace_OnActivate )
+	DeregisterButtonPressedCallback( MOUSE_LEFT, MouseLeft_OnActivate )
+	DeregisterButtonPressedCallback( KEY_ENTER, OnLobbyMenu_FocusChat )
+	DeregisterButtonPressedCallback( KEY_F1, OpenStatsHub )
+	DeregisterButtonPressedCallback( KEY_F3, SettingsMenu_OnActivate )
+	if ( IsProgressionTrayEnabled() )
+	{
+		DeregisterButtonPressedCallback( KEY_F4, ProgressionTrayButton_OnActivate )
+		DeregisterButtonPressedCallback( BUTTON_STICK_RIGHT, ProgressionTrayButton_OnActivate )
+	}
+
+	file.inputsRegistered = false
+}
+
+
+void function SeasonTab_OnActivate( var button )
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+
+	if ( !IsTabIndexEnabled( tabData, Tab_GetTabIndexByBodyName( tabData, "SeasonPanel" ) ) )
+		return
+
+	if ( IsDialog( GetActiveMenu() ) )
+		return
+
+	if ( !IsTabPanelActive( GetPanel( "PlayPanel" ) ) )
+		return
+
+	JumpToSeasonTab()
+}
+
+void function ProgressionTrayButton_OnActivate( var button )
+{
+	if ( !IsProgressionTrayEnabled() || IsDialog( GetActiveMenu() ) )
+		return
+
+	var storePanel = GetPanel( "StorePanel" )
+	if ( IsPanelActive( storePanel ) )
+		return
+
+	bool isOpen = IsProgressionTrayOpen()
+	if ( isOpen )
+		CloseProgressionTray()
+	else
+		OpenProgressionTray()
+}
+
+void function OnLobbyMenu_NavigateBack()
+{
+	if( RTKTutorialOverlay_IsActive() )
+		return
+
+	if ( Lobby_IsInputBlocked( BUTTON_B ) || Lobby_IsInputBlocked( KEY_ESCAPE ) )
+	{
+		if ( file.activeLobbyPopup != null )
+		{
+			LobbyPopup ornull lobbyPopup = file.activeLobbyPopup
+			expect LobbyPopup( lobbyPopup )
+
+			lobbyPopup.handleInput( IsControllerModeActive() ? BUTTON_B : KEY_ESCAPE )
+		}
+
+		return
+	}
+
+	if ( GetMenuActiveTabIndex( file.menu ) == 0 )
+	{
+		if ( !IsControllerModeActive() )
+			AdvanceMenu( GetMenu( "SystemMenu" ) )
+	}
+	else
+	{
+		LobbyMenu_OpenDefaultTab()
+	}
+}
+
+bool function LobbyMenu_IsDefaultTabOpen()
+{
+	return ( GetMenuActiveTabIndex( file.menu ) == 0 )
+}
+
+void function LobbyMenu_OpenDefaultTab()
+{
+	TabData tabData = GetTabDataForPanel( file.menu )
+	ActivateTab( tabData, GetLobbyDefaultTabIndex() )
+	UpdateMenuTabs()
+}
+
+int function GetLobbyDefaultTabIndex()
+{
+	TabData lobbyTabData = GetTabDataForPanel( GetMenu( "LobbyMenu" ) )
+	return Tab_GetTabIndexByBodyName( lobbyTabData, "PlayPanel" )
+}
+
+void function TryActivateRankedUnlockedTutorial_Thread()
+{
+	EndSignal( uiGlobal.signalDummy, "CleanupInGameMenus" )
+
+	if ( !GetPersistentVar( "shouldShowUnlockedRankedModeTutorial" ) )
+		return
+
+	Remote_ServerCallFunction( "ClientCallback_SetShouldShowUnlockedRankedModeTutorial", false )
+	RTKTutorialOverlay_Activate( eTutorialOverlayID.RANKED_UNLOCK, file.gameModeSelectButton, eTutorialAnchor.RIGHT, null )
+
+	while ( RTKTutorialOverlay_IsActive() )
+		WaitFrame()
+}
+
+void function PostGameFlow()
+{
+
+		bool showArenasRankedSummary = GetPersistentVarAsInt( "showArenasRankedSummary" ) != 0
+
+	bool showRankedSummary = Ranked_ShowRankedSummary()
+	bool showCupSummary = Cups_ShowCupSummary()
+	bool isFirstTime       = GetPersistentVarAsInt( "showGameSummary" ) != 0
+
+		bool showOrientationMatchDialog = GetPersistentVarAsInt( "showOrientationMatchGraduationDialog" ) != 0
+
+
+		
+
+
+		if ( showOrientationMatchDialog )
+		{
+			ConfirmDialogData dialogData
+			dialogData.headerText  = "#ORIENTATION_MATCH_GRADUATION_HEADER"
+			dialogData.messageText = "#ORIENTATION_MATCH_GRADUATION_MESSAGE"
+			dialogData.okText      = ["#B_BUTTON_CLOSE", "#B_BUTTON_CLOSE"]
+			dialogData.resultCallback = void function( int result )
+			{
+				Remote_ServerCallFunction( "ClientCallback_ViewedOrientationMatchDialog" )
+			}
+			OpenOKDialogFromData( dialogData )
+		}
+
+}
+
+
+void function OnLobbyMenu_FocusChat( var panel )
+{
+	if ( DispatchLobbyPopupInput( KEY_ENTER ) )
+		return
+
+
+		if ( IsDialog( GetActiveMenu() ) )
+			return
+
+		if ( !IsTabPanelActive( GetPanel( "PlayPanel" ) ) )
+			return
+
+		if ( GetPartySize() > 1 )
+		{
+			var playPanel = Hud_GetChild( file.menu, "PlayPanel" )
+			var textChat  = Hud_GetChild( playPanel, "ChatRoomTextChat" )
+			Hud_SetFocused( Hud_GetChild( textChat, "ChatInputLine" ) )
+		}
+
+}
+
+
+bool function Lobby_IsInputBlocked( int inputID )
+{
+	if ( file.activeLobbyPopup == null )
+		return false
+
+	LobbyPopup ornull lobbyPopup = file.activeLobbyPopup
+	expect LobbyPopup( lobbyPopup )
+	return lobbyPopup.checkBlocksInput( inputID )
+}
+
+
+void function ButtonB_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( BUTTON_B )
+}
+
+
+void function KeyEscape_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( KEY_ESCAPE )
+}
+
+
+void function ButtonA_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( BUTTON_A )
+}
+
+
+void function ButtonX_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( BUTTON_X )
+
+	DismissGamemodeSelectorModal( button )
+}
+
+
+void function ButtonY_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( BUTTON_Y )
+}
+
+
+void function ButtonStickL_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( BUTTON_STICK_RIGHT )
+}
+
+
+void function KeyY_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( KEY_Y )
+}
+
+
+void function KeyN_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( KEY_N )
+}
+
+
+void function KeyB_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( KEY_B )
+}
+
+void function KeySpace_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( KEY_SPACE )
+
+	DismissGamemodeSelectorModal( button )
+}
+
+void function MouseLeft_OnActivate( var button )
+{
+	DispatchLobbyPopupInput( MOUSE_LEFT )
+}
+
+
+void function DispatchLobbyPopupInput( int inputID )
+{
+	if ( file.activeLobbyPopup == null )
+		return
+
+	if ( file.lobbyPopupInputBlocked )
+		return
+
+	if ( IsDialog( GetActiveMenu() ) )
+		return
+
+	LobbyPopup ornull lobbyPopup = file.activeLobbyPopup
+	expect LobbyPopup( lobbyPopup )
+	lobbyPopup.handleInput( inputID )
+}
+
+void function BlockLobbyPopupInput()
+{
+	
+	file.lobbyPopupInputBlocked = true
+	WaitFrame()
+	file.lobbyPopupInputBlocked = false
+}
+
+
+void function SetActiveLobbyPopup( LobbyPopup popup )
+{
+	Assert( file.activeLobbyPopup == null )
+
+	file.activeLobbyPopup = popup
+}
+
+
+bool function HasActiveLobbyPopup()
+{
+	return file.activeLobbyPopup != null
+}
+
+
+void function ClearActiveLobbyPopup()
+{
+	if ( file.activeLobbyPopup != null )
+	{
+		LobbyPopup ornull lobbyPopup = file.activeLobbyPopup
+		expect LobbyPopup( lobbyPopup )
+
+		file.activeLobbyPopup = null
+
+		lobbyPopup.onClose()
+	}
+}
+
+
+float function GetLobbyMenuOpenedTime()
+{
+	return file.lobbyMenuOpenTime
+}

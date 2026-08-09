@@ -1,0 +1,153 @@
+global function RTKColorPaletteDevMenu_OnInitialize
+global function RTKColorPaletteDevMenu_OnDestroy
+
+global struct RTKColorPaletteDevMenu_Properties
+{
+	rtk_panel colors
+	rtk_panel defaultColorButton
+	rtk_panel protanopiaColorButton
+	rtk_panel deuteranopiaColorButton
+	rtk_panel tritanopiaColorButton
+}
+
+global struct RTKColorPaletteEntity
+{
+	string name
+	vector mainColor
+	vector protanopiaColor
+	vector deuteranopiaColor
+	vector tritanopiaColor
+
+}
+
+global struct RTKColorPaletteModel
+{
+	array<RTKColorPaletteEntity> colorPaletteTable
+	int selectedIndex
+	RTKColorPaletteEntity& selectedColor
+	vector selectedColorType
+}
+
+void function RTKColorPaletteDevMenu_OnInitialize(rtk_behavior self)
+{
+	rtk_struct dataModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "colorPalette", "RTKColorPaletteModel" )
+	string colorPalettePath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "colorPalette")
+
+	self.GetPanel().SetBindingRootPath( colorPalettePath )
+	RTKColorPaletteDevMenu_SetMenuDataModel(dataModel)
+
+	
+	rtk_panel ornull colorsPanel = self.PropGetPanel( "colors" )
+	if ( colorsPanel != null )
+	{
+		expect rtk_panel( colorsPanel )
+
+		self.AutoSubscribe( colorsPanel, "onChildAdded", function ( rtk_panel newChild, int index ) : ( self, dataModel ) {
+			rtk_behavior colorButton = newChild.FindBehaviorByTypeName( "Button" )
+			rtk_array colors = RTKStruct_GetArray( dataModel, "colorPaletteTable" )
+			self.AutoSubscribe( colorButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, index, dataModel, colors ) {
+				RTKStruct_SetInt( dataModel, "selectedIndex", index )
+				RTKStruct_SetStruct( dataModel, "selectedColor", RTKArray_GetStruct( colors, index ) )
+			} )
+		} )
+	}
+
+	
+	rtk_panel ornull defaultColorPanel = self.PropGetPanel( "defaultColorButton" )
+	if ( defaultColorPanel != null )
+	{
+		expect rtk_panel( defaultColorPanel )
+
+		rtk_behavior defaultColorButton = defaultColorPanel.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( defaultColorButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, dataModel ) {
+			rtk_struct selectedColor = RTKStruct_GetStruct(dataModel, "selectedColor")
+			vector defaultColorVector = RTKStruct_GetFloat3( selectedColor, "mainColor" )
+			RTKStruct_SetFloat3(dataModel, "selectedColorType", defaultColorVector)
+		} )
+	}
+
+	rtk_panel ornull protanopiaColorPanel = self.PropGetPanel( "protanopiaColorButton" )
+	if ( protanopiaColorPanel != null )
+	{
+		expect rtk_panel( protanopiaColorPanel )
+
+		rtk_behavior protanopiaColorButton = protanopiaColorPanel.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( protanopiaColorButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, dataModel ) {
+			rtk_struct selectedColor = RTKStruct_GetStruct(dataModel, "selectedColor")
+			vector protanopiaColorVector = RTKStruct_GetFloat3( selectedColor, "protanopiaColor" )
+			RTKStruct_SetFloat3(dataModel, "selectedColorType", protanopiaColorVector)
+		} )
+	}
+
+	rtk_panel ornull deuteranopiaColorPanel = self.PropGetPanel( "deuteranopiaColorButton" )
+	if ( deuteranopiaColorPanel != null )
+	{
+		expect rtk_panel( deuteranopiaColorPanel )
+
+		rtk_behavior deuteranopiaColorButton = deuteranopiaColorPanel.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( deuteranopiaColorButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, dataModel ) {
+			rtk_struct selectedColor = RTKStruct_GetStruct(dataModel, "selectedColor")
+			vector deuteranopiaColorVector = RTKStruct_GetFloat3( selectedColor, "deuteranopiaColor" )
+			RTKStruct_SetFloat3(dataModel, "selectedColorType", deuteranopiaColorVector)
+		} )
+	}
+
+	rtk_panel ornull tritanopiaColorPanel = self.PropGetPanel( "tritanopiaColorButton" )
+	if ( tritanopiaColorPanel != null )
+	{
+		expect rtk_panel( tritanopiaColorPanel )
+
+		rtk_behavior tritanopiaColorButton = tritanopiaColorPanel.FindBehaviorByTypeName( "Button" )
+
+		self.AutoSubscribe( tritanopiaColorButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, dataModel ) {
+			rtk_struct selectedColor = RTKStruct_GetStruct(dataModel, "selectedColor")
+			vector tritanopiaColorVector = RTKStruct_GetFloat3( selectedColor, "tritanopiaColor" )
+			RTKStruct_SetFloat3(dataModel, "selectedColorType", tritanopiaColorVector)
+		} )
+	}
+}
+
+void function RTKColorPaletteDevMenu_OnDestroy(rtk_behavior self)
+{
+
+}
+
+void function RTKColorPaletteDevMenu_SetMenuDataModel( rtk_struct panelStruct )
+{
+	RTKColorPaletteModel panelModel
+	panelModel.colorPaletteTable = RTKColorPaletteDevMenu_GetColorPalette()
+	panelModel.selectedIndex = 0
+	panelModel.selectedColor = panelModel.colorPaletteTable[0]
+
+	RTKStruct_SetValue( panelStruct, panelModel )
+}
+
+array<RTKColorPaletteEntity> function RTKColorPaletteDevMenu_GetColorPalette()
+{
+	var colorPaletteDT = GetDataTable( $"datatable/colorpalette_table.rpak" )
+	int rowIndex = 0
+	int numRows = GetDataTableRowCount( colorPaletteDT )
+
+	array<RTKColorPaletteEntity> colorPalette
+
+	while ( rowIndex < numRows )
+	{
+
+		RTKColorPaletteEntity color
+
+		color.name = GetDataTableString( colorPaletteDT, rowIndex, 0)
+		color.mainColor = GetDataTableVector( colorPaletteDT, rowIndex, 1 )/255
+		color.protanopiaColor = GetDataTableVector( colorPaletteDT, rowIndex, 2 )/255
+		color.deuteranopiaColor = GetDataTableVector( colorPaletteDT, rowIndex, 3 )/255
+		color.tritanopiaColor = GetDataTableVector( colorPaletteDT, rowIndex, 4 )/255
+
+		colorPalette.append( color )
+
+		rowIndex++
+	}
+
+	return colorPalette
+}

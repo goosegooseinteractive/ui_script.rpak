@@ -1,0 +1,2522 @@
+global function RTKCosmeticEquipScreen_OnInitialize
+global function RTKCosmeticEquipScreen_OnDestroy
+global function RTKCosmeticEquipScreen_GetPreviewGUID
+global function RTKCosmeticEquipScreen_GetEquipGUID
+global function RTKCosmeticEquipScreen_SetItemListModel
+global function RTKCosmeticEquipScreen_GetItemListModel
+global function RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks
+global function RTKCosmeticEquipScreen_AutoSubscribeOnItemPreview
+global function RTKCosmeticEquipScreen_AutoSubscribeOnItemEquip
+global function RTKCosmeticEquipScreen_AutoSubscribeOnItemHighlight
+global function RTKCosmeticEquipScreen_AutoSubscribeOnItemFavorite
+global function RTKCosmeticEquipScreen_AutoSubscribeOnItemTryUnlock
+global function RTKCosmeticEquipScreen_OverrideGRXCallbacks
+global function RTKCosmeticEquipScreen_OverridePrimaryButtonFunction
+global function RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction
+global function RTKCosmeticEquipScreen_SetPrimaryButtonVisible
+global function RTKCosmeticEquipScreen_SetSecondaryButtonVisible
+global function RTKCosmeticEquipScreen_SetTertiaryButtonVisible
+global function RTKCosmeticEquipScreen_SetItemsOwnedText
+global function RTKCosmeticEquipScreen_SetDescText
+global function RTKCosmeticEquipScreen_GenericInitItemList
+global function RTKCosmeticEquipScreen_GenericRefreshItemList
+global function RTKCosmeticEquipScreen_GenericOnItemPreview
+global function RTKCosmeticEquipScreen_GenericOnItemEquip
+global function RTKCosmeticEquipScreen_GenericOnItemHighlight
+global function RTKCosmeticEquipScreen_GenericOnItemFavorite
+global function RTKCosmeticEquipScreen_GenericOnItemTryUnlock
+global function RTKCosmeticEquipScreen_GenericIsItemFocused
+global function RTKCosmeticEquipScreen_GenericIsItemEquippable
+global function RTKCosmeticEquipScreen_GenericIsItemUnlockable
+global function RTKCosmeticEquipScreen_GenericIsItemFavoritable
+global function RTKCosmeticEquipScreen_GenericIsItemFavorite
+global function RTKCosmeticEquipScreen_ShowGenericPreview
+global function RTKCosmeticEquipScreen_ShowImagePreview
+global function RTKCosmeticEquipScreen_ShowVideoPreview
+global function RTKCosmeticEquipScreen_ShowWeaponModelPreview
+global function RTKCosmeticEquipScreen_ShowCharacterModelPreview
+global function	RTKCosmeticEquipScreen_ShowCharacterGarmentPreview
+global function RTKCosmeticEquipScreen_SetCurrentPreviewGUID
+global function RTKCosmeticEquipScreen_SetCurrentEquipGUID
+global function RTKCosmeticEquipScreen_CycleSortFunc
+global function RTKCosmeticEquipScreen_AddBackFooterOptions
+global function RTKCosmeticEquipScreen_AddSelectEquipFooterOptions
+global function RTKCosmeticEquipScreen_AddUnlockFooterOptions
+global function RTKCosmeticEquipScreen_AddSortFooterOption
+global function RTKCosmeticEquipScreen_AddZoomFooterOption
+global function RTKCosmeticEquipScreen_AddShowHideUIToggleFooterOption
+
+
+
+global function RTKCosmeticEquipScreen_AddFavoriteFooterOptions
+global function RTKCosmeticEquip_GetItemModelByFlavGUID
+global function RTKCosmeticEquip_GetCurrentItemModel
+
+global function RTKCosmeticListItemButton_OnInitialize
+
+global function RTKCosmeticEquip_GetSelectItemState
+global function RTKCosmeticEquip_GetDeSelectItemState
+global function RTKCosmeticEquip_GetEquipItemState
+global function RTKCosmeticEquip_GetDeEquipItemState
+global function RTKCosmeticEquip_GetDefaultSortFuncNames
+global function RTKCosmeticEquip_DefaultSortFunc
+global function RTKCosmeticEquip_RaritySortFunc
+global function RTKCosmeticEquip_UnownedSortFunc
+global function RTKCosmeticEquip_AlphabeticalSortFunc
+global function RTKCosmeticEquip_IsLockedAndHidden
+
+
+
+global function RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst
+global function RTKCosmeticEquip_IsItemUnlockable
+
+global function RTKMutator_GetRightIconAssetFromState
+global function RTKMutator_GetRightIconColorFromState
+global function RTKMutator_IsCosmeticStateLockedOrRestricted
+global function RTKMutator_IsCosmeticStateSelected
+global function RTKMutator_IsCosmeticStateEquipped
+
+global enum eCosmeticPreviewType
+{
+	IMAGE,
+	BINK,
+	WEAPON_MODEL,
+	CHARACTER_MODEL,
+	MELEE_MODEL,
+	CHARACTER_GARMENT,
+	_COUNT,
+}
+
+global struct RTKCosmeticListItemButton_Properties
+{
+	string screenModelPath
+	int state
+	int flavGUID
+
+	bool isCategory
+	bool isCategoryOpen
+
+	rtk_behavior buttonBehavior
+}
+
+global struct RTKCosmeticEquipScreen_Properties
+{
+	rtk_behavior primaryButton
+	rtk_behavior secondaryButton
+	rtk_behavior tertiaryButton
+	rtk_behavior animatorBehavior
+
+	string modelPath
+	bool enableSecondaryButton
+
+	int currentPreviewGUID
+
+	void functionref( int ) onCosmeticPreview
+	void functionref( int ) onCosmeticEquip
+	void functionref( int ) onCosmeticHighlight
+	void functionref( int ) onCosmeticFavorite
+	void functionref( int ) onCosmeticTryUnlock
+}
+
+global struct RTKCosmeticListItemModel
+{
+	int flavGUID
+
+	bool       isCategory
+	bool       isCategoryOpen
+	array<int> categoryContentGUIDs	
+	int        parentCategoryGUID = -1 
+
+	int state 
+	string name
+	int quality
+	int subQuality
+	asset eventIcon
+	string actionText
+	bool isFavorite
+	bool hasVisualFlair
+	bool isNewlyAdded
+	bool hasOffer
+	string toolTipText
+
+	string modelPath
+}
+
+global struct RTKCosmeticEquipScreenModel
+{
+	array<RTKCosmeticListItemModel> cosmeticList
+
+	int currentPreviewGUID = -1
+	int currentEquipGUID = -1
+	int currentHighlightGUID = -1
+	int favoriteGUID = -1
+	int tryUnlockGUID = -1
+	int categoryToggleGUID = -1
+
+	bool primaryButtonVisible = false
+	bool secondaryButtonVisible = false
+	bool tertiaryButtonVisible = false
+
+	string secondaryButtonText
+
+	string itemsOwnedText
+	asset imagePreview
+	asset videoPreview
+	string descText
+}
+
+global struct CosmeticEquipScreenInitSettings
+{
+	array<LoadoutEntry> loadoutEntries
+	array<string> sortFuncNames
+	int functionref( ItemFlavor ) sortOrdinalFunc 					= null
+	bool functionref( ItemFlavor, array<LoadoutEntry> ) filterFunc 	= null
+	bool functionref( ItemFlavor ) isEmptyFunc 						= null
+	array<ItemFlavor> functionref() getItemFlavListFuncOverride 	= null
+	int functionref() getCurrentEquipGUIDOverride 					= null
+	bool ignoreDefaultItemForOwnedCount 							= false
+	bool shouldIgnoreOtherSlotsForOwnedCount 						= false
+}
+
+struct ScreenPrivateData
+{
+	int lastPreviewType = -1
+
+	int onPreviewListenerID
+	int onEquipListenerID
+	int onHighlightListenerID
+	int onFavoriteListenerID
+	int onTryUnlockListenerID
+	int onCategoryToggleListenerID
+
+	int onPrimaryClickedListenerID
+	int onSecondaryClickedListenerID
+	int onTertiaryClickedListenerID
+
+	array<RTKCosmeticListItemModel> cosmeticList
+	array<LoadoutEntry> loadoutEntries
+
+	array<int functionref( ItemFlavor, ItemFlavor, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) = null )> sortFuncs
+	int functionref( ItemFlavor ) sortOrdinalFunc = null
+	bool functionref( ItemFlavor, array<LoadoutEntry> ) filterFunc = null
+	bool functionref( ItemFlavor ) isEmptyFunc = null
+	array<ItemFlavor> functionref() getItemFlavListFuncOverride = null
+	int functionref() getCurrentEquipGUIDOverride = null
+	bool ignoreDefaultItemForOwnedCount = false
+    bool shouldIgnoreOtherSlotsForOwnedCount = false
+
+	int sortFuncIndex
+	int currentSelectGUID = -1
+	int currentEquipGUID = -1
+	int currentHighlightGUID = -1
+	bool isHidingUI
+
+	void functionref() setScreenDataModelFunction
+	void functionref( EHI, ItemFlavor ) favoriteSlotChangedCallback
+
+	InputDef&     sortFooterDefController
+	InputDef&     sortFooterDefMKB
+	array<string> sortFuncNames
+}
+
+struct ItemPrivateData
+{
+	int modelPathListenerID = -1
+}
+
+struct LegendLockerTelemetry
+{
+	string pageName
+	int pageViewCount
+	int numItemsClicked
+}
+
+struct
+{
+	table<string, LegendLockerTelemetry> telemetryTable
+} fileTelemetry
+
+const array<int> FLAV_TYPES_NEED_CHARACTER_UNLOCKED = 
+[
+	eItemType.character_skin,
+	eItemType.character_execution,
+	eItemType.character_select,
+	eItemType.digital_garment,
+	eItemType.melee_skin
+]
+
+
+void function RTKCosmeticEquipScreen_OnInitialize( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	
+	p.onPreviewListenerID = RTKStruct_AddPropertyListener( screenStruct, "currentPreviewGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		self.InvokeEvent( "onCosmeticPreview", expect int( propValue ) )
+	} )
+
+	
+	p.onEquipListenerID = RTKStruct_AddPropertyListener( screenStruct, "currentEquipGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		self.InvokeEvent( "onCosmeticEquip", expect int( propValue ) )
+	} )
+
+	
+	p.onHighlightListenerID = RTKStruct_AddPropertyListener( screenStruct, "currentHighlightGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		self.InvokeEvent( "onCosmeticHighlight", expect int( propValue ) )
+	} )
+
+	
+	p.onFavoriteListenerID = RTKStruct_AddPropertyListener( screenStruct, "favoriteGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		self.InvokeEvent( "onCosmeticFavorite", expect int( propValue ) )
+	} )
+
+	
+	p.onTryUnlockListenerID = RTKStruct_AddPropertyListener( screenStruct, "tryUnlockGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		self.InvokeEvent( "onCosmeticTryUnlock", expect int( propValue ) )
+	} )
+
+	p.onCategoryToggleListenerID = RTKStruct_AddPropertyListener( screenStruct, "categoryToggleGUID", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		RTKCosmeticEquipScreen_GenericCategoryToggle( self, expect int( propValue ) )
+	} )
+
+	
+	RTKCosmeticEquipScreen_OverridePrimaryButtonFunction( self, void function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKCosmeticEquipScreen_OnPrimaryButtonPressed( self )
+	} )
+
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, modelPath, true ) )
+
+	
+	string topLevelContext = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+	RTKCosmeticEquip_Telemetry_SendPageViewEvent( modelPath, topLevelContext )
+}
+
+void function RTKCosmeticEquipScreen_OnDestroy( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_RemovePropertyListener( screenStruct, "currentPreviewGUID", p.onPreviewListenerID )
+	RTKStruct_RemovePropertyListener( screenStruct, "currentEquipGUID", p.onEquipListenerID )
+	RTKStruct_RemovePropertyListener( screenStruct, "currentHighlightGUID", p.onHighlightListenerID )
+	RTKStruct_RemovePropertyListener( screenStruct, "favoriteGUID", p.onFavoriteListenerID )
+	RTKStruct_RemovePropertyListener( screenStruct, "tryUnlockGUID", p.onTryUnlockListenerID )
+	RTKStruct_RemovePropertyListener( screenStruct, "categoryToggleGUID", p.onCategoryToggleListenerID )
+
+	rtk_behavior primaryButton = self.PropGetBehavior( "primaryButton" )
+	primaryButton.RemoveEventListener( "onPressed", p.onPrimaryClickedListenerID )
+
+	rtk_behavior secondaryButton = self.PropGetBehavior( "secondaryButton" )
+	secondaryButton.RemoveEventListener( "onPressed", p.onSecondaryClickedListenerID )
+
+	rtk_behavior tertiaryButton = self.PropGetBehavior( "tertiaryButton" )
+	tertiaryButton.RemoveEventListener( "onPressed", p.onTertiaryClickedListenerID )
+
+	if ( p.setScreenDataModelFunction != null )
+	{
+		RemoveCallback_OnGRXInventoryStateChanged( p.setScreenDataModelFunction )
+		RemoveCallback_OnGRXOffersRefreshed( p.setScreenDataModelFunction )
+	}
+
+	if ( p.favoriteSlotChangedCallback != null && p.loadoutEntries.len() > 0 )
+	{
+		RemoveCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), p.loadoutEntries[ 0 ], p.favoriteSlotChangedCallback )
+		p.favoriteSlotChangedCallback = null
+	}
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, modelPath )
+
+	RTKCosmeticEquipScreen_ClearItemPreview( self )
+
+
+
+
+	
+	string topLevelContext = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+	RTKCosmeticEquip_Telemetry_SendExitEvent( modelPath, p.sortFuncNames[ p.sortFuncIndex ], topLevelContext )
+}
+
+int function RTKCosmeticEquipScreen_GetPreviewGUID( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	return p.currentSelectGUID
+}
+
+int function RTKCosmeticEquipScreen_GetEquipGUID( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	return p.currentEquipGUID
+}
+
+void function RTKCosmeticEquipScreen_SetAutoSubscribeCallbacks(
+		rtk_behavior self,
+		void functionref( int ) previewHandler = null,
+		void functionref( int ) equipHandler = null,
+		void functionref( int ) highlightHandler = null,
+		void functionref( int ) favoriteHandler = null,
+		void functionref( int ) tryUnlockHandler = null )
+{
+	if ( previewHandler != null )
+		RTKCosmeticEquipScreen_AutoSubscribeOnItemPreview( self, previewHandler )
+
+	if ( equipHandler != null )
+		RTKCosmeticEquipScreen_AutoSubscribeOnItemEquip( self, equipHandler )
+
+	if ( highlightHandler != null )
+		RTKCosmeticEquipScreen_AutoSubscribeOnItemHighlight( self, highlightHandler )
+
+	if ( favoriteHandler != null )
+		RTKCosmeticEquipScreen_AutoSubscribeOnItemFavorite( self, favoriteHandler )
+
+	if ( tryUnlockHandler != null )
+		RTKCosmeticEquipScreen_AutoSubscribeOnItemTryUnlock( self, tryUnlockHandler )
+}
+
+void function RTKCosmeticEquipScreen_AutoSubscribeOnItemPreview( rtk_behavior self, void functionref( int ) handler )
+{
+	self.AutoSubscribe( self, "onCosmeticPreview", handler )
+}
+
+void function RTKCosmeticEquipScreen_AutoSubscribeOnItemEquip( rtk_behavior self, void functionref( int ) handler )
+{
+	self.AutoSubscribe( self, "onCosmeticEquip", handler )
+}
+
+void function RTKCosmeticEquipScreen_AutoSubscribeOnItemHighlight( rtk_behavior self, void functionref( int ) handler )
+{
+	self.AutoSubscribe( self, "onCosmeticHighlight", handler )
+}
+
+void function RTKCosmeticEquipScreen_AutoSubscribeOnItemFavorite( rtk_behavior self, void functionref( int ) handler )
+{
+	self.AutoSubscribe( self, "onCosmeticFavorite", handler )
+}
+
+void function RTKCosmeticEquipScreen_AutoSubscribeOnItemTryUnlock( rtk_behavior self, void functionref( int ) handler )
+{
+	self.AutoSubscribe( self, "onCosmeticTryUnlock", handler )
+}
+
+void function RTKCosmeticEquipScreen_OverrideGRXCallbacks( rtk_behavior self, void functionref() handler = null )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( handler != null )
+	{
+		p.setScreenDataModelFunction = handler
+		AddCallback_OnGRXInventoryStateChanged( p.setScreenDataModelFunction )
+		AddCallback_OnGRXOffersRefreshed( p.setScreenDataModelFunction )
+	}
+}
+
+void function RTKCosmeticEquipScreen_OverridePrimaryButtonFunction( rtk_behavior self, void functionref( rtk_behavior, int, int ) handler )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	
+	rtk_behavior button = self.PropGetBehavior( "primaryButton" )
+	button.RemoveEventListener( "onPressed", p.onPrimaryClickedListenerID )
+
+	
+	p.onPrimaryClickedListenerID = button.AddEventListener( "onPressed", handler )
+}
+
+void function RTKCosmeticEquipScreen_OverrideSecondaryButtonFunction( rtk_behavior self, void functionref( rtk_behavior, int, int ) handler )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	
+	rtk_behavior button = self.PropGetBehavior( "secondaryButton" )
+	button.RemoveEventListener( "onPressed", p.onSecondaryClickedListenerID )
+
+	
+	p.onSecondaryClickedListenerID = button.AddEventListener( "onPressed", handler )
+}
+
+void function RTKCosmeticEquipScreen_OverrideTertiaryButtonFunction( rtk_behavior self, void functionref( rtk_behavior, int, int ) handler )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	
+	rtk_behavior button = self.PropGetBehavior( "tertiaryButton" )
+	button.RemoveEventListener( "onPressed", p.onTertiaryClickedListenerID )
+
+	
+	p.onTertiaryClickedListenerID = button.AddEventListener( "onPressed", handler )
+}
+
+void function RTKCosmeticEquipScreen_SetItemListModel( rtk_behavior self, array<RTKCosmeticListItemModel> cosmeticList )
+{
+	ScreenPrivateData p
+	self.Private( p )
+	p.cosmeticList = cosmeticList
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+	RTKArray_SetValue( rtkArray, p.cosmeticList )
+}
+
+array<RTKCosmeticListItemModel> function RTKCosmeticEquipScreen_GetItemListModel( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+	return p.cosmeticList
+}
+
+void function RTKCosmeticEquipScreen_SetListItemState( rtk_behavior self, int cosmeticListItemIndex, int cosmeticListItemState )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+	rtk_struct cosmeticListItemStructRef = RTKArray_GetStruct( rtkArray, cosmeticListItemIndex )
+	RTKStruct_SetInt( cosmeticListItemStructRef, "state", cosmeticListItemState )
+}
+
+void function RTKCosmeticEquipScreen_SetListItemIsFavorite( rtk_behavior self, int cosmeticListItemIndex, bool isFavorite )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+	rtk_struct cosmeticListItemStructRef = RTKArray_GetStruct( rtkArray, cosmeticListItemIndex )
+	RTKStruct_SetBool( cosmeticListItemStructRef, "isFavorite", isFavorite )
+}
+
+void function RTKCosmeticEquipScreen_SetListItemIsCategoryOpen( rtk_behavior self, int cosmeticListItemIndex, bool isCategoryOpen )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+	rtk_struct cosmeticListItemStructRef = RTKArray_GetStruct( rtkArray, cosmeticListItemIndex )
+	RTKStruct_SetBool( cosmeticListItemStructRef, "isCategoryOpen", isCategoryOpen )
+}
+
+void function RTKCosmeticEquipScreen_InsertListItem( rtk_behavior self, int cosmeticListItemIndex, RTKCosmeticListItemModel itemModel )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+
+	rtk_struct cosmeticListItemStructRef = RTKArray_InsertNewStruct( rtkArray, cosmeticListItemIndex )
+	RTKStruct_SetValue( cosmeticListItemStructRef, itemModel )
+}
+
+void function RTKCosmeticEquipScreen_RemoveListItem( rtk_behavior self, int cosmeticListItemIndex )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+	rtk_array rtkArray = RTKStruct_GetArray( screenStruct, "cosmeticList" )
+	RTKArray_RemoveAt( rtkArray, cosmeticListItemIndex )
+}
+
+void function RTKCosmeticEquipScreen_SetCurrentPreviewGUID( rtk_behavior self, int previewGUID )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetInt( screenStruct, "currentPreviewGUID", previewGUID )
+}
+
+void function RTKCosmeticEquipScreen_SetCurrentEquipGUID( rtk_behavior self, int equipGUID )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetInt( screenStruct, "currentEquipGUID", equipGUID )
+}
+
+void function RTKCosmeticEquipScreen_SetPrimaryButtonVisible( rtk_behavior self, bool buttonVisible )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetBool( screenStruct, "primaryButtonVisible", buttonVisible )
+}
+
+void function RTKCosmeticEquipScreen_SetSecondaryButtonVisible( rtk_behavior self, bool buttonVisible, string secondaryButtonText = "#UNLOCK" )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetBool( screenStruct, "secondaryButtonVisible", buttonVisible )
+	RTKStruct_SetString( screenStruct, "secondaryButtonText", secondaryButtonText )
+}
+
+void function RTKCosmeticEquipScreen_SetTertiaryButtonVisible( rtk_behavior self, bool buttonVisible )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetBool( screenStruct, "tertiaryButtonVisible", buttonVisible )
+}
+
+void function RTKCosmeticEquipScreen_SetItemsOwnedText( rtk_behavior self, string descText )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetString( screenStruct, "itemsOwnedText", descText )
+}
+
+void function RTKCosmeticEquipScreen_SetDescText( rtk_behavior self, string descText )
+{
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	RTKStruct_SetString( screenStruct, "descText", descText )
+}
+
+void function RTKCosmeticEquipScreen_ClearItemPreview( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	switch ( p.lastPreviewType )
+	{
+		case eCosmeticPreviewType.IMAGE:
+			RTKStruct_SetAssetPath( screenStruct, "imagePreview", $"" )
+			break
+		case eCosmeticPreviewType.BINK:
+			RTKStruct_SetAssetPath( screenStruct, "videoPreview", $"" )
+			break
+		case eCosmeticPreviewType.WEAPON_MODEL:
+			break
+		case eCosmeticPreviewType.MELEE_MODEL:
+			RunClientScript( "UIToClient_ClearMeleeSkinPreview" )
+			break
+		}
+}
+
+void function RTKCosmeticEquipScreen_ShowGenericPreview( rtk_behavior self, ItemFlavor itemFlav )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	switch ( ItemFlavor_GetType( itemFlav ) )
+	{
+		case eItemType.weapon_skin:
+			RTKCosmeticEquipScreen_ShowWeaponModelPreview( self, itemFlav )
+			break
+		case eItemType.character_skin:
+			RTKCosmeticEquipScreen_ShowCharacterModelPreview( self, itemFlav )
+			break
+		case eItemType.weapon_addon:
+			if ( WeaponAddOn_IsTheEmpty( itemFlav ) )
+			{
+				RTKCosmeticEquipScreen_ShowImagePreview( self, $"ui_image/rui/menu/common/emptyKnockFX.rpak" )
+			}
+			else
+			{
+				asset videoPreview = WeaponAddOn_GetKnockFXVideo( itemFlav )
+				RTKCosmeticEquipScreen_ShowVideoPreview( self, videoPreview )
+			}
+			break
+		case eItemType.character_execution:
+			RTKCosmeticEquipScreen_ShowVideoPreview( self, CharacterExecution_GetExecutionVideo( itemFlav ) )
+			break
+		case eItemType.character_select:
+
+			asset previewVideo = $""
+			asset previewImage = $""
+			ItemFlavor character    = GetTopLevelCustomizeContext()
+			ItemFlavor skinEquipped = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_CharacterSkin( character ) )
+
+			
+			if ( itemFlav == Loadout_CharacterSelect( character ).defaultItemFlavor )
+			{
+				previewImage = CharacterClass_GetDefaultCharacterSelectPreviewAsset ( character )
+				RTKCosmeticEquipScreen_ShowImagePreview( self, previewImage )
+			}
+			else
+			{
+				if ( CharacterSelect_IsLockedToOPSkin( itemFlav ) )
+				{
+					previewVideo = CharacterSelect_GetOPSkinVideo( itemFlav, skinEquipped )
+				}
+
+				if ( previewVideo == $"" )
+				{
+					previewVideo = CharacterSelect_GetPreviewVideo( itemFlav )
+					if ( previewVideo == $"" )
+					{
+						previewImage = CharacterSelect_GetPreviewImage( itemFlav )
+					}
+				}
+
+				if ( previewVideo != $"" )
+				{
+					RTKCosmeticEquipScreen_ShowVideoPreview( self, previewVideo )
+				}
+				else if ( previewImage != $"" )
+				{
+					RTKCosmeticEquipScreen_ShowImagePreview( self, previewImage )
+				}
+				else
+				{
+					Warning( "No Video or Image for character select ", ItemFlavor_GetLongName( itemFlav ) )
+					RTKCosmeticEquipScreen_ShowImagePreview( self, previewImage )
+				}
+			}
+
+			break
+		case eItemType.digital_garment:
+			RTKCosmeticEquipScreen_ShowCharacterGarmentPreview( self, itemFlav )
+			break
+		case eItemType.melee_skin:
+			ItemFlavor character = GetTopLevelCustomizeContext()
+			if ( Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav ) )
+			{
+				Artifacts_Loadouts_CheckAndFixMisconfigurations( LocalClientEHI(), character )
+				RunClientScript( "Artifacts_StoreLoadoutDataOnPlayerEntityStruct", null, null, false )
+
+				array<ItemFlavor> equippedItems = Artifacts_GetEquippedSet( itemFlav )
+				foreach ( ItemFlavor item in equippedItems )
+				{
+					RunClientScript( "Artifacts_Loadouts_StorePreviewDataOnPlayerEntityStruct", ItemFlavor_GetGUID( item ) )
+				}
+			}
+
+			if ( itemFlav == GetDefaultItemFlavorForLoadoutSlot( Loadout_MeleeSkin( character ) ) )
+				RTKCosmeticEquipScreen_ShowImagePreview( self, $"ui_image/rui/menu/common/fists.rpak" )
+			else
+				RTKCosmeticEquipScreen_ShowMeleeSkinPreview( self, itemFlav )
+			break
+	}
+
+	Newness_IfNecessaryMarkItemFlavorAsNoLongerNewAndInformServer( itemFlav )
+	bool doesItemNeedCharacterUnlockedFirst = RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav )
+
+	
+	bool itemIsUnlocked = !doesItemNeedCharacterUnlockedFirst && IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), p.loadoutEntries[ 0 ], itemFlav, false, true )
+	RTKCosmeticEquipScreen_SetPrimaryButtonVisible( self, itemIsUnlocked && p.currentSelectGUID != p.currentEquipGUID )
+
+	
+	if ( self.PropGetBool( "enableSecondaryButton" ) )
+	{
+		if ( doesItemNeedCharacterUnlockedFirst )
+		{
+			ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+			string unlockButtonText = Character_IsUnlockableInNewPlayerPass( characterFlav ) ? "#BP_UNLOCK_NPP_LEGENDS" : "#UNLOCK_LEGEND"
+			RTKCosmeticEquipScreen_SetSecondaryButtonVisible( self, true, unlockButtonText )
+		}
+		else
+		{
+			bool itemIsUnlockable      = RTKCosmeticEquip_IsItemUnlockable( ItemFlavor_GetGUID( itemFlav ) )
+			string secondaryButtonText = "#UNLOCK"
+
+			ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( itemFlav )
+			if ( itemIsUnlockable && ifpi.isPurchasableAtAll )
+			{
+				if ( ifpi.craftingOfferOrNull != null )
+				{
+					secondaryButtonText = "#LEGEND_LOCKER_UNLOCK_CM"
+				}
+				else if ( "leg" in ifpi.locationToDedicatedStoreOffersMap )
+				{
+					secondaryButtonText = "#LEGEND_LOCKER_UNLOCK_AC"
+				}
+			}
+
+			RTKCosmeticEquipScreen_SetSecondaryButtonVisible( self, itemIsUnlockable && p.currentSelectGUID != p.currentEquipGUID, secondaryButtonText )
+		}
+	}
+
+	UpdateFooterOptions()
+}
+
+void function RTKCosmeticEquipScreen_ShowImagePreview( rtk_behavior self, asset imagePreview )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.IMAGE )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	if ( RTKStruct_GetAssetPath( screenStruct, "imagePreview" ) != imagePreview )
+		RTKStruct_SetAssetPath( screenStruct, "imagePreview", imagePreview )
+
+	p.lastPreviewType = eCosmeticPreviewType.IMAGE
+}
+
+void function RTKCosmeticEquipScreen_ShowVideoPreview( rtk_behavior self, asset videoPreview )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.BINK )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	string modelPath = self.PropGetString( "modelPath" )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, modelPath, "RTKCosmeticEquipScreenModel" )
+
+	if ( RTKStruct_GetAssetPath( screenStruct, "videoPreview" ) != videoPreview )
+		RTKStruct_SetAssetPath( screenStruct, "videoPreview", videoPreview )
+
+	p.lastPreviewType = eCosmeticPreviewType.BINK
+}
+
+void function RTKCosmeticEquipScreen_ShowWeaponModelPreview( rtk_behavior self, ItemFlavor weaponSkinFlav )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.WEAPON_MODEL )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	ItemFlavor weaponFlav = WeaponSkin_GetWeaponFlavor( weaponSkinFlav )
+	ItemFlavor charmFlav = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_WeaponCharm( weaponFlav ) )
+	int weaponSkinId = ItemFlavor_GetGUID( weaponSkinFlav )
+	int weaponCharmId = ItemFlavor_GetGUID( charmFlav )
+	bool shouldAllowZoom = !( WeaponItemFlavor_GetStatsCategory( weaponFlav ) == WEAPON_STAT_CATEGORY_ORDNANCE ) 
+
+	RunClientScript( "UIToClient_PreviewWeaponSkin", weaponSkinId, weaponCharmId, true, shouldAllowZoom, true )
+
+	p.lastPreviewType = eCosmeticPreviewType.WEAPON_MODEL
+}
+
+void function RTKCosmeticEquipScreen_ShowCharacterModelPreview( rtk_behavior self, ItemFlavor characterSkinFlav )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.CHARACTER_MODEL )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+	RunClientScript( "UIToClient_PreviewCharacterSkinFromCharacterSkinPanel", ItemFlavor_GetGUID( characterSkinFlav ), ItemFlavor_GetGUID( characterFlav ), true )
+
+	p.lastPreviewType = eCosmeticPreviewType.CHARACTER_MODEL
+}
+
+void function RTKCosmeticEquipScreen_ShowCharacterGarmentPreview( rtk_behavior self, ItemFlavor garmentFlav )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.CHARACTER_GARMENT )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+	RunClientScript( "UIToClient_PreviewCharacterGarmentFromCharacterSkinPanel", ItemFlavor_GetGUID( garmentFlav ), ItemFlavor_GetGUID( characterFlav ), true )
+
+	p.lastPreviewType = eCosmeticPreviewType.CHARACTER_GARMENT
+}
+
+void function RTKCosmeticEquipScreen_ShowMeleeSkinPreview( rtk_behavior self, ItemFlavor meleeFlav )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.lastPreviewType != eCosmeticPreviewType.MELEE_MODEL )
+	{
+		RTKCosmeticEquipScreen_ClearItemPreview( self )
+	}
+
+	RunClientScript( "UIToClient_PreviewMeleeSkin", ItemFlavor_GetGUID( meleeFlav ) )
+
+	p.lastPreviewType = eCosmeticPreviewType.MELEE_MODEL
+}
+
+
+void function RTKCosmeticEquipScreen_OnPrimaryButtonPressed( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentSelectGUID == -1 )
+		return
+
+	RTKCosmeticEquipScreen_SetCurrentEquipGUID( self, p.currentSelectGUID )
+}
+
+void function RTKCosmeticEquipScreen_GenericInitItemList( rtk_behavior self, CosmeticEquipScreenInitSettings initSettings )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.favoriteSlotChangedCallback != null && p.loadoutEntries.len() > 0 )
+	{
+		RemoveCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), p.loadoutEntries[ 0 ], p.favoriteSlotChangedCallback )
+		p.favoriteSlotChangedCallback = null
+	}
+
+	p.loadoutEntries                      = initSettings.loadoutEntries
+	p.sortFuncNames                       = initSettings.sortFuncNames
+	p.sortOrdinalFunc                     = initSettings.sortOrdinalFunc
+	p.filterFunc                          = initSettings.filterFunc
+	p.isEmptyFunc                         = initSettings.isEmptyFunc
+	p.getItemFlavListFuncOverride         = initSettings.getItemFlavListFuncOverride
+	p.getCurrentEquipGUIDOverride         = initSettings.getCurrentEquipGUIDOverride
+	p.ignoreDefaultItemForOwnedCount      = initSettings.ignoreDefaultItemForOwnedCount
+	p.shouldIgnoreOtherSlotsForOwnedCount = initSettings.shouldIgnoreOtherSlotsForOwnedCount
+
+	table<string, int functionref( ItemFlavor, ItemFlavor, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) = null )> sortFuncNameMap = RTKCosmeticEquip_GetSortFuncNameToRefMap()
+
+	p.sortFuncs.clear()
+	foreach ( sortFuncName in p.sortFuncNames )
+	{
+		if ( sortFuncName in sortFuncNameMap )
+		{
+			p.sortFuncs.append( sortFuncNameMap[ sortFuncName ] )
+		}
+	}
+
+	RTKCosmeticEquipScreen_GenericRefreshItemList( self, true )
+}
+
+void function RTKCosmeticEquipScreen_GenericRefreshItemList( rtk_behavior self, bool resetPreviewItem = false )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return
+
+	ScreenPrivateData p
+	self.Private( p )
+	array<ItemFlavor> itemFlavs
+
+	if ( p.getItemFlavListFuncOverride != null )
+	{
+		itemFlavs = p.getItemFlavListFuncOverride()
+
+		itemFlavs.sort( int function( ItemFlavor a, ItemFlavor b ) : ( p ) {
+			return p.sortFuncs[ p.sortFuncIndex ]( a, b, p.loadoutEntries[ 0 ], p.sortOrdinalFunc ) } )
+	}
+	else
+	{
+		itemFlavs = RTKCosmeticEquip_GetSortedFilteredItemFlavList( p.loadoutEntries, p.sortFuncs[ p.sortFuncIndex ], p.sortOrdinalFunc, p.filterFunc, p.isEmptyFunc )
+	}
+
+	string modelPath = self.PropGetString( "modelPath" )
+	int currentEquippedItemGUID
+
+	if ( p.getCurrentEquipGUIDOverride != null )
+	{
+		currentEquippedItemGUID = p.getCurrentEquipGUIDOverride()
+	}
+	else
+	{
+		currentEquippedItemGUID = ItemFlavor_GetGUID( LoadoutSlot_GetItemFlavor( LocalClientEHI(), p.loadoutEntries[ 0 ], true ) )
+	}
+
+	p.cosmeticList      = RTKCosmeticEquip_GetItemModelsFromFlavs( self, itemFlavs, p.loadoutEntries, modelPath, currentEquippedItemGUID )
+
+	ItemFlavor previewItemFlav
+
+	if ( p.currentSelectGUID == -1 || resetPreviewItem )
+	{
+		previewItemFlav = GetItemFlavorByGUID( currentEquippedItemGUID )
+		p.currentSelectGUID = currentEquippedItemGUID
+	}
+	else
+	{
+		previewItemFlav = GetItemFlavorByGUID( p.currentSelectGUID )
+	}
+
+	p.currentEquipGUID  = currentEquippedItemGUID
+
+	self.PropSetInt( "currentPreviewGUID", ItemFlavor_GetGUID( previewItemFlav ) )
+
+	if ( ItemFlavor_IsTheFavoriteSentinel( previewItemFlav ) && p.loadoutEntries.len() == 1 )
+	{
+		previewItemFlav = LoadoutSlot_GetItemFlavor( LocalClientEHI(), p.loadoutEntries[ 0 ] )
+	}
+
+	RTKCosmeticEquipScreen_ShowGenericPreview( self, previewItemFlav )
+	RTKCosmeticEquipScreen_RegisterFavoriteSlotChangedCallback( self )
+
+	RTKCosmeticEquipScreen_SetItemListModel( self, p.cosmeticList )
+	RTKCosmeticEquipScreen_SetItemsOwnedText( self, RTKCosmeticEquip_GetOwnedString( p.loadoutEntries[ 0 ], itemFlavs, p.ignoreDefaultItemForOwnedCount, p.shouldIgnoreOtherSlotsForOwnedCount ) )
+}
+
+void function RTKCosmeticEquipScreen_RegisterFavoriteSlotChangedCallback( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.favoriteSlotChangedCallback != null && p.loadoutEntries.len() > 0 )
+	{
+		RemoveCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), p.loadoutEntries[ 0 ], p.favoriteSlotChangedCallback )
+		p.favoriteSlotChangedCallback = null
+	}
+
+	
+	if ( p.loadoutEntries.len() == 1 && p.loadoutEntries[ 0 ].maxFavoriteCount > 0 )
+	{
+		p.favoriteSlotChangedCallback = void function( EHI playerEHI, ItemFlavor contents ) : ( self )
+		{
+			ScreenPrivateData sp
+			self.Private( sp )
+			if ( sp.currentSelectGUID != -1 && ItemFlavor_IsTheFavoriteSentinel( GetItemFlavorByGUID( sp.currentSelectGUID ) ) )
+				RTKCosmeticEquipScreen_GenericOnItemPreview( self, sp.currentSelectGUID )
+		}
+		AddCallback_ItemFlavorLoadoutSlotDidChange_SpecificPlayer( LocalClientEHI(), p.loadoutEntries[ 0 ], p.favoriteSlotChangedCallback )
+	}
+}
+
+void function RTKCosmeticEquipScreen_GenericCategoryToggle( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	int index = -1
+	RTKCosmeticListItemModel category
+
+	foreach ( int itemIndex, listItem in p.cosmeticList )
+	{
+		if ( listItem.flavGUID == flavGUID )
+		{
+			index    = itemIndex
+			category = listItem
+			break
+		}
+	}
+
+	if ( index == -1 || !category.isCategory )
+		return
+
+	if ( !category.isCategoryOpen ) 
+	{
+		int currentEquippedItemGUID = ItemFlavor_GetGUID( LoadoutSlot_GetItemFlavor( LocalClientEHI(), p.loadoutEntries[ 0 ], true ) )
+		string modelPath = self.PropGetString( "modelPath" )
+		int insertIndex = 1
+		int playerGRXEdition = GRX_GetPlayerEdition()
+
+		foreach ( guid in category.categoryContentGUIDs )
+		{
+			RTKCosmeticListItemModel itemModel = RTKCosmeticEquip_GetItemModelFromItemFlav( GetItemFlavorByGUID( guid ), p.loadoutEntries, modelPath, playerGRXEdition, p.currentSelectGUID, currentEquippedItemGUID, false, flavGUID )
+			if ( itemModel.flavGUID == p.currentSelectGUID )
+			{
+				itemModel.state = RTKCosmeticEquip_GetSelectItemState( itemModel.state )
+			}
+			else if ( itemModel.flavGUID == p.currentEquipGUID )
+			{
+				itemModel.state = eUICosmeticItemState.EQUIPPED
+			}
+
+			p.cosmeticList.insert( index + insertIndex, itemModel )
+			RTKCosmeticEquipScreen_InsertListItem( self, index + insertIndex, itemModel )
+			insertIndex++
+		}
+	}
+	else 
+	{
+		for ( int i = 0; i < p.cosmeticList.len(); i++ )
+		{
+			if ( category.categoryContentGUIDs.contains( p.cosmeticList[i].flavGUID ) && !p.cosmeticList[i].isCategory )
+			{
+				p.cosmeticList.remove( i )
+				RTKCosmeticEquipScreen_RemoveListItem( self, i )
+				i--
+			}
+		}
+	}
+
+	category.isCategoryOpen = !category.isCategoryOpen
+	RTKCosmeticEquipScreen_SetListItemIsCategoryOpen( self, index, category.isCategoryOpen )
+}
+
+void function RTKCosmeticEquipScreen_GenericOnItemPreview( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	foreach ( int index, listItem in p.cosmeticList )
+	{
+		if ( listItem.flavGUID == flavGUID || listItem.categoryContentGUIDs.contains( flavGUID ) )
+		{
+			
+			listItem.state = RTKCosmeticEquip_GetSelectItemState( listItem.state )
+			RTKCosmeticEquipScreen_SetListItemState( self, index, listItem.state )
+		}
+		else if ( listItem.flavGUID == p.currentSelectGUID || listItem.categoryContentGUIDs.contains( p.currentSelectGUID ) )
+		{
+			
+			listItem.state = RTKCosmeticEquip_GetDeSelectItemState( listItem.state )
+			RTKCosmeticEquipScreen_SetListItemState( self, index, listItem.state )
+		}
+	}
+
+	ItemFlavor previewItemFlav = GetItemFlavorByGUID( flavGUID )
+	if ( ItemFlavor_IsTheFavoriteSentinel( previewItemFlav ) && p.loadoutEntries.len() == 1 )
+	{
+		previewItemFlav = LoadoutSlot_GetItemFlavor( LocalClientEHI(), p.loadoutEntries[0] )
+	}
+
+	p.currentSelectGUID = flavGUID
+	self.PropSetInt( "currentPreviewGUID", ItemFlavor_GetGUID( previewItemFlav ) )
+	RTKCosmeticEquipScreen_ShowGenericPreview( self, previewItemFlav )
+}
+
+void function RTKCosmeticEquipScreen_GenericOnItemEquip( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentEquipGUID == flavGUID )
+		return
+
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+
+	if ( RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav ) )
+	{
+		RTKCosmeticEquipScreen_GenericOnItemTryUnlock( self, flavGUID )
+		return
+	}
+
+	foreach ( int index, listItem in p.cosmeticList )
+	{
+		if ( listItem.flavGUID == flavGUID || listItem.categoryContentGUIDs.contains( flavGUID ) )
+		{
+			
+			listItem.state = RTKCosmeticEquip_GetEquipItemState( listItem.state )
+			RTKCosmeticEquipScreen_SetListItemState( self, index, listItem.state )
+		}
+		else if ( listItem.flavGUID == p.currentEquipGUID || listItem.categoryContentGUIDs.contains( p.currentEquipGUID ) )
+		{
+			
+			listItem.state = RTKCosmeticEquip_GetDeEquipItemState( listItem.state )
+			RTKCosmeticEquipScreen_SetListItemState( self, index, listItem.state )
+		}
+	}
+
+	if ( p.currentEquipGUID != flavGUID )
+		EmitUISound( "UI_Menu_Equip_Generic" )
+
+	p.currentEquipGUID = flavGUID
+
+	RequestSetItemFlavorLoadoutSlot_WithDuplicatePrevention( LocalClientEHI(), p.loadoutEntries, itemFlav, 0 )
+
+	
+	RTKCosmeticEquip_Telemetry_SendItemEquipEvent( itemFlav )
+
+	
+	bool itemIsUnlocked = IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), p.loadoutEntries[ 0 ], itemFlav, false, true )
+	RTKCosmeticEquipScreen_SetPrimaryButtonVisible( self, itemIsUnlocked && p.currentSelectGUID != p.currentEquipGUID ) 
+	UpdateFooterOptions()
+}
+
+void function RTKCosmeticEquipScreen_GenericOnItemHighlight( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	p.currentHighlightGUID = flavGUID
+	UpdateFooterOptions()
+}
+
+
+void function RTKCosmeticEquipScreen_GenericOnItemFavorite( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	LoadoutEntry entry = p.loadoutEntries[ 0 ]
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+
+	if ( RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav ) )
+	{
+		RTKCosmeticEquipScreen_GenericOnItemTryUnlock( self, flavGUID )
+		return
+	}
+
+	if ( entry.maxFavoriteCount == 0 )
+		return
+
+	if ( itemFlav == entry.favoriteItemFlavor )
+	{
+		EmitUISound( "UI_Menu_Deny" )
+		return
+	}
+
+	array<ItemFlavor> favouriteFlavs = LoadoutSlot_GetFavorites( LocalClientEHI(), entry )
+
+	if ( favouriteFlavs.contains( itemFlav ) )
+	{
+		RequestClearItemFlavorFavoritesSlot( LocalClientEHI(), entry, favouriteFlavs.find( itemFlav ), itemFlav )
+		EmitUISound( "ui_menu_cosmetic_unlock" )
+
+		
+		RTKCosmeticEquip_Telemetry_SendToggleFavoriteEvent( itemFlav, false )
+
+		foreach ( int index, listItem in p.cosmeticList )
+		{
+			if ( listItem.flavGUID == flavGUID && !listItem.isCategory )
+			{
+				
+				listItem.isFavorite = false
+				RTKCosmeticEquipScreen_SetListItemIsFavorite( self, index, false )
+			}
+			else if ( listItem.categoryContentGUIDs.contains( flavGUID ) )
+			{
+				
+				bool isFavorite = false
+				array<int> otherGUIDsInCategory = clone listItem.categoryContentGUIDs
+				otherGUIDsInCategory.removebyvalue( flavGUID )
+
+				foreach ( guid in otherGUIDsInCategory )
+				{
+					if ( favouriteFlavs.contains( GetItemFlavorByGUID( guid ) ) )
+					{
+						isFavorite = true
+						break
+					}
+				}
+				listItem.isFavorite = isFavorite
+				RTKCosmeticEquipScreen_SetListItemIsFavorite( self, index, isFavorite )
+			}
+		}
+	}
+	else
+	{
+		if ( favouriteFlavs.len() < entry.maxFavoriteCount )
+		{
+			RequestSetItemFlavorFavoritesSlot( LocalClientEHI(), entry, itemFlav, favouriteFlavs.len() )
+			PlayEquipSound( itemFlav )
+
+			
+			RTKCosmeticEquip_Telemetry_SendToggleFavoriteEvent( itemFlav, true )
+
+			foreach ( int index, listItem in p.cosmeticList )
+			{
+				if ( listItem.flavGUID == flavGUID || listItem.categoryContentGUIDs.contains( flavGUID ) )
+				{
+					
+					listItem.isFavorite = true
+					RTKCosmeticEquipScreen_SetListItemIsFavorite( self, index, true )
+				}
+			}
+		}
+		else
+		{
+			EmitUISound( "UI_Menu_Deny" )
+			ConfirmDialogData dialogData
+			dialogData.headerText = "#FAVORITES_FULL_TITLE"
+			dialogData.messageText = Localize( "#FAVORITES_FULL_HINT", entry.maxFavoriteCount )
+
+			OpenOKDialogFromData( dialogData )
+		}
+	}
+
+	UpdateFooterOptions()
+}
+
+void function RTKCosmeticEquipScreen_GenericOnItemTryUnlock( rtk_behavior self, int flavGUID )
+{
+	ItemFlavor itemFlav = GetItemFlavorByGUID( flavGUID )
+	bool doesItemNeedCharacterUnlockedFirst = RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav )
+	bool isItemUnlockable = RTKCosmeticEquip_IsItemUnlockable( flavGUID )
+
+	if ( !doesItemNeedCharacterUnlockedFirst && !isItemUnlockable )
+		return
+
+	PurchaseDialogConfig pdc
+
+	
+	if ( doesItemNeedCharacterUnlockedFirst )
+	{
+		ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+		if ( Character_IsUnlockableInNewPlayerPass( characterFlav ) )
+		{
+			OpenPromoLink( "newplayerpass", "" )
+			return
+		}
+
+		pdc.flav = characterFlav 
+	}
+	else
+	{
+		pdc.flav = itemFlav
+		pdc.hideStoreOffers = true
+	}
+
+	ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( itemFlav )
+	pdc.quantity = 1
+	pdc.markAsNew = true
+	pdc.onDialogOpenCallback = void function() {
+		
+		CustomizeWeaponMenu_SetCanNavigateBack( false )
+	}
+	pdc.onDialogCloseCallback = void function() {
+		thread void function() {
+			
+			WaitFrame()
+			CustomizeWeaponMenu_SetCanNavigateBack( true )
+		}()
+	}
+	pdc.onPurchaseResultCallback = void function( bool wasPurchaseSuccessful ) : ( self, pdc, ifpi ) {
+		RTKCosmeticEquipScreen_GenericRefreshItemList( self )
+
+		
+		ItemFlavor itemFlav = expect ItemFlavor( pdc.flav )
+		string topLevelContext = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+		string modelPath = self.PropGetString( "modelPath" )
+		string categoryName = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+		string itemName = ItemFlavor_GetLongName( itemFlav )
+		string qualityName = ItemQuality_GetQualityName( ItemFlavor_GetQuality( itemFlav ) )
+
+		int price
+		string currency
+		bool offersWidgetActive
+
+		if ( ifpi.craftingOfferOrNull != null )
+		{
+			GRXScriptCraftingOffer craftingOffer = expect GRXScriptCraftingOffer( ifpi.craftingOfferOrNull )
+			price = craftingOffer.craftingPrice
+			currency = "crafting_metals"
+		}
+		else if ( "leg" in ifpi.locationToDedicatedStoreOffersMap )
+		{
+			price = ifpi.locationToDedicatedStoreOffersMap[ "leg" ][ 0 ].prices[ 0 ].quantities[ 0 ]
+			currency = "apex_coins"
+		}
+
+		if ( ifpi.isPurchasableAtAll && ifpi.locationToDedicatedStoreOffersMap.len() > 0 )
+		{
+			foreach ( string location, offers in ifpi.locationToDedicatedStoreOffersMap )
+			{
+				if ( location != "leg" ) 
+				{
+					offersWidgetActive = true
+				}
+			}
+		}
+		RTKCosmeticEquip_Telemetry_SendUnlockEvent( modelPath, categoryName, itemName, qualityName, price, currency, offersWidgetActive, topLevelContext )
+	}
+
+	PurchaseDialog( pdc )
+}
+
+bool function RTKCosmeticEquipScreen_GenericIsItemFocused( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	return p.currentHighlightGUID != -1
+}
+
+bool function RTKCosmeticEquipScreen_GenericIsItemEquippable( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentHighlightGUID == -1 )
+		return false
+
+	EHI playerEHI       = LocalClientEHI()
+	ItemFlavor itemFlav = GetItemFlavorByGUID( p.currentHighlightGUID )
+
+	if ( RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav ) )
+		return false
+
+	if ( itemFlav == p.loadoutEntries[ 0 ].favoriteItemFlavor )
+		return true
+
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( playerEHI, p.loadoutEntries[ 0 ], itemFlav )
+	bool isEquipped = LoadoutSlot_GetItemFlavor( playerEHI, p.loadoutEntries[ 0 ], true ) == itemFlav
+
+	return !isEquipped && isUnlocked
+}
+
+bool function RTKCosmeticEquipScreen_GenericIsItemUnlockable( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentHighlightGUID == -1 )
+		return false
+
+	return RTKCosmeticEquip_IsItemUnlockable( p.currentHighlightGUID )
+}
+
+bool function RTKCosmeticEquipScreen_GenericIsItemFavoritable( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentHighlightGUID == -1 )
+		return false
+
+	EHI playerEHI       = LocalClientEHI()
+	ItemFlavor itemFlav = GetItemFlavorByGUID( p.currentHighlightGUID )
+
+	if ( RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( itemFlav ) )
+		return false
+
+	if ( itemFlav == p.loadoutEntries[ 0 ].favoriteItemFlavor )
+		return false
+
+	bool isUnlocked = IsItemFlavorUnlockedForLoadoutSlot( playerEHI, p.loadoutEntries[ 0 ], itemFlav )
+	bool isFavorite = IsBitFlagSet( itemFlav.loadoutSortPriority, eLoadoutSortPriority.FAVORITE )
+
+	return isUnlocked && !isFavorite
+}
+
+bool function RTKCosmeticEquipScreen_GenericIsItemFavorite( rtk_behavior self )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	if ( p.currentHighlightGUID == -1 )
+		return false
+
+	EHI playerEHI       = LocalClientEHI()
+	ItemFlavor itemFlav = GetItemFlavorByGUID( p.currentHighlightGUID )
+
+	if ( itemFlav == p.loadoutEntries[ 0 ].favoriteItemFlavor )
+		return false
+
+	return IsBitFlagSet( itemFlav.loadoutSortPriority, eLoadoutSortPriority.FAVORITE )
+}
+
+void function RTKCosmeticEquipScreen_CycleSortFunc( rtk_behavior self )
+{
+	if ( self == null )
+		return
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	p.sortFuncIndex = ( p.sortFuncIndex + 1 ) % p.sortFuncs.len()
+	RTKCosmeticEquipScreen_GenericRefreshItemList( self )
+
+	p.sortFooterDefController.gamepadLabel = Localize( "#LEGEND_LOCKER_FOOTER_SORT_CONTROLLER", Localize( p.sortFuncNames[ p.sortFuncIndex ] ), p.sortFuncIndex + 1, p.sortFuncNames.len()  )
+	p.sortFooterDefMKB.mouseLabel = Localize( "#LEGEND_LOCKER_FOOTER_SORT_MKB", Localize( p.sortFuncNames[ p.sortFuncIndex ] ), p.sortFuncIndex + 1, p.sortFuncNames.len() )
+	EmitUISound( "UI_Menu_Accept" )
+
+	UpdateFooterOptions()
+
+	
+	string modelPath = self.PropGetString( "modelPath" )
+	string topLevelContext = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+	RTKCosmeticEquip_Telemetry_SendSortEvent( modelPath, p.sortFuncNames[ p.sortFuncIndex ], topLevelContext )
+}
+
+void function RTKCosmeticEquipScreen_ToggleShowHideUI( rtk_behavior self )
+{
+	if ( self == null )
+		return
+
+	ScreenPrivateData p
+	self.Private( p )
+
+	rtk_behavior animator = self.PropGetBehavior( "animatorBehavior" )
+	if ( animator == null || RTKAnimator_IsPlaying( animator ) )
+		return
+
+	if ( p.isHidingUI && RTKAnimator_HasAnimation( animator, "onShow" ) )
+	{
+		RTKAnimator_PlayAnimation( animator, "onShow" )
+		p.isHidingUI = false
+	}
+	else if ( !p.isHidingUI && RTKAnimator_HasAnimation( animator,"onHide" ) )
+	{
+		RTKAnimator_PlayAnimation( animator, "onHide" )
+		p.isHidingUI = true
+	}
+
+	EmitUISound( "UI_Menu_Accept" )
+}
+
+
+
+
+
+
+
+
+
+
+
+void function RTKCosmeticEquipScreen_AddBackFooterOptions( rtk_behavior self, var panel )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}
+
+void function RTKCosmeticEquipScreen_AddSelectEquipFooterOptions( rtk_behavior self, var panel, bool functionref() isItemFocusedOverrideFunc = null, bool functionref() isItemEquippableOverrideFunc = null )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_A, false, "#A_BUTTON_SELECT", "", null, bool function () : ( self, isItemFocusedOverrideFunc )
+	{
+		if ( isItemFocusedOverrideFunc != null )
+		{
+			return isItemFocusedOverrideFunc()
+		}
+		return RTKCosmeticEquipScreen_GenericIsItemFocused( self )
+	} )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_EQUIP", "#X_BUTTON_EQUIP", null, bool function () : ( self, isItemEquippableOverrideFunc )
+	{
+		if ( isItemEquippableOverrideFunc != null )
+		{
+			return isItemEquippableOverrideFunc()
+		}
+		return RTKCosmeticEquipScreen_GenericIsItemEquippable( self )
+	} )
+}
+
+void function RTKCosmeticEquipScreen_AddUnlockFooterOptions( rtk_behavior self, var panel, bool functionref() isItemLockedOverrideFunc = null )
+{
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_UNLOCK", "#X_BUTTON_UNLOCK", null, bool function () : ( self, isItemLockedOverrideFunc ) {
+		if ( isItemLockedOverrideFunc != null )
+		{
+			return isItemLockedOverrideFunc()
+		}
+		return RTKCosmeticEquipScreen_GenericIsItemUnlockable( self )
+	} )
+}
+
+void function RTKCosmeticEquipScreen_AddSortFooterOption( rtk_behavior self, var panel )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	p.sortFooterDefController = AddPanelFooterOption( panel, LEFT, BUTTON_STICK_LEFT, false, Localize( "#LEGEND_LOCKER_FOOTER_SORT_CONTROLLER", Localize( p.sortFuncNames[ p.sortFuncIndex ] ), p.sortFuncIndex + 1, p.sortFuncNames.len() ), "", void function ( var unused ) : ( self ) { RTKCosmeticEquipScreen_CycleSortFunc( self ) } )
+	p.sortFooterDefMKB = AddPanelFooterOption( panel, LEFT, KEY_TAB, true, "", Localize( "#LEGEND_LOCKER_FOOTER_SORT_MKB", Localize( p.sortFuncNames[ p.sortFuncIndex ] ), p.sortFuncIndex + 1, p.sortFuncNames.len() ), void function ( var unused ) : ( self ) { RTKCosmeticEquipScreen_CycleSortFunc( self ) } )
+}
+
+void function RTKCosmeticEquipScreen_AddShowHideUIToggleFooterOption( rtk_behavior self, var panel )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	AddPanelFooterOption( panel, LEFT, KEY_Q, true, "", "#LEGEND_LOCKER_FOOTER_HIDE_MKB", void function ( var unused ) : ( self ) { RTKCosmeticEquipScreen_ToggleShowHideUI( self ) } )
+	AddPanelFooterOption( panel, LEFT, BUTTON_STICK_RIGHT, true, "#LEGEND_LOCKER_FOOTER_HIDE_CONTROLLER", "", void function ( var unused ) : ( self ) { RTKCosmeticEquipScreen_ToggleShowHideUI( self ) } )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+void function RTKCosmeticEquipScreen_AddZoomFooterOption( rtk_behavior self, var panel )
+{
+	AddPanelFooterOption( panel, RIGHT, BUTTON_TRIGGER_LEFT, false, "#MENU_ZOOM_CONTROLS_GAMEPAD", "#MENU_ZOOM_CONTROLS", null )
+}
+
+void function RTKCosmeticEquipScreen_AddFavoriteFooterOptions( rtk_behavior self, var panel, bool functionref() isItemFavoritableOrrideFunc = null, bool functionref() isItemFavoriteOverrideFunc = null )
+{
+	AddPanelFooterOption( panel, RIGHT, BUTTON_Y, false, "#Y_BUTTON_SET_FAVORITE", "#Y_BUTTON_SET_FAVORITE", null, bool function () : ( self, isItemFavoritableOrrideFunc )
+	{
+		if ( isItemFavoritableOrrideFunc != null )
+		{
+			return isItemFavoritableOrrideFunc()
+		}
+		return RTKCosmeticEquipScreen_GenericIsItemFavoritable( self )
+	} )
+
+	AddPanelFooterOption( panel, RIGHT, BUTTON_Y, false, "#Y_BUTTON_CLEAR_FAVORITE", "#Y_BUTTON_CLEAR_FAVORITE", null, bool function () : ( self, isItemFavoriteOverrideFunc )
+	{
+		if ( isItemFavoriteOverrideFunc != null )
+		{
+			return isItemFavoriteOverrideFunc()
+		}
+		return RTKCosmeticEquipScreen_GenericIsItemFavorite( self )
+	} )
+}
+
+
+
+void function RTKCosmeticListItemButton_OnInitialize( rtk_behavior self )
+{
+	ItemPrivateData p
+	self.Private( p )
+
+	p.modelPathListenerID = RTKStruct_AddPropertyListener( self.GetProperties(), "screenModelPath", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self )
+	{
+		RTKCosmeticListItemButton_SetupButton( self )
+	} )
+}
+
+void function RTKCosmeticListItemButton_SetupButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	if ( button == null )
+		return
+
+	string screenModelPath = self.PropGetString( "screenModelPath" )
+	if ( screenModelPath == "" )
+		return
+
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, screenModelPath, "RTKCosmeticEquipScreenModel" )
+
+	self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, screenStruct )
+	{
+		if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		{
+			EmitUISound( "UI_Menu_Deny" )
+			return
+		}
+
+		bool isCategory = self.PropGetBool( "isCategory" )
+
+		if ( isCategory )
+		{
+			RTKCosmeticListItemButton_ToggleCategory( self, screenStruct )
+		}
+		else
+		{
+			switch ( keycode )
+			{
+				case MOUSE_RIGHT:
+				case BUTTON_X:
+					RTKCosmeticListItemButton_EquipItem( self, screenStruct )
+					break
+
+				case MOUSE_LEFT:
+				case BUTTON_A:
+					RTKCosmeticListItemButton_PreviewItem( self, screenStruct )
+					break
+
+				case MOUSE_MIDDLE:
+				case BUTTON_Y:
+					RTKCosmeticListItemButton_FavoriteItem( self, screenStruct )
+					break
+			}
+		}
+	} )
+
+	self.AutoSubscribe( button, "onDoublePressed", function( rtk_behavior button, int keycode ) : ( self, screenStruct )
+	{
+		bool isCategory = self.PropGetBool( "isCategory" )
+
+		if ( isCategory )
+		{
+			RTKCosmeticListItemButton_ToggleCategory( self, screenStruct )
+		}
+		else
+		{
+			switch ( keycode )
+			{
+				case MOUSE_LEFT:
+				case BUTTON_A:
+					RTKCosmeticListItemButton_EquipItem( self, screenStruct )
+					break
+			}
+		}
+	} )
+
+	self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, screenStruct )
+	{
+		RTKCosmeticListItemButton_HighlightItem( self, screenStruct )
+	} )
+
+	self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, screenStruct )
+	{
+		if ( prevState == RTKBUTTONSTATE_HIGHLIGHTED )
+		{
+			RTKCosmeticListItemButton_UnHighlightItem( self, screenStruct )
+		}
+	} )
+
+	ItemPrivateData p
+	self.Private( p )
+	RTKStruct_RemovePropertyListener( self.GetProperties(), "screenModelPath", p.modelPathListenerID )
+
+
+
+}
+
+void function RTKCosmeticListItemButton_ToggleCategory( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null )
+		return
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	RTKStruct_SetInt( screenStruct, "categoryToggleGUID", flavGUID )
+	EmitUISound( "ui_menu_accept" )
+}
+
+void function RTKCosmeticListItemButton_PreviewItem( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null )
+		return
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	RTKStruct_SetInt( screenStruct, "currentPreviewGUID", flavGUID )
+	EmitUISound( "UI_Menu_Banner_Preview" )
+
+	
+	string screenModelPath = self.PropGetString( "screenModelPath" )
+	string topLevelContext = ItemFlavor_GetLongName( GetTopLevelCustomizeContext() )
+	RTKCosmeticEquip_Telemetry_SendItemViewEvent( screenModelPath, topLevelContext )
+}
+
+void function RTKCosmeticListItemButton_EquipItem( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null )
+		return
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+
+	int state = self.PropGetInt( "state" )
+	bool cannotEquip = !RTKCosmeticEquip_CanItemBeEquipped( state )
+	if ( cannotEquip )
+	{
+		RTKStruct_SetInt( screenStruct, "tryUnlockGUID", flavGUID )
+		EmitUISound( "ui_menu_accept" )
+		return
+	}
+
+	RTKStruct_SetInt( screenStruct, "currentPreviewGUID", flavGUID )
+	RTKStruct_SetInt( screenStruct, "currentEquipGUID", flavGUID )
+}
+
+void function RTKCosmeticListItemButton_HighlightItem( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null || !RTKStruct_HasProperty( screenStruct, "currentHighlightGUID" ) )
+		return
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	RTKStruct_SetInt( screenStruct, "currentHighlightGUID", flavGUID )
+}
+
+void function RTKCosmeticListItemButton_UnHighlightItem( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null || !RTKStruct_HasProperty( screenStruct, "currentHighlightGUID" ) )
+		return
+
+	int flavGUID              = self.PropGetInt( "flavGUID" )
+	int currentHighlightGUID = RTKStruct_GetInt( screenStruct, "currentHighlightGUID" )
+	if ( flavGUID == currentHighlightGUID )
+	{
+		RTKStruct_SetInt( screenStruct, "currentHighlightGUID", -1 )
+	}
+}
+
+void function RTKCosmeticListItemButton_FavoriteItem( rtk_behavior self, rtk_struct screenStruct )
+{
+	if ( screenStruct == null )
+		return
+
+	int state           = self.PropGetInt( "state" )
+	bool cannotFavorite = !RTKCosmeticEquip_CanItemBeEquipped( state )
+	if ( cannotFavorite )
+		return
+
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	RTKStruct_SetInt( screenStruct, "favoriteGUID", flavGUID )
+	
+}
+
+
+
+
+table<string, int functionref( ItemFlavor, ItemFlavor, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) = null )> function RTKCosmeticEquip_GetSortFuncNameToRefMap()
+{
+	table<string, int functionref( ItemFlavor, ItemFlavor, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) = null )> map = {
+		["#LEGEND_LOCKER_SORT_DEFAULT"] = RTKCosmeticEquip_DefaultSortFunc,
+		["#LEGEND_LOCKER_SORT_RARITY"] = RTKCosmeticEquip_RaritySortFunc,
+		["#LEGEND_LOCKER_SORT_UNOWNED"] = RTKCosmeticEquip_UnownedSortFunc,
+		["#LEGEND_LOCKER_SORT_ALPHABETICAL"] = RTKCosmeticEquip_AlphabeticalSortFunc,
+	}
+
+	return map
+}
+
+array<ItemFlavor> function RTKCosmeticEquip_GetSortedFilteredItemFlavList(
+		array<LoadoutEntry> loadoutEntries,
+		int functionref( ItemFlavor, ItemFlavor, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) = null ) sortFunc,
+		int functionref( ItemFlavor ) sortOrdinalFunc = null,
+		bool functionref( ItemFlavor, array<LoadoutEntry> ) filterFunc = null,
+		bool functionref( ItemFlavor ) isEmptyFunc = null )
+{
+	
+	array<ItemFlavor> itemFlavs = clone GetValidItemFlavorsForLoadoutSlot( loadoutEntries[ 0 ] )
+
+	EHI playerEHI = LocalClientEHI()
+
+	
+	itemFlavs = FilterItemsForVisibility( playerEHI, itemFlavs )
+	if ( GetCurrentPlaylistVarBool( "filter_uncraftable_items", true ) )
+		itemFlavs = FilterItemsForGRX( playerEHI, itemFlavs )
+
+	
+	for ( int i = 0; i < itemFlavs.len(); i++ )
+	{
+		if ( RTKCosmeticEquip_IsLockedAndHidden( itemFlavs[i], loadoutEntries ) || ( filterFunc != null && filterFunc( itemFlavs[i], loadoutEntries ) ) )
+		{
+			itemFlavs.remove( i )
+			i--
+		}
+		else
+		{
+			
+			itemFlavs[ i ].loadoutSortPriority = itemFlavs[ i ].loadoutSortPriority & ~eLoadoutSortPriority.EQUIPPED
+			itemFlavs[ i ].loadoutSortPriority = itemFlavs[ i ].loadoutSortPriority & ~eLoadoutSortPriority.FAVORITE
+		}
+	}
+
+	
+	array<ItemFlavor> favoritedItemFlavs = LoadoutSlot_GetFavorites( LocalClientEHI(), loadoutEntries[ 0 ] )
+	foreach ( item in favoritedItemFlavs )
+		item.loadoutSortPriority = item.loadoutSortPriority | eLoadoutSortPriority.FAVORITE
+
+	
+	array<ItemFlavor> equippedItemFlavs
+	foreach ( loadoutEntry in loadoutEntries )
+	{
+		if ( LoadoutSlot_IsReady( playerEHI, loadoutEntry ) )
+			equippedItemFlavs.append( LoadoutSlot_GetItemFlavor( playerEHI, loadoutEntry, true ) )
+	}
+	foreach ( item in equippedItemFlavs )
+	{
+		item.loadoutSortPriority = item.loadoutSortPriority | eLoadoutSortPriority.EQUIPPED
+	}
+
+	itemFlavs.sort( int function( ItemFlavor a, ItemFlavor b ) : ( sortFunc, loadoutEntries, sortOrdinalFunc ) {
+			return sortFunc( a, b, loadoutEntries[ 0 ], sortOrdinalFunc ) } )
+
+	
+
+	return itemFlavs
+}
+
+array<string> function RTKCosmeticEquip_GetDefaultSortFuncNames()
+{
+	return [
+		"#LEGEND_LOCKER_SORT_DEFAULT",
+		"#LEGEND_LOCKER_SORT_RARITY",
+		"#LEGEND_LOCKER_SORT_UNOWNED",
+		"#LEGEND_LOCKER_SORT_ALPHABETICAL",
+	]
+}
+
+int function RTKCosmeticEquip_DefaultSortFunc( ItemFlavor a, ItemFlavor b, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) getSortOrdinalFunc = null )
+{
+	if ( a.loadoutSortPriority > b.loadoutSortPriority )
+		return -1
+	else if ( a.loadoutSortPriority < b.loadoutSortPriority )
+		return 1
+
+	if ( getSortOrdinalFunc != null )
+	{
+		return getSortOrdinalFunc( a ) - getSortOrdinalFunc( b )
+	}
+
+	return 0
+}
+
+int function RTKCosmeticEquip_RaritySortFunc( ItemFlavor a, ItemFlavor b, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) getSortOrdinalFunc = null )
+{
+	if ( ItemFlavor_GetQuality( a ) >  ItemFlavor_GetQuality( b ) )
+		return -1
+	else if ( ItemFlavor_GetQuality( a  ) <  ItemFlavor_GetQuality( b  ) )
+		return 1
+
+	if ( a.loadoutSortPriority > b.loadoutSortPriority )
+		return -1
+	else if ( a.loadoutSortPriority < b.loadoutSortPriority )
+		return 1
+
+	if ( getSortOrdinalFunc != null )
+	{
+		return getSortOrdinalFunc( a ) - getSortOrdinalFunc( b )
+	}
+
+	return 0
+}
+
+int function RTKCosmeticEquip_UnownedSortFunc( ItemFlavor a, ItemFlavor b, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) getSortOrdinalFunc = null )
+{
+	bool aIsUnlocked = IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), loadoutEntry, a )
+	bool bIsUnlocked = IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), loadoutEntry, b )
+
+	if ( aIsUnlocked && !bIsUnlocked )
+		return -1
+	else if ( !aIsUnlocked && bIsUnlocked )
+		return 1
+
+	if ( a.loadoutSortPriority > b.loadoutSortPriority )
+		return -1
+	else if ( a.loadoutSortPriority < b.loadoutSortPriority )
+		return 1
+
+	if ( getSortOrdinalFunc != null )
+	{
+		return getSortOrdinalFunc( a ) - getSortOrdinalFunc( b )
+	}
+
+	return 0
+}
+
+int function RTKCosmeticEquip_AlphabeticalSortFunc( ItemFlavor a, ItemFlavor b, LoadoutEntry loadoutEntry, int functionref( ItemFlavor ) getSortOrdinalFunc = null )
+{
+	if ( Localize( ItemFlavor_GetLongName( a ) ) < Localize( ItemFlavor_GetLongName( b ) ) )
+		return -1
+	else if ( Localize( ItemFlavor_GetLongName( a ) ) > Localize( ItemFlavor_GetLongName( b ) ) )
+		return 1
+
+	return 0
+}
+
+bool function RTKCosmeticEquip_IsLockedAndHidden( ItemFlavor item, array<LoadoutEntry> loadoutEntries )
+{
+	return !IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), loadoutEntries[ 0 ], item ) && GetGlobalSettingsBool( ItemFlavor_GetAsset( item ), "shouldHideIfLocked" )
+}
+
+array<RTKCosmeticListItemModel> function RTKCosmeticEquip_GetItemModelsFromFlavs( rtk_behavior self, array<ItemFlavor> itemFlavs, array<LoadoutEntry> loadoutEntries, string modelPath, int currentEquippedItemGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	array<RTKCosmeticListItemModel> listItems
+	bool itemTypeSupportSets = itemFlavs.len() > 0 && CosmeticSet_DoesItemTypeSupportCosmeticSets( ItemFlavor_GetType( itemFlavs[0] ) )
+	int playerGRXEdition = GRX_GetPlayerEdition()
+
+	if ( itemTypeSupportSets )
+	{
+		array<ItemFlavor> categoryFlavs 
+		foreach ( itemFlav in itemFlavs )
+		{
+			if ( CosmeticSet_DoesItemHaveDropdownCategory( itemFlav ) )
+			{
+				ItemFlavor baseItem = CosmeticSet_GetBaseItems( itemFlav )[ 0 ]
+				if ( !categoryFlavs.contains( baseItem ) )
+				{
+					categoryFlavs.append( baseItem )
+					RTKCosmeticListItemModel categoryModel = RTKCosmeticEquip_GetItemModelFromItemFlav( baseItem, loadoutEntries, modelPath, playerGRXEdition, p.currentSelectGUID, currentEquippedItemGUID, true )
+
+					array< ItemFlavor > setItems = CosmeticSet_GetItemsOfType( itemFlav, ItemFlavor_GetType( itemFlav ) )
+					if ( p.getItemFlavListFuncOverride == null )
+					{
+						setItems = FilterItemsForVisibility( LocalClientEHI(), setItems )
+						if ( GetCurrentPlaylistVarBool( "filter_uncraftable_items", true ) )
+						{
+							setItems = FilterItemsForGRX( LocalClientEHI(), setItems )
+						}
+					}
+
+					foreach ( setItem in setItems )
+					{
+						categoryModel.categoryContentGUIDs.append( ItemFlavor_GetGUID( setItem ) )
+						if ( ItemFlavor_GetGUID( setItem ) == currentEquippedItemGUID )
+							categoryModel.state = eUICosmeticItemState.SELECTED_AND_EQUIPPED
+						if ( IsBitFlagSet( setItem.loadoutSortPriority, eLoadoutSortPriority.FAVORITE ) )
+						{
+							categoryModel.isFavorite = true
+						}
+					}
+
+					listItems.append( categoryModel )
+				}
+			}
+			else
+			{
+				listItems.append( RTKCosmeticEquip_GetItemModelFromItemFlav( itemFlav, loadoutEntries, modelPath, playerGRXEdition, p.currentSelectGUID, currentEquippedItemGUID ) )
+			}
+		}
+	}
+	else
+	{
+		foreach ( itemFlav in itemFlavs )
+		{
+			listItems.append( RTKCosmeticEquip_GetItemModelFromItemFlav( itemFlav, loadoutEntries, modelPath, playerGRXEdition, p.currentSelectGUID, currentEquippedItemGUID ) )
+		}
+	}
+
+	return listItems
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+RTKCosmeticListItemModel function RTKCosmeticEquip_GetItemModelFromItemFlav( ItemFlavor itemFlav, array<LoadoutEntry> loadoutEntries, string modelPath, int playerGRXEdition, int currentSelectGUID = -1, int currentEquippedItemGUID = -1, bool isCategory = false, int parentCategoryGUID = -1 )
+{
+	RTKCosmeticListItemModel model
+
+	model.flavGUID           = ItemFlavor_GetGUID( itemFlav )
+	model.isCategory         = isCategory
+	model.parentCategoryGUID = parentCategoryGUID
+	model.name               = Localize( ItemFlavor_GetLongName( itemFlav ) )
+	model.quality            = ItemFlavor_HasQuality( itemFlav ) ? ItemFlavor_GetQuality( itemFlav ) : 0
+	model.eventIcon          = ItemFlavor_GetSourceIcon( itemFlav )
+
+	if ( !isCategory )
+	{
+		model.isFavorite         = IsBitFlagSet( itemFlav.loadoutSortPriority, eLoadoutSortPriority.FAVORITE )
+
+		if ( RTKCosmeticEquip_DoesItemHaveSubQuality( itemFlav ) )
+		{
+			model.subQuality = Mythics_GetSkinTierIntForSkin( itemFlav )
+		}
+
+		if ( ItemFlavor_GetType( itemFlav ) == eItemType.weapon_skin && WeaponSkin_DoesReactToKills( itemFlav ) && model.quality != eRarityTier.MYTHIC ) 
+		{
+			model.hasVisualFlair = true
+		}
+	}
+
+	int state = eUICosmeticItemState.AVAILABLE
+	bool itemIsUnlocked = IsItemFlavorUnlockedForLoadoutSlot( LocalClientEHI(), loadoutEntries[ 0 ], itemFlav, false, true )
+	bool itemIsEquipped = model.flavGUID == currentEquippedItemGUID
+	bool itemIsSelected = model.flavGUID == currentSelectGUID
+
+	if ( !itemIsUnlocked )
+	{
+		if ( itemIsSelected )
+			state = eUICosmeticItemState.SELECTED_AND_LOCKED
+		else
+			state = eUICosmeticItemState.LOCKED
+	}
+	else if ( itemIsEquipped )
+	{
+		if ( currentSelectGUID == -1 || itemIsSelected )
+			state = eUICosmeticItemState.SELECTED_AND_EQUIPPED
+		else
+			state = eUICosmeticItemState.EQUIPPED
+	}
+	else if ( Newness_IsItemFlavorNew( itemFlav ) )
+	{
+		state = eUICosmeticItemState.NEW
+	}
+	else if ( itemIsSelected )
+	{
+		state = eUICosmeticItemState.SELECTED_AND_AVAILABLE
+	}
+	model.state = state
+
+	ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( itemFlav )
+	foreach ( string location, offers in ifpi.locationToDedicatedStoreOffersMap )
+	{
+		foreach ( offer in offers )
+		{
+			if ( RTKCosmeticStoreOffers_ShouldOfferBeShown( itemFlav, location, offer ) )
+			{
+				model.hasOffer = true
+			}
+
+			if ( !GRX_IsItemOwnedByPlayer( itemFlav ) && location == "leg" && "edition" in offer.attributes && ConvertStringToInt( offer.attributes[ "edition" ] ) == playerGRXEdition )
+			{
+				model.isNewlyAdded = true
+			}
+		}
+	}
+
+	if ( model.isNewlyAdded )
+	{
+		model.toolTipText += Localize( "#COSMETIC_ITEM_IS_NEWLY_ADDED" )
+	}
+
+	if ( model.hasOffer )
+	{
+		if ( model.toolTipText.len() > 0 )
+			model.toolTipText+= "\n"
+		model.toolTipText += Localize( "#COSMETIC_ITEM_HAS_OFFER" )
+	}
+
+	model.modelPath = modelPath
+
+	return model
+}
+
+RTKCosmeticListItemModel ornull function RTKCosmeticEquip_GetItemModelByFlavGUID( rtk_behavior self, int flavGUID )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	foreach ( int index, listItem in p.cosmeticList )
+	{
+		if ( listItem.flavGUID == flavGUID || listItem.categoryContentGUIDs.contains( flavGUID ) )
+		{
+			return listItem
+		}
+	}
+
+	return null
+}
+
+RTKCosmeticListItemModel ornull function RTKCosmeticEquip_GetCurrentItemModel( rtk_behavior self )
+{
+	ScreenPrivateData p
+	self.Private( p )
+
+	return RTKCosmeticEquip_GetItemModelByFlavGUID( self, p.currentHighlightGUID )
+}
+
+bool function RTKCosmeticEquip_IsSharedFavoriteFlav( ItemFlavor item )
+{
+	return ItemFlavor_GetAssetShortName( item ) == "_shared_favorites"
+}
+
+bool function RTKCosmeticEquip_DoesItemHaveSubQuality( ItemFlavor itemFlav )
+{
+	return ItemFlavor_GetType( itemFlav ) == eItemType.character_skin && ItemFlavor_GetQuality( itemFlav ) == eRarityTier.MYTHIC
+}
+
+bool function RTKCosmeticEquip_IsItemUnlockable( int flavGUID )
+{
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+		return false
+
+	ItemFlavor ornull itemFlav = GetItemFlavorOrNullByGUID( flavGUID )
+	if ( itemFlav == null )
+		return false
+
+	expect ItemFlavor( itemFlav )
+	
+	if ( ItemFlavor_GetType( itemFlav ) == eItemType.melee_skin && Artifacts_Loadouts_IsConfigPointerItemFlavor( itemFlav ) )
+	{
+		return !IsItemFlavorUnlockedForLoadoutSlot( ToEHI( GetLocalClientPlayer() ), Loadout_MeleeSkin( GetTopLevelCustomizeContext() ), itemFlav )
+	}
+
+	if ( GRX_IsItemOwnedByPlayer( itemFlav ) )
+		return false
+
+	return RTKCosmeticEquip_DoesItemHaveCraftingOrLLOffer( itemFlav )
+}
+
+bool function RTKCosmeticEquip_DoesItemHaveCraftingOrLLOffer( ItemFlavor itemFlav )
+{
+	const array<string> offerLocations = [ "leg", "universal_set_shop", "heirloom_set_shop" ]
+
+	ItemFlavorPurchasabilityInfo ifpi = GRX_GetItemPurchasabilityInfo( itemFlav )
+
+	if ( !ifpi.isPurchasableAtAll )
+		return false
+
+	if ( ifpi.craftingOfferOrNull != null )
+		return true
+
+	foreach ( s in offerLocations )
+	{
+		if ( s in ifpi.locationToDedicatedStoreOffersMap )
+			return true
+	}
+
+	return false
+}
+
+bool function RTKCosmeticEquip_DoesItemNeedCharacterUnlockedFirst( ItemFlavor itemFlav )
+{
+	int itemType = ItemFlavor_GetType( itemFlav )
+	if ( !FLAV_TYPES_NEED_CHARACTER_UNLOCKED.contains( itemType ) )
+		return false
+
+	return RTKCosmeticEquip_DoesScreenNeedCharacterUnlockedFirst()
+}
+
+bool function RTKCosmeticEquip_DoesScreenNeedCharacterUnlockedFirst()
+{
+	ItemFlavor characterFlav = GetTopLevelCustomizeContext()
+	if ( ItemFlavor_GetType( characterFlav ) != eItemType.character )
+		return false
+
+	return !Character_IsCharacterOwnedByPlayer( characterFlav )
+}
+
+string function RTKCosmeticEquip_GetOwnedString( LoadoutEntry entry, array<ItemFlavor> itemList, bool ignoreDefaultItemForOwnedCount, bool shouldIgnoreOtherSlotsForOwnedCount )
+{
+	EHI playerEHI = LocalClientEHI()
+	int owned = 0
+	int total = itemList.len()
+
+	foreach ( ItemFlavor itemFlav in itemList )
+	{
+		if ( IsItemFlavorUnlockedForLoadoutSlot( playerEHI, entry, itemFlav, false, shouldIgnoreOtherSlotsForOwnedCount ) )
+		{
+			owned++
+		}
+	}
+
+	if ( ignoreDefaultItemForOwnedCount )
+	{
+		owned--
+		total--
+	}
+
+	if ( itemList.contains( entry.favoriteItemFlavor ) )
+	{
+		owned--
+		total--
+	}
+
+	return Localize( "#X/Y", owned, total )
+}
+
+int function RTKCosmeticEquip_GetSelectItemState( int previousState )
+{
+	switch ( previousState )
+	{
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.NEW:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+			return eUICosmeticItemState.SELECTED_AND_AVAILABLE
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			return eUICosmeticItemState.SELECTED_AND_EQUIPPED
+		case eUICosmeticItemState.LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+			return eUICosmeticItemState.SELECTED_AND_LOCKED
+		case eUICosmeticItemState.RESTRICTED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			return eUICosmeticItemState.SELECTED_AND_RESTRICTED
+	}
+
+	unreachable
+}
+
+int function RTKCosmeticEquip_GetDeSelectItemState( int previousState )
+{
+	switch ( previousState )
+	{
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.NEW:
+			return eUICosmeticItemState.AVAILABLE
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+		case eUICosmeticItemState.EQUIPPED:
+			return eUICosmeticItemState.EQUIPPED
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+		case eUICosmeticItemState.LOCKED:
+			return eUICosmeticItemState.LOCKED
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+		case eUICosmeticItemState.RESTRICTED:
+			return eUICosmeticItemState.RESTRICTED
+	}
+
+	unreachable
+}
+
+int function RTKCosmeticEquip_GetEquipItemState( int previousState )
+{
+	switch ( previousState )
+	{
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.NEW:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			return eUICosmeticItemState.SELECTED_AND_EQUIPPED
+		case eUICosmeticItemState.LOCKED:
+			return eUICosmeticItemState.LOCKED
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+			return eUICosmeticItemState.SELECTED_AND_LOCKED
+		case eUICosmeticItemState.RESTRICTED:
+			return eUICosmeticItemState.RESTRICTED
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			return eUICosmeticItemState.SELECTED_AND_RESTRICTED
+	}
+
+	unreachable
+}
+
+int function RTKCosmeticEquip_GetDeEquipItemState( int previousState )
+{
+	switch ( previousState )
+	{
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			return eUICosmeticItemState.AVAILABLE
+		case eUICosmeticItemState.LOCKED: 
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.NEW:
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+			return eUICosmeticItemState.AVAILABLE
+		case eUICosmeticItemState.RESTRICTED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			return eUICosmeticItemState.RESTRICTED
+	}
+
+	unreachable
+}
+
+bool function RTKCosmeticEquip_CanItemBeEquipped( int state )
+{
+	switch ( state )
+	{
+		case eUICosmeticItemState.NEW:
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			return true
+	}
+
+	return false
+}
+
+asset function RTKMutator_GetRightIconAssetFromState( int state )
+{
+	asset icon = $""
+
+	switch ( state )
+	{
+		case eUICosmeticItemState.LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+			icon = $"ui_image/rui/menu/buttons/lock.rpak"
+			break
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			icon = $"ui_image/rui/menu/buttons/equipped.rpak"
+			break
+		case eUICosmeticItemState.RESTRICTED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			icon = $"ui_image/rui/menu/common/icon_unable_equip.rpak"
+			break
+		case eUICosmeticItemState.NEW:
+			icon = $"ui_image/rui/menu/buttons/new.rpak"
+			break
+
+		
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+			break
+	}
+
+	return icon
+}
+
+vector function RTKMutator_GetRightIconColorFromState( int state )
+{
+	vector color = <1.0, 1.0, 1.0>
+
+	switch ( state )
+	{
+		case eUICosmeticItemState.LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+		case eUICosmeticItemState.RESTRICTED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			color = <143, 143, 143> / 255
+			break
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			color = <246, 134, 40> / 255
+			break
+
+		
+		case eUICosmeticItemState.AVAILABLE:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+		case eUICosmeticItemState.NEW:
+			break
+	}
+
+	return color
+}
+
+bool function RTKMutator_IsCosmeticStateLockedOrRestricted( int state )
+{
+	switch ( state )
+	{
+		case eUICosmeticItemState.LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+		case eUICosmeticItemState.RESTRICTED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			return true
+		default:
+			return false
+	}
+
+	unreachable
+}
+
+bool function RTKMutator_IsCosmeticStateSelected( int state )
+{
+	switch ( state )
+	{
+		case eUICosmeticItemState.SELECTED_AND_LOCKED:
+		case eUICosmeticItemState.SELECTED_AND_AVAILABLE:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_RESTRICTED:
+			return true
+		default:
+			return false
+	}
+
+	unreachable
+}
+
+bool function RTKMutator_IsCosmeticStateEquipped( int state )
+{
+	switch ( state )
+	{
+		case eUICosmeticItemState.EQUIPPED:
+		case eUICosmeticItemState.SELECTED_AND_EQUIPPED:
+			return true
+		default:
+			return false
+	}
+
+	unreachable
+}
+
+
+
+
+void function RTKCosmeticEquip_Telemetry_SendPageViewEvent( string modelPath, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry = RTKCosmeticEquip_Telemetry_GetTelemetryStruct( modelPath, topLevelContext )
+	telemetry.pageViewCount++
+	telemetry.numItemsClicked = 0
+
+	PIN_PageView_LegendLocker( telemetry.pageName, telemetry.pageViewCount )
+}
+
+void function RTKCosmeticEquip_Telemetry_SendItemViewEvent( string modelPath, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry = RTKCosmeticEquip_Telemetry_GetTelemetryStruct( modelPath, topLevelContext )
+	telemetry.numItemsClicked++
+
+	PIN_PageView_LegendLocker_OnItemView( telemetry.pageName, telemetry.numItemsClicked )
+}
+
+void function RTKCosmeticEquip_Telemetry_SendUnlockEvent( string modelPath, string categoryName, string itemName, string qualityName, int price, string currency, bool offersWidgetActive, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry = RTKCosmeticEquip_Telemetry_GetTelemetryStruct( modelPath, topLevelContext )
+
+	PIN_Currency_LegendLocker_OnUnlock( telemetry.pageName, categoryName, itemName, qualityName, price, currency, offersWidgetActive )
+}
+
+void function RTKCosmeticEquip_Telemetry_SendSortEvent( string modelPath, string sortType, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry = RTKCosmeticEquip_Telemetry_GetTelemetryStruct( modelPath, topLevelContext )
+	PIN_UIInteraction_LegendLocker_OnSort( telemetry.pageName, sortType )
+}
+
+void function RTKCosmeticEquip_Telemetry_SendExitEvent( string modelPath, string lastSortType, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry = RTKCosmeticEquip_Telemetry_GetTelemetryStruct( modelPath, topLevelContext )
+	PIN_UIInteraction_LegendLocker_OnExit( telemetry.pageName, lastSortType )
+}
+
+LegendLockerTelemetry function RTKCosmeticEquip_Telemetry_GetTelemetryStruct( string modelPath, string topLevelContext = "" )
+{
+	LegendLockerTelemetry telemetry
+	string key = topLevelContext + "_" + modelPath
+	if ( !( key in fileTelemetry.telemetryTable ) )
+	{
+		telemetry.pageName = "legend_locker_" + key
+		fileTelemetry.telemetryTable[ key ] <- telemetry
+	}
+	telemetry = fileTelemetry.telemetryTable[ key ]
+
+	return telemetry
+}
+
+void function RTKCosmeticEquip_Telemetry_SendItemEquipEvent( ItemFlavor itemFlav )
+{
+	ItemFlavor ornull context = IsTopLevelCustomizeContextValid() ? GetTopLevelCustomizeContext() : null
+	int ornull tier = null
+	if ( DigitalGarments_IsEnabled() && ItemFlavor_GetType( itemFlav ) == eItemType.digital_garment )
+	{
+		tier = DigitalGarments_GetGarmentTier( LocalClientEHI(), itemFlav )
+	}
+
+	PIN_Customization( context, itemFlav, "equip", 0, tier )
+}
+
+void function RTKCosmeticEquip_Telemetry_SendToggleFavoriteEvent( ItemFlavor itemFlav, bool addFavourite )
+{
+	ItemFlavor ornull context = IsTopLevelCustomizeContextValid() ? GetTopLevelCustomizeContext() : null
+	string customizeAction = addFavourite ? "add_favorite" : "clear_favorite"
+
+	PIN_Customization( context, itemFlav, customizeAction, 0, null )
+}

@@ -1,0 +1,10 @@
+
+global function SurvivalBR_PopulateAboutText
+
+array< featureTutorialTab > function SurvivalBR_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+	GameMode_AboutDialog_AppendDefaultGamemodeFeatureTabs( tabs )
+	return tabs
+}
+

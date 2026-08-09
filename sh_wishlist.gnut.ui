@@ -1,0 +1,2099 @@
+
+global function Wishlist_IsEnabled
+global function Wishlist_GetWishlistCategory
+global function Wishlist_IsWishlistCharacterCategory
+global function Wishlist_IsWishlistWeaponCategory
+global function Wishlist_IsCompleted
+
+
+
+global function Wishlist_Init
+global function UICodeCallback_WishlistUpdated
+global function Wishlist_OnGRXInventoryStateChanged
+global function Wishlist_UpdateCachedOwnershipAsOwned
+global function Wishlist_GetProgressForCategory
+global function Wishlist_GetTotalProgressForCategory
+global function Wishlist_IsCategoryCompleted
+global function Wishlist_GetRemainingCountForCategory
+global function Wishlist_IsWishlistCategoryIsPossiblyInvalidWhenOpening
+global function Wishlist_IsValid
+global function Wishlist_AreDifferent
+global function Wishlist_IsPartialValid
+global function Wishlist_Generate
+global function Wishlist_BuildFromFlatArray
+global function Wishlist_BuildFromMarketplaceStrings
+global function Wishlist_BuildMarketplaceStringArray
+global function Wishlist_GetMarketplaceStringRef
+
+global function Wishlist_GetWishlistForLocalPlayer
+global function Wishlist_GetSaveOffer
+global function Wishlist_GetCanAffordSaving
+global function Wishlist_GetSaveOfferPrice
+global function Wishlist_GetSaveOfferFormatedPrice
+global function Wishlist_GetWishlistParametersForLocalPlayer
+global function Wishlist_GetSelectionUIState
+global function Wishlist_UpdateWishlistSelections
+global function Wishlist_GetTargetItemsFromDatatable
+
+global function Wishlist_GetItemFlavorRewardShortDescription
+
+global function AddCallback_OnWishlistSaved
+global function RemoveCallback_OnWishlistSaved
+
+global function Wishlist_GetUpgradePackOffer
+global function Wishlist_IsUpgradingEnabled
+global function Wishlist_IsPackUpgradable
+
+#if DEV
+global function DEV_WishlistTest
+global function DEV_PrintWishlist
+#endif
+
+
+global enum eWishlistFrontState
+{
+	INACTIVE, 
+	INVALID,
+	ACTIVE, 
+	COMPLETED, 
+	MAYBE_INVALID 
+}
+
+enum eWishlistTrimMode
+{
+	CHARACTERS,
+	WEAPON_CATEGORIES,
+}
+
+const string WISHLIST_STRING_COLLECTION_ACCOUNT_ATTRIBUTE_NAME = "wishlist"
+
+const array< int > WISHLIST_BASE_SEEDING_LEGENDS = [
+	725342087, 
+	898565421, 
+	1409694078, 
+	827049897, 
+]
+
+const array< int > WISHLIST_COINFLIP_SEEDING_LEGENDS = [
+	182221730, 
+	1464849662, 
+]
+
+const int WISHLIST_CHARACTER_CATEGORY_SEASON_SEARCH_LIMIT = 8
+const int WISHLIST_CHARACTER_CATEGORY_SEASON_DATA_COUNT = 3
+
+const string WISHLIST_SAVE_OFFER_LOCATION = "wishlist"
+const string WISHLIST_PACK_UPGRADE_OFFER_LOCATION = "wishlist_packs"
+const string WISHLIST_ACCOUNT_ATTRIBUTE_VALUE_COLLECTION_EMPTY = "empty"
+
+global const int WISHLIST_REQUIRED_CHARACTER_COUNT = 5
+global const int WISHLIST_REQUIRED_WEAPONCLASS_COUNT = 2
+global const int WISHLIST_REQUIRED_TOTAL_LENGTH = WISHLIST_REQUIRED_CHARACTER_COUNT + WISHLIST_REQUIRED_WEAPONCLASS_COUNT
+global const asset WISHLIST_ACTIVATED_TAG_ASSET = $"rui/menu/inventory/buttons/wishlist_reward_tag"
+global const asset WISHLIST_UPGRADABLE_TAG_ASSET = $"rui/menu/inventory/buttons/wishlist_upgrade_tag"
+
+const array<int> WISHLIST_CORE_PACK_POOL_TYPES =
+[
+	
+	eItemType.character_skin,
+	eItemType.character_execution,
+	eItemType.gladiator_card_frame,
+	eItemType.gladiator_card_stance,
+	eItemType.gladiator_card_stat_tracker,
+	eItemType.gladiator_card_intro_quip,
+	eItemType.gladiator_card_kill_quip,
+	eItemType.character_emote,
+	eItemType.emote_icon,
+
+	
+	eItemType.weapon_skin,
+]
+
+const array<int> WISHLIST_CORE_PACK_POOL_CHARACTER_CATEGORY_TYPES = [
+	eItemType.character_skin,
+	eItemType.character_execution,
+	eItemType.gladiator_card_frame,
+	eItemType.gladiator_card_stance,
+	eItemType.gladiator_card_stat_tracker,
+	eItemType.gladiator_card_intro_quip,
+	eItemType.gladiator_card_kill_quip,
+	eItemType.character_emote,
+	eItemType.emote_icon,
+]
+
+const array<int> WISHLIST_CORE_PACK_POOL_WEAPON_CATEGORY_TYPES = [
+	eItemType.weapon_skin,
+]
+
+const table< int, array<int> > WISHLIST_TYPE_MAP = {
+	[ eItemType.character ] = WISHLIST_CORE_PACK_POOL_CHARACTER_CATEGORY_TYPES,
+	[ eItemType.weapon_category ] = WISHLIST_CORE_PACK_POOL_WEAPON_CATEGORY_TYPES,
+}
+
+global struct WishlistCategory
+{
+	int    guid
+	int    score
+	string description
+}
+
+global struct WishlistParameters
+{
+	int wishlistableCharacters = 0
+	int wishlistableWeaponCategories = 0
+	int completedWeaponCategories = 0
+	int completedCharacters = 0
+
+	array< int > completedClasses
+	array< WishlistCategory > availableWeaponCategories
+	array< WishlistCategory > availableCharacters
+	array< WishlistCategory > availableOwnedCharacters
+
+	int adjustedCharacterCount      = WISHLIST_REQUIRED_CHARACTER_COUNT
+	int adjustedWeaponCategoryCount = WISHLIST_REQUIRED_WEAPONCLASS_COUNT
+	int adjustedWishlistLength      = WISHLIST_REQUIRED_TOTAL_LENGTH
+}
+
+global struct Wishlist
+{
+	array< int > characters
+	array< int > weaponCategories
+	array< int > flattened
+}
+
+struct FileStruct
+{
+	
+	table< int, WishlistCategory functionref( ItemFlavor ) > wishlistGenerators
+	array< ItemFlavor > categoriesRegistered
+
+	
+	table< string, int > marketplaceRefToCategoryGUID
+	table< int, string > categoryGUIDtomarketplaceRef
+
+	
+	table< int, array< int > > categoryToFlavsMap
+
+	
+	table< int, int > flavToCategoryMap
+
+	
+	array< int > dirtyCategories
+
+	
+	Wishlist& wishlist
+	WishlistParameters& params
+
+	table< int, bool > cachedOwnershipState
+	bool initialOwnershipBuildDone = false
+	bool initialParamsBuildDone = false
+
+	bool ownsNonBaseLegends = false
+
+
+		GRXScriptOffer ornull resetOffer = null
+		GRXScriptOffer ornull freeOffer = null
+		array<void functionref()> onWishlistSaved
+
+}
+
+FileStruct& file
+
+
+void function Wishlist_Init()
+{
+	FileStruct newFile
+	file = newFile
+
+	
+	foreach ( int categoryType, array<int> _ in WISHLIST_TYPE_MAP )
+	{
+		AddCallback_OnItemFlavorRegistered( categoryType, OnItemFlavorRegistered )
+	}
+
+	AddCallbackOrMaybeCallNow_OnAllItemFlavorsRegistered( OnAllItemFlavorsRegistered )
+
+	
+	file.wishlistGenerators[ eItemType.character ] <- BuildWishlistCategory_Character
+	file.wishlistGenerators[ eItemType.weapon_category ] <- BuildWishlistCategory_WeaponCategory
+
+	
+#if DEV
+		foreach ( int categoryType, array<int> _ in WISHLIST_TYPE_MAP )
+		{
+			Assert( categoryType in file.wishlistGenerators, "No generator mapped for wishlist type: " + GetEnumString( "eItemType", categoryType ) )
+		}
+#endif
+
+	AddCallback_OnGRXOffersRefreshed( OnGRXOffersRefreshed )
+}
+
+void function UICodeCallback_WishlistUpdated()
+{
+	array<string> marketplaceSelections = GRX_GetAccountStringCollectionAttribute( WISHLIST_STRING_COLLECTION_ACCOUNT_ATTRIBUTE_NAME )
+
+	if ( marketplaceSelections.len() == 1 && marketplaceSelections[0] == WISHLIST_ACCOUNT_ATTRIBUTE_VALUE_COLLECTION_EMPTY )
+	{
+		marketplaceSelections.clear()
+	}
+
+	file.wishlist = Wishlist_BuildFromMarketplaceStrings( marketplaceSelections )
+
+	foreach ( func in file.onWishlistSaved )
+	{
+		func()
+	}
+}
+
+bool function IsDebugModeEnabled()
+{
+	return GetConVarBool( "mtx_wishlist_seeding_debug_enabled" )
+}
+
+string function Wishlist_GetMarketplaceStringRef( ItemFlavor flav )
+{
+	return GetGlobalSettingsString( ItemFlavor_GetAsset( flav ), "wishlistMarketplaceString" )
+}
+
+void function Wishlist_OnGRXInventoryStateChanged( array< GRXContainerInfo > containers )
+{
+	if ( !GRX_IsInventoryReady() || !Wishlist_IsEnabled() )
+		return
+
+	
+	if ( !file.initialOwnershipBuildDone )
+	{
+		BuildInitialOwnershipCache()
+	}
+
+	
+	
+	
+	if ( !file.ownsNonBaseLegends )
+	{
+		Wishlist_CacheNonBaseLegendOwnership()
+	}
+
+	if ( !file.initialOwnershipBuildDone || Wishlist_DoContainersHaveCPPItem( containers ) )
+	{
+		file.params = GenerateWishlistParameters( !file.initialOwnershipBuildDone )
+		file.initialOwnershipBuildDone = true
+	}
+}
+
+
+void function Wishlist_CacheNonBaseLegendOwnership()
+{
+	foreach ( int guid in GetAllWishlistRegisteredCategoryTypesMatching( eItemType.character ) )
+	{
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+		
+		if ( !ItemFlavor_ShouldBeVisible( flav, GetLocalClientPlayer() ) )
+		{
+			continue
+		}
+
+		if ( !IsBaseLegend( guid ) && Loadout_IsCharacterUnlockedForPlayer( GetLocalClientPlayer(), flav ) )
+		{
+			file.ownsNonBaseLegends = true
+			break
+		}
+	}
+}
+
+bool function Wishlist_DoContainersHaveCPPItem( array< GRXContainerInfo > containers )
+{
+	
+	bool hasCPPItem
+	foreach ( GRXContainerInfo container in containers )
+	{
+		foreach ( int grxIndex in container.itemIndices )
+		{
+			
+			if ( !IsValidItemFlavorGRXIndex( grxIndex, eValidation.DONT_ASSERT ) )
+			{
+				continue
+			}
+
+			ItemFlavor flav                      = GetItemFlavorByGRXIndex( grxIndex )
+			SettingsAssetGUID guid               = ItemFlavor_GetGUID( flav )
+			int flavType                         = ItemFlavor_GetType( flav )
+			ItemFlavor ornull categoryFlavOrNull = null
+
+			asset parentAsset = GetGlobalSettingsAsset( ItemFlavor_GetAsset( flav ), "parentItemFlavor" )
+			if ( parentAsset == $"" )
+			{
+				continue
+			}
+
+			if ( Wishlist_IsWishlistCharacterCategory( flavType ) )
+			{
+				categoryFlavOrNull = GetItemFlavorByAsset( parentAsset )
+			}
+			else if ( Wishlist_IsWishlistWeaponCategory( flavType ) )
+			{
+				categoryFlavOrNull = WeaponItemFlavor_GetCategory( GetItemFlavorByAsset( parentAsset ) )
+			}
+
+			if ( categoryFlavOrNull == null )
+			{
+				continue
+			}
+
+			expect ItemFlavor( categoryFlavOrNull )
+			int categoryGUID = ItemFlavor_GetGUID( categoryFlavOrNull )
+
+			if ( categoryGUID in file.categoryToFlavsMap && file.categoryToFlavsMap[ categoryGUID ].contains( guid ) )
+			{
+				hasCPPItem = true
+				break
+			}
+		}
+
+		if ( hasCPPItem )
+		{
+			return true
+		}
+	}
+
+	return false
+}
+
+void function OnGRXOffersRefreshed()
+{
+	file.freeOffer = null
+	file.resetOffer = null
+
+	array<GRXScriptOffer> wishlistOffers = GRX_GetLocationOffers( WISHLIST_SAVE_OFFER_LOCATION )
+
+#if DEV
+	if ( wishlistOffers.len() < 2 )
+	{
+		GRX_Warning( "Wishlist script failed to fetch all wishlist offers for the selection update; Required 2 but found %d", wishlistOffers.len() )
+	}
+#endif
+
+	foreach ( GRXScriptOffer offer in wishlistOffers )
+	{
+		if ( offer.priceAliases[0] == "Free" )
+		{
+			file.freeOffer = offer
+		}
+		else
+		{
+			file.resetOffer = offer
+		}
+	}
+}
+
+void function OnItemFlavorRegistered( ItemFlavor flav )
+{
+	if ( GetGlobalSettingsBool( ItemFlavor_GetAsset( flav ), "isWishlistableCategory" ) )
+	{
+		string mpStringRef = Wishlist_GetMarketplaceStringRef( flav )
+		Assert( mpStringRef != "", format( "Marketplace ref string cannot be blank for a wishlistable category: %s", ItemFlavor_GetAssetString( flav ) ) )
+		file.marketplaceRefToCategoryGUID[ mpStringRef ] <- ItemFlavor_GetGUID( flav )
+		file.categoryGUIDtomarketplaceRef[ ItemFlavor_GetGUID( flav ) ] <- mpStringRef
+		file.categoriesRegistered.append( flav )
+	}
+}
+
+Wishlist function Wishlist_GetWishlistForLocalPlayer()
+{
+	return file.wishlist
+}
+
+WishlistParameters function Wishlist_GetWishlistParametersForLocalPlayer()
+{
+	return file.params
+}
+
+void function OnAllItemFlavorsRegistered()
+{
+	foreach ( ItemFlavor categoryFlav in file.categoriesRegistered )
+	{
+		SettingsAssetGUID categoryGUID = ItemFlavor_GetGUID( categoryFlav )
+		file.categoryToFlavsMap[ categoryGUID ] <- []
+
+#if DEV
+			if ( IsDebugModeEnabled() )
+				printf( "Added wishlist category: %s", ItemFlavor_GetAssetString( categoryFlav ) )
+#endif
+	}
+
+	foreach ( int cosmeticType in WISHLIST_CORE_PACK_POOL_TYPES )
+	{
+		array< ItemFlavor > cosmetics = Wishlist_GetTargetItemsFromDatatable( cosmeticType )
+		foreach ( ItemFlavor cosmeticFlav in cosmetics )
+		{
+			
+			if ( GetGlobalSettingsAsset( ItemFlavor_GetAsset( cosmeticFlav ), "parentItemFlavor" ) == "" )
+			{
+				continue
+			}
+
+			RegisterCosmeticFlavToWishlistCategory( cosmeticFlav, Wishlist_GetWishlistCategory )
+		}
+	}
+
+#if DEV
+		if ( IsDebugModeEnabled() )
+		{
+			foreach ( int categoryGUID, array< int > contents in file.categoryToFlavsMap )
+			{
+				ItemFlavor categoryFlav = GetItemFlavorByGUID( categoryGUID )
+				printf( "Wishlist category %s registration completed with %d entries", ItemFlavor_GetAssetString( categoryFlav ), contents.len() )
+			}
+		}
+#endif
+}
+
+void function RegisterCosmeticFlavToWishlistCategory( ItemFlavor flav, ItemFlavor functionref( ItemFlavor ) categoryGetterFunc )
+{
+	ItemFlavor categoryFlav = categoryGetterFunc( flav )
+	SettingsAssetGUID categoryGUID = ItemFlavor_GetGUID( categoryFlav )
+	SettingsAssetGUID flavGUID = ItemFlavor_GetGUID( flav )
+
+	if ( !( categoryGUID in file.categoryToFlavsMap ) )
+	{
+#if DEV
+			if ( IsDebugModeEnabled() )
+				printf( "Skipping cosmetic flav (%s) because category was not registered: %s", ItemFlavor_GetAssetString( flav ), ItemFlavor_GetAssetString( categoryFlav ) )
+#endif
+		return
+	}
+
+	if ( file.categoryToFlavsMap[ categoryGUID ].contains( flavGUID ) )
+	{
+		if ( IsDebugModeEnabled() )
+		{
+			printf( "Skipping dupe cosmetic %s add to category %s", ItemFlavor_GetAssetString( flav ), ItemFlavor_GetAssetString( categoryFlav ) )
+		}
+		return
+	}
+
+	file.categoryToFlavsMap[ categoryGUID ].append( flavGUID )
+	file.flavToCategoryMap[ flavGUID ] <- categoryGUID
+}
+
+bool function IsBaseLegend( int guid )
+{
+	return WISHLIST_BASE_SEEDING_LEGENDS.contains( guid )
+}
+
+int function SortWishlistCategories( WishlistCategory a, WishlistCategory b )
+{
+	if ( a.score > b.score )
+	{
+		return -1
+	}
+	else if ( a.score < b.score )
+	{
+		return 1
+	}
+
+	return 0
+}
+
+
+array< WishlistCategory > function SortZeroesAndHeroes( array< WishlistCategory > input )
+{
+	array< WishlistCategory > zeroes
+	array< WishlistCategory > heroes
+
+	foreach ( WishlistCategory category in input )
+	{
+		ItemFlavor categoryFlav = GetItemFlavorByGUID( category.guid )
+		if ( ItemFlavor_GetType( categoryFlav ) == eItemType.weapon_category )
+		{
+			if ( category.score > 0 )
+			{
+				heroes.append( category )
+			}
+			else
+			{
+				zeroes.append( category )
+			}
+		}
+		else if ( ItemFlavor_GetType( categoryFlav ) == eItemType.character )
+		{
+			
+			if ( IsBaseLegend( category.guid ) || Loadout_IsCharacterUnlockedForPlayer(GetLocalClientPlayer(), categoryFlav ) )
+			{
+				heroes.append( category )
+			}
+			else
+			{
+				zeroes.append( category )
+			}
+		}
+		else
+		{
+			Assert( false, "Unrecognized category type for wishlist: " + category.description )
+			unreachable
+		}
+	}
+
+	heroes.sort( SortWishlistCategories )
+	zeroes.sort( SortWishlistCategories )
+	heroes.extend( zeroes )
+
+	
+	
+	
+
+	return heroes
+}
+
+WishlistCategory function GenerateWishlistCategoryFromGUID( int guid )
+{
+	ItemFlavor categoryFlav = GetItemFlavorByGUID( guid )
+	int categoryType = ItemFlavor_GetType( categoryFlav )
+	Assert( categoryType in file.wishlistGenerators, format( "No known wishlist generator registered for this flav: %s", ItemFlavor_GetAssetString( categoryFlav ) ) )
+
+	return file.wishlistGenerators[ categoryType ]( categoryFlav )
+}
+
+
+
+array< int > function GetAllWishlistRegisteredCategoryTypesMatching( int categoryType )
+{
+	array< int > matches = []
+	foreach ( int categoryGUID, string _ in file.categoryGUIDtomarketplaceRef )
+	{
+		ItemFlavor categoryFlav = GetItemFlavorByGUID( categoryGUID )
+		if ( ItemFlavor_GetType( categoryFlav ) == categoryType )
+		{
+			matches.append( categoryGUID )
+		}
+	}
+
+	return matches
+}
+
+
+
+
+array< WishlistCategory > function BuildWishlistCategoryRankedList( int categoryType, int functionref( int ) scoringFunc )
+{
+	array< WishlistCategory > categories = []
+	foreach ( int categoryGUID in GetAllWishlistRegisteredCategoryTypesMatching( categoryType ) )
+	{
+		WishlistCategory category
+		category.guid = categoryGUID
+		category.score = scoringFunc( categoryGUID )
+		ItemFlavor flav = GetItemFlavorByGUID( categoryGUID )
+		category.description = ItemFlavor_GetAssetString( flav )
+
+		categories.append( category )
+	}
+
+	array< WishlistCategory > sorted = SortZeroesAndHeroes( categories )
+	return sorted
+}
+
+int function GetWishlistCategoryRankedScore( int guid, int functionref( int ) scoringFunc, string context )
+{
+	ItemFlavor flav = GetItemFlavorByGUID( guid )
+	array< WishlistCategory > rankedList = BuildWishlistCategoryRankedList( ItemFlavor_GetType( flav ), scoringFunc )
+
+	int index = -1
+	bool isZeroScore = false
+	foreach ( int idx, WishlistCategory category in rankedList )
+	{
+		if ( guid == category.guid )
+		{
+			index = idx
+			isZeroScore = category.score == 0
+			break
+		}
+	}
+
+	if ( index == -1 )
+	{
+		Assert( false, format( "BuildWishlistCategoryRankedList did not return a list containing: %d", guid ) )
+		return 0
+	}
+
+	if ( IsDebugModeEnabled() )
+	{
+		foreach ( int idx, WishlistCategory category in  rankedList )
+		{
+			if ( index == idx )
+			{
+				printf( "ranked list value for %s using metric %s: [ %d ][ %d ]", category.description, context, ( category.score == 0 ? 0 : rankedList.len() - idx ), category.score )
+			}
+		}
+	}
+
+	
+	return isZeroScore ? 0 : rankedList.len() - index
+}
+
+WishlistCategory function BuildWishlistCategory_WeaponCategory( ItemFlavor weaponCategoryFlav )
+{
+	WishlistCategory category
+	category.guid = ItemFlavor_GetGUID( weaponCategoryFlav )
+
+	string weaponCategoryRef = WeaponCategoryFlavor_GetStatsKey( weaponCategoryFlav )
+
+	
+	
+	if ( weaponCategoryRef.tolower() == "ar" )
+	{
+		weaponCategoryRef = "assaultrifle"
+	}
+
+	Assert( weaponCategoryRef in file.marketplaceRefToCategoryGUID, format( "Unknown weapon category, no known MP ref match for: %s", ItemFlavor_GetAssetString( weaponCategoryFlav ) ) )
+
+	int damage_rank = GetWishlistCategoryRankedScore( category.guid, int function( int guid ) {
+		ItemFlavor categoryFlav = GetItemFlavorByGUID( guid )
+		string statsKey = WeaponCategoryFlavor_GetStatsKey( categoryFlav )
+		return GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.weaponcategory_damage_done_any_mode, statsKey ), eStatGetWhen.CURRENT )
+	}, "damage_rank" )
+
+	int kills_rank = GetWishlistCategoryRankedScore( category.guid, int function ( int guid ) {
+		ItemFlavor categoryFlav = GetItemFlavorByGUID( guid )
+		string statsKey = WeaponCategoryFlavor_GetStatsKey( categoryFlav )
+		return GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.weaponcategory_kills_any_mode, statsKey ), eStatGetWhen.CURRENT )
+	}, "kills_rank" )
+
+	category.score = ( 60 * damage_rank ) + ( 40 * kills_rank )
+	category.description = ItemFlavor_GetAssetString( weaponCategoryFlav )
+
+	if ( IsDebugModeEnabled() )
+	{
+		printf( "%s: (%s) -- damage_rank %d; kills_rank %d; score %d", FUNC_NAME(), category.description, damage_rank, kills_rank, category.score )
+	}
+
+	return category
+}
+
+WishlistCategory function BuildWishlistCategory_Character( ItemFlavor characterFlav )
+{
+	WishlistCategory category
+	category.guid = ItemFlavor_GetGUID( characterFlav )
+	category.description = ItemFlavor_GetAssetString( characterFlav )
+
+	string marketplaceRef = Wishlist_GetMarketplaceStringRef( characterFlav )
+	Assert( marketplaceRef in file.marketplaceRefToCategoryGUID, format( "Unknown character, no known MP ref match for: %s", ItemFlavor_GetAssetString( characterFlav ) ) )
+
+	int current_season_damage_rank = GetWishlistCategoryRankedScore( category.guid, int function ( int guid ) {
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+		string charGUID  = ItemFlavor_GetGUIDString( flav )
+
+		ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+		if ( currentSeason == null )
+		{
+			Warning( "Active Season is null, Wishlist seeding based on damage will not work." )
+			return 0
+		}
+
+		expect ItemFlavor( currentSeason )
+		return GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.season_character_damage_done, ItemFlavor_GetGUIDString( currentSeason ), charGUID ), eStatGetWhen.CURRENT )
+	}, "current_season_damage_rank" )
+
+	int historical_damage_rank = GetWishlistCategoryRankedScore( category.guid, int function ( int guid ) {
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+		string charGUID  = ItemFlavor_GetGUIDString( flav )
+
+		ItemFlavor ornull currentSeason = GetActiveSeason( GetUnixTimestamp() )
+		if ( currentSeason == null )
+		{
+			Warning( "Active Season is null, Wishlist seeding based on damage will not work." )
+			return 0
+		}
+
+		expect ItemFlavor( currentSeason )
+		int damage = 0
+		int step = 0
+		while ( step < WISHLIST_CHARACTER_CATEGORY_SEASON_SEARCH_LIMIT )
+		{
+			ItemFlavor ornull previousSeasonOrNull = GetPrecedingSeason( currentSeason )
+			if ( previousSeasonOrNull == null )
+			{
+				break
+			}
+
+			ItemFlavor previousSeason = expect ItemFlavor( previousSeasonOrNull )
+			string previousSeasonGUID = ItemFlavor_GetGUIDString( previousSeason )
+
+			int previousSeasonDamage = GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.season_character_damage_done, previousSeasonGUID, charGUID ), eStatGetWhen.CURRENT )
+			if ( previousSeasonDamage != 0 )
+			{
+				damage = previousSeasonDamage
+				break
+			}
+
+			step += 1
+			currentSeason = previousSeason
+		}
+
+		return damage
+	}, "historical_damage_rank" )
+
+	int games_played_rank = GetWishlistCategoryRankedScore( category.guid, int function ( int guid ) {
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+		string charGUID  = ItemFlavor_GetGUIDString( flav )
+		return GetStat_Int( GetLocalClientPlayer(), ResolveStatEntry( CAREER_STATS.character_games_played_any_mode, charGUID ), eStatGetWhen.CURRENT )
+	}, "games_played_rank" )
+
+	category.score = ( 70 * current_season_damage_rank ) + ( 20 * historical_damage_rank ) + ( 10 * games_played_rank )
+
+	if ( IsDebugModeEnabled() )
+	{
+		printf( "%s: (%s) -- current_season_damage_rank %d; historical_damage_rank %d; games_played_rank %d; score %d", FUNC_NAME(), category.description, current_season_damage_rank, historical_damage_rank, games_played_rank, category.score )
+	}
+
+	return category
+}
+
+WishlistParameters function GenerateWishlistParameters( bool initialBuild )
+{
+	WishlistParameters existing = file.params
+	WishlistParameters new
+
+	if ( !initialBuild )
+	{
+		array< int > dirtyCategories = file.dirtyCategories
+		bool regenCharacters = false
+		bool regenWeapons = false
+
+		
+		foreach ( int dirtyCategoryGUID in dirtyCategories )
+		{
+			ItemFlavor dirtyCategoryFlav = GetItemFlavorByGUID( dirtyCategoryGUID )
+
+			
+			if ( Wishlist_IsCategoryCompleted( dirtyCategoryGUID, null ) )
+			{
+				if ( ItemFlavor_GetType( dirtyCategoryFlav ) == eItemType.character )
+				{
+					int removeIndex = -1
+					bool isOwned = false
+					foreach ( int index, WishlistCategory category in existing.availableOwnedCharacters )
+					{
+						if ( category.guid == dirtyCategoryGUID )
+						{
+							if ( IsDebugModeEnabled() )
+							{
+								printf( "%s: Removing guid %d (%s) from existing params owned characters", FUNC_NAME(), dirtyCategoryGUID, ItemFlavor_GetAssetString( dirtyCategoryFlav ) )
+							}
+
+							removeIndex = index
+							isOwned = true
+							break
+						}
+					}
+
+					
+					if ( removeIndex == -1 )
+					{
+						foreach ( int index, WishlistCategory category in existing.availableCharacters )
+						{
+							if ( category.guid == dirtyCategoryGUID )
+							{
+								if ( IsDebugModeEnabled() )
+								{
+									printf( "%s: Removing guid %d (%s) from existing params available characters", FUNC_NAME(), dirtyCategoryGUID, ItemFlavor_GetAssetString( dirtyCategoryFlav ) )
+								}
+
+								removeIndex = index
+								break
+							}
+						}
+					}
+
+					if ( removeIndex != -1 )
+					{
+						existing.completedCharacters += 1
+						existing.completedClasses.append( dirtyCategoryGUID )
+						regenCharacters = true
+
+						if ( isOwned )
+						{
+							existing.availableOwnedCharacters.fastremove( removeIndex )
+						}
+						else
+						{
+							existing.availableCharacters.fastremove( removeIndex )
+						}
+					}
+				}
+				else if ( ItemFlavor_GetType( dirtyCategoryFlav ) == eItemType.weapon_category )
+				{
+					int removeIndex = -1
+					foreach ( int index, WishlistCategory category in existing.availableWeaponCategories )
+					{
+						if ( category.guid == dirtyCategoryGUID )
+						{
+							if ( IsDebugModeEnabled() )
+							{
+								printf( "%s: Removing guid %d (%s) from existing params weapon categories", FUNC_NAME(), dirtyCategoryGUID, ItemFlavor_GetAssetString( dirtyCategoryFlav ) )
+							}
+
+							removeIndex = index
+							break
+						}
+					}
+
+					if ( removeIndex != -1 )
+					{
+						existing.completedWeaponCategories += 1
+						existing.completedClasses.append( dirtyCategoryGUID )
+
+						existing.availableWeaponCategories.fastremove( removeIndex )
+						regenWeapons = true
+					}
+				}
+			}
+
+			
+			
+			
+		}
+
+		
+		if ( regenCharacters && existing.wishlistableCharacters - existing.completedCharacters < WISHLIST_REQUIRED_CHARACTER_COUNT )
+		{
+			existing.adjustedCharacterCount = maxint( existing.wishlistableCharacters - existing.completedCharacters, 0 )
+		}
+
+		if ( regenWeapons && existing.wishlistableWeaponCategories - existing.completedWeaponCategories < WISHLIST_REQUIRED_WEAPONCLASS_COUNT )
+		{
+			existing.adjustedWeaponCategoryCount = maxint( existing.wishlistableWeaponCategories - existing.completedWeaponCategories, 0 )
+		}
+
+		if ( regenCharacters || regenWeapons )
+		{
+			existing.adjustedWishlistLength = existing.adjustedCharacterCount + existing.adjustedWeaponCategoryCount
+		}
+
+		
+		file.dirtyCategories.clear()
+	}
+	else
+	{
+		
+		
+		foreach ( int categoryGUID, array< int > _ in file.categoryToFlavsMap )
+		{
+			ItemFlavor categoryFlav = GetItemFlavorByGUID( categoryGUID )
+
+			
+			if ( ItemFlavor_GetType( categoryFlav ) == eItemType.character )
+			{
+				new.wishlistableCharacters += 1
+				if ( Wishlist_IsCategoryCompleted( categoryGUID, null ) )
+				{
+					new.completedCharacters += 1
+					new.completedClasses.append( categoryGUID )
+				}
+				else
+				{
+					WishlistCategory category = GenerateWishlistCategoryFromGUID(categoryGUID )
+					if ( IsBaseLegend( categoryGUID ) || Loadout_IsCharacterUnlockedForPlayer(GetLocalClientPlayer(), categoryFlav ) )
+					{
+						new.availableOwnedCharacters.append( category )
+					}
+					else
+					{
+						new.availableCharacters.append( category )
+					}
+				}
+			}
+			else if ( ItemFlavor_GetType( categoryFlav ) == eItemType.weapon_category )
+			{
+				new.wishlistableWeaponCategories += 1
+				if ( Wishlist_IsCategoryCompleted( categoryGUID, null ) )
+				{
+					new.completedWeaponCategories += 1
+					new.completedClasses.append( categoryGUID )
+				}
+				else
+				{
+					WishlistCategory category = GenerateWishlistCategoryFromGUID(categoryGUID )
+					new.availableWeaponCategories.append( category )
+				}
+			}
+		}
+
+		
+		
+		if ( new.completedCharacters > 0 || new.completedWeaponCategories > 0 )
+		{
+			if ( new.wishlistableCharacters - new.completedCharacters < WISHLIST_REQUIRED_CHARACTER_COUNT )
+			{
+				new.adjustedCharacterCount = maxint( new.wishlistableCharacters - new.completedCharacters, 0 )
+			}
+
+			if ( new.wishlistableWeaponCategories - new.completedWeaponCategories < WISHLIST_REQUIRED_WEAPONCLASS_COUNT )
+			{
+				new.adjustedWeaponCategoryCount = maxint( new.wishlistableWeaponCategories - new.completedWeaponCategories, 0 )
+			}
+
+			new.adjustedWishlistLength = new.adjustedCharacterCount + new.adjustedWeaponCategoryCount
+		}
+	}
+
+	WishlistParameters params = initialBuild ? new : existing
+
+	
+	if ( !file.ownsNonBaseLegends )
+	{
+		array< int > baseLegendsForSeeding = clone WISHLIST_BASE_SEEDING_LEGENDS
+		array< int > coinFlipLegends = clone WISHLIST_COINFLIP_SEEDING_LEGENDS
+
+		coinFlipLegends.randomize()
+		params.availableOwnedCharacters.clear()
+
+		
+		array< WishlistCategory > baseLegendCategories
+		foreach ( int guid in baseLegendsForSeeding )
+		{
+			
+			if ( !Wishlist_IsCategoryCompleted( guid, null ) )
+			{
+				WishlistCategory category = GenerateWishlistCategoryFromGUID( guid )
+				baseLegendCategories.append( category )
+			}
+		}
+		params.availableOwnedCharacters = SortZeroesAndHeroes( baseLegendCategories )
+
+		
+		
+		
+		array< WishlistCategory > coinFlipCategories
+		foreach ( int guid in coinFlipLegends )
+		{
+			
+			if ( !Wishlist_IsCategoryCompleted( guid, null ) )
+			{
+				WishlistCategory category = GenerateWishlistCategoryFromGUID( guid )
+				coinFlipCategories.append( category )
+			}
+		}
+
+		
+		if ( coinFlipCategories.len() > 0 )
+		{
+			coinFlipCategories.randomize()
+			coinFlipCategories = SortZeroesAndHeroes( coinFlipCategories )
+			params.availableOwnedCharacters.append( coinFlipCategories[ 0 ] )
+		}
+
+		
+		
+		
+		if ( IsDebugModeEnabled() )
+		{
+			printf( "%s: legend seeding is using new player/no non-base legends owned", FUNC_NAME() )
+			foreach ( int index, WishlistCategory category in params.availableOwnedCharacters )
+			{
+				printf( "\t- [ %d ] %s", index, category.description )
+			}
+		}
+	}
+	else
+	{
+		params.availableOwnedCharacters = SortZeroesAndHeroes( params.availableOwnedCharacters )
+	}
+
+	params.availableCharacters       = SortZeroesAndHeroes( params.availableCharacters )
+	params.availableWeaponCategories = SortZeroesAndHeroes( params.availableWeaponCategories )
+
+	if ( IsDebugModeEnabled() )
+	{
+		printf( "%s: params update completed w/ mode %s ---", FUNC_NAME(), ( initialBuild ? " INITIAL BUILD" : "DIRTY REFRESH" ) )
+		printf( "%s: wishlistable characters: [ %d ], wishlistable weapons: [ %d ]", FUNC_NAME(), params.wishlistableCharacters, params.wishlistableWeaponCategories )
+		printf( "%s: available characters [ %d ], available weapons [ %d ]", FUNC_NAME(), params.availableCharacters.len() + params.availableOwnedCharacters.len(), params.availableWeaponCategories.len() )
+		printf( "%s: adjusted character count: [ %d ], adjusted weapon count: [ %d ], adjusted wishlist size: [ %d ]", FUNC_NAME(), params.adjustedCharacterCount, params.adjustedWeaponCategoryCount, params.adjustedWishlistLength )
+
+		printf( "%s: ranked list for OWNED CHARACTERS", FUNC_NAME() )
+		foreach ( int index, WishlistCategory category in params.availableOwnedCharacters )
+		{
+			printf( "\t- [ %d ] %s: %d", index, category.description, category.score )
+		}
+
+		printf( "%s: ranked list for AVALIABLE CHARACTERS", FUNC_NAME() )
+		foreach ( int index, WishlistCategory category in params.availableCharacters )
+		{
+			printf( "\t- [ %d ] %s: %d", index, category.description, category.score )
+		}
+
+		printf( "%s: ranked list for WEAPON CATEGORIES", FUNC_NAME() )
+		foreach ( int index, WishlistCategory category in params.availableWeaponCategories )
+		{
+			printf( "\t- [ %d ] %s: %d", index, category.description, category.score )
+		}
+	}
+
+	return params
+}
+
+array< WishlistCategory > function TrimAvailableListUsingPartial( Wishlist partial, array< WishlistCategory > toTrim, int trimMode )
+{
+	toTrim.removebyfunc( bool function ( WishlistCategory category ) : ( partial, trimMode, toTrim ) {
+		if ( trimMode == eWishlistTrimMode.CHARACTERS )
+		{
+			foreach ( guid in partial.characters )
+			{
+				if ( category.guid == guid )
+				{
+					return true
+				}
+			}
+		}
+		else
+		{
+			foreach ( guid in partial.weaponCategories )
+			{
+				if ( category.guid == guid )
+				{
+					return true
+				}
+			}
+		}
+
+		return false
+	} )
+
+	return toTrim
+}
+
+Wishlist function Wishlist_Generate( Wishlist ornull partialOrNull )
+{
+	
+	if ( !file.initialParamsBuildDone )
+	{
+		file.params = GenerateWishlistParameters( true )
+		file.initialParamsBuildDone = true
+	}
+
+	Wishlist wishlist
+	Wishlist partial
+
+	bool usePartial = false
+	if ( partialOrNull != null )
+	{
+		partial = expect Wishlist( partialOrNull )
+		if ( Wishlist_IsPartialValid( partial ) )
+		{
+			usePartial = true
+
+			
+			foreach ( int charGUID in partial.characters )
+			{
+				wishlist.characters.append( charGUID )
+				wishlist.flattened.append( charGUID )
+			}
+
+			foreach ( int weaponCategoryGUID in partial.weaponCategories )
+			{
+				wishlist.weaponCategories.append( weaponCategoryGUID )
+				wishlist.flattened.append( weaponCategoryGUID )
+			}
+		}
+	}
+
+	
+	
+	array< WishlistCategory > availableCharacters = clone file.params.availableCharacters
+	array< WishlistCategory > availableOwnedCharacters = clone file.params.availableOwnedCharacters
+
+	if ( IsDebugModeEnabled() )
+	{
+		printt( FUNC_NAME() )
+		printt( "--- available owned ---" )
+		foreach ( WishlistCategory category in availableOwnedCharacters )
+		{
+			printf( "[ %d ]\t%s", category.score, category.description )
+		}
+
+		printt( "--- available ---" )
+		foreach ( WishlistCategory category in availableCharacters )
+		{
+			printf( "[ %d ]\t%s", category.score, category.description )
+		}
+	}
+
+	
+	if ( usePartial )
+	{
+		availableOwnedCharacters = TrimAvailableListUsingPartial( partial, availableOwnedCharacters, eWishlistTrimMode.CHARACTERS )
+		availableCharacters = TrimAvailableListUsingPartial( partial, availableCharacters, eWishlistTrimMode.CHARACTERS )
+	}
+
+	int requiredCharacters = usePartial ? file.params.adjustedCharacterCount - partial.characters.len() : file.params.adjustedCharacterCount
+	if ( IsDebugModeEnabled() )
+	{
+		printf( "required number of characters: %d", requiredCharacters )
+	}
+
+	int availableOwnedIndex = 0
+	int availableIndex = 0
+	while ( requiredCharacters > 0 )
+	{
+		
+		if ( availableOwnedIndex < availableOwnedCharacters.len() )
+		{
+			if ( !wishlist.characters.contains( availableOwnedCharacters[ availableOwnedIndex ].guid ) )
+			{
+				wishlist.characters.append( availableOwnedCharacters[ availableOwnedIndex ].guid )
+				wishlist.flattened.append( availableOwnedCharacters[ availableOwnedIndex ].guid )
+				requiredCharacters -= 1
+
+				if ( IsDebugModeEnabled() )
+				{
+					printf( "picking characters; required characters: %d -- adding %d from owned characters... index at %d", requiredCharacters, availableOwnedCharacters[ availableOwnedIndex ].guid, availableOwnedIndex )
+				}
+			}
+
+			availableOwnedIndex += 1
+		}
+		else if ( availableIndex < availableCharacters.len() )
+		{
+			if ( !wishlist.characters.contains( availableCharacters[ availableIndex ].guid ) )
+			{
+				wishlist.characters.append( availableCharacters[ availableIndex ].guid )
+				wishlist.flattened.append( availableCharacters[ availableIndex ].guid )
+				requiredCharacters -= 1
+
+				if ( IsDebugModeEnabled() )
+				{
+					printf( "picking characters; required characters: %d -- adding %d from available characters... index at %d", requiredCharacters, availableCharacters[ availableIndex ].guid, availableIndex )
+				}
+			}
+
+			availableIndex += 1
+		}
+		
+		else
+		{
+			Assert( false, "Could not fill character wishlist with enough characters, remaining slots: " + requiredCharacters )
+			unreachable
+		}
+	}
+
+	array< WishlistCategory > availableWeaponCategories = clone file.params.availableWeaponCategories
+
+	
+	if ( usePartial )
+	{
+		availableWeaponCategories = TrimAvailableListUsingPartial( partial, availableWeaponCategories, eWishlistTrimMode.WEAPON_CATEGORIES )
+	}
+
+	int requiredWeaponCategories = usePartial ? file.params.adjustedWeaponCategoryCount - partial.weaponCategories.len() : file.params.adjustedWeaponCategoryCount
+	int weaponIndex = 0
+	while ( requiredWeaponCategories > 0 )
+	{
+		wishlist.weaponCategories.append( availableWeaponCategories[ weaponIndex ].guid )
+		wishlist.flattened.append( availableWeaponCategories[ weaponIndex ].guid )
+
+		if ( IsDebugModeEnabled() )
+		{
+			printf( "picking weapons; required weapons: %d -- adding %d from weapons, weapon index at %d", requiredWeaponCategories, availableWeaponCategories[ weaponIndex ].guid, weaponIndex )
+		}
+
+		weaponIndex += 1
+		requiredWeaponCategories -= 1
+	}
+
+	if ( IsDebugModeEnabled() )
+	{
+		printt( " --- finished generating wishlist --- " )
+
+		printt( " --- characters --- " )
+		foreach ( int index, int guid in wishlist.characters )
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( guid )
+			printf( "[ %d ] - %s", index, ItemFlavor_GetAssetString( flav ) )
+		}
+
+		printt( " --- weapons --- " )
+		foreach ( int index, int guid in wishlist.weaponCategories )
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( guid )
+			printf( "[ %d ] - %s", index, ItemFlavor_GetAssetString( flav ) )
+		}
+	}
+
+	return wishlist
+}
+
+Wishlist function Wishlist_BuildFromFlatArray( array< int > list )
+{
+	Wishlist wishlist
+	foreach ( int guid in list )
+	{
+		ItemFlavor categoryFlav = GetItemFlavorByGUID( guid )
+		if ( ItemFlavor_GetType( categoryFlav ) == eItemType.weapon_category )
+		{
+			wishlist.weaponCategories.append( guid )
+			wishlist.flattened.append( guid )
+		}
+		else if ( ItemFlavor_GetType( categoryFlav ) == eItemType.character )
+		{
+			wishlist.characters.append( guid )
+			wishlist.flattened.append( guid )
+		}
+		else
+		{
+			Assert( false, format( "Invalid guid type for guid %d: %s", guid, ItemFlavor_GetAssetString( categoryFlav ) ) )
+		}
+	}
+
+	return wishlist
+}
+
+bool function Wishlist_IsPartialValid( Wishlist partial )
+{
+	foreach ( int categoryGUID in partial.flattened )
+	{
+		if ( file.params.completedClasses.contains( categoryGUID ) )
+		{
+			
+			return false
+		}
+	}
+
+	
+	return partial.characters.len() <= file.params.adjustedCharacterCount && partial.weaponCategories.len() <= file.params.adjustedWeaponCategoryCount
+}
+
+bool function Wishlist_IsWishlistCategoryIsPossiblyInvalidWhenOpening( int wishlistCategoryGUID, int packsToOpen, int ornull rarity, string context = "" )
+{
+	if ( rarity != null )
+	{
+		expect int( rarity )
+		Assert( rarity == eRarityTier.LEGENDARY || rarity == eRarityTier.EPIC || rarity == eRarityTier.RARE, format( "Invalid rarity tier for wishlist packs: %d", rarity ) )
+	}
+
+	
+	
+
+	
+
+	float remaining = float ( Wishlist_GetRemainingCountForCategory( wishlistCategoryGUID, rarity ) )
+	float denominator = float ( file.params.adjustedWishlistLength )
+
+	if ( rarity != null )
+	{
+		int incompleteCategoriesAtRarity = 0
+		foreach ( int categoryGUID in Wishlist_GetWishlistForLocalPlayer().flattened )
+		{
+			if ( !Wishlist_IsCategoryCompleted( categoryGUID, rarity ) )
+			{
+				incompleteCategoriesAtRarity += 1
+			}
+		}
+
+		denominator = float ( incompleteCategoriesAtRarity )
+	}
+
+	
+	
+	if ( denominator == 0 )
+	{
+		if ( IsDebugModeEnabled() )
+		{
+			printf( "%s [%s]: category %s is complete at rarity %s - returning true", FUNC_NAME(), context, ItemFlavor_GetAssetString( GetItemFlavorByGUID( wishlistCategoryGUID) ), rarity != null ? GetEnumString( "eRarityTier", expect int(rarity) ) : "<all rarities>" )
+		}
+
+		return true
+	}
+
+	float openingRatio = float ( packsToOpen ) / denominator
+	bool possiblyInvalid = remaining <= openingRatio || remaining == 1
+
+	if ( IsDebugModeEnabled() )
+	{
+		printf( "%s [%s]: category %s @ rarity %s --- %d <= ( %d / %d ) -> %s",
+			FUNC_NAME(),
+			context,
+			ItemFlavor_GetAssetString( GetItemFlavorByGUID( wishlistCategoryGUID) ),
+			rarity != null ? GetEnumString( "eRarityTier", expect int(rarity) ) : "<all rarities>",
+			int( remaining ),
+			packsToOpen,
+			int( denominator ),
+			( possiblyInvalid ? "true" : "false" )
+		)
+	}
+
+	return possiblyInvalid
+}
+
+bool function Wishlist_IsValid( Wishlist wishlist )
+{
+	foreach ( int categoryGUID in wishlist.flattened )
+	{
+		if ( file.params.completedClasses.contains( categoryGUID ) )
+		{
+			
+			return false
+		}
+	}
+
+	
+	if ( wishlist.flattened.len() != file.params.adjustedWishlistLength )
+	{
+		return false
+	}
+
+	if ( wishlist.weaponCategories.len() != file.params.adjustedWeaponCategoryCount || wishlist.characters.len() != file.params.adjustedCharacterCount )
+	{
+		return false
+	}
+
+	return true
+}
+
+bool function Wishlist_AreDifferent( Wishlist a, Wishlist b )
+{
+	
+	if ( a.flattened.len() != b.flattened.len() )
+		return true
+
+	foreach ( int itemA in a.flattened )
+	{
+		if ( !b.flattened.contains( itemA ) )
+			return true
+	}
+	return false
+}
+
+void function Wishlist_UpdateCachedOwnershipAsOwned( int guid )
+{
+	if ( !( guid in file.cachedOwnershipState ) )
+	{
+		return
+	}
+
+	file.cachedOwnershipState[ guid ] <- true
+
+	ItemFlavor cosmeticFlav = GetItemFlavorByGUID( guid )
+	ItemFlavor categoryFlav = Wishlist_GetWishlistCategory( cosmeticFlav )
+	int categoryGUID = ItemFlavor_GetGUID( categoryFlav )
+	if ( !file.dirtyCategories.contains( categoryGUID ) )
+	{
+		file.dirtyCategories.append( categoryGUID )
+	}
+}
+
+void function BuildInitialOwnershipCache()
+{
+	foreach ( int _, array< int > categoryContents in file.categoryToFlavsMap )
+	{
+		foreach ( int guid in categoryContents )
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( guid )
+			file.cachedOwnershipState[ guid ] <- ( GRX_IsItemOwnedByPlayer( flav, GetLocalClientPlayer() ) )
+		}
+	}
+}
+
+bool function GetCachedOwnershipFor( int guid )
+{
+	if ( !( guid in file.cachedOwnershipState ) )
+	{
+		Assert( false,format( "%d guid not found in ownership cache, can't check cached value.", guid ) )
+		return false
+	}
+
+	return file.cachedOwnershipState[ guid ]
+}
+
+int function Wishlist_GetRemainingCountForCategory( int categoryGUID, int ornull rarity )
+{
+	Assert( categoryGUID in file.categoryToFlavsMap, format( "Unrecognized category for wishlist: %d", categoryGUID ) )
+	if ( rarity != null )
+	{
+		expect int( rarity )
+		Assert( rarity == eRarityTier.LEGENDARY || rarity == eRarityTier.EPIC || rarity == eRarityTier.RARE, format( "Invalid rarity tier for wishlist: %d", rarity ) )
+	}
+
+	int owned = 0
+	int rarityFilteredTotal = 0
+	foreach ( SettingsAssetGUID guid in file.categoryToFlavsMap[ categoryGUID ] )
+	{
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+
+		if ( rarity == null )
+		{
+			if ( GetCachedOwnershipFor( guid ) )
+			{
+				owned += 1
+			}
+		}
+		else
+		{
+			if ( ItemFlavor_GetQuality( flav ) == rarity )
+			{
+				rarityFilteredTotal += 1
+				if ( GetCachedOwnershipFor( guid ) )
+				{
+					owned += 1
+				}
+			}
+		}
+	}
+
+	
+	if ( rarity == null )
+	{
+		return file.categoryToFlavsMap[ categoryGUID ].len() - owned
+	}
+
+	
+	return rarityFilteredTotal - owned
+}
+
+bool function Wishlist_IsCategoryCompleted( int categoryGUID, int ornull rarity )
+{
+	Assert( categoryGUID in file.categoryToFlavsMap, format( "Unrecognized category for wishlist: %d", categoryGUID ) )
+	if ( rarity != null )
+	{
+		expect int( rarity )
+		Assert( rarity == eRarityTier.LEGENDARY || rarity == eRarityTier.EPIC || rarity == eRarityTier.RARE, format( "Invalid rarity tier for wishlist: %d", rarity ) )
+	}
+
+	return Wishlist_GetRemainingCountForCategory( categoryGUID, rarity ) == 0
+}
+
+int function Wishlist_GetTotalProgressForCategory( int categoryGUID, int ornull rarity )
+{
+	Assert( categoryGUID in file.categoryToFlavsMap, format( "Unrecognized category for wishlist: %d", categoryGUID ) )
+	if ( rarity != null )
+	{
+		expect int( rarity )
+		Assert( rarity == eRarityTier.LEGENDARY || rarity == eRarityTier.EPIC || rarity == eRarityTier.RARE, format( "Invalid rarity tier for wishlist packs: %d", rarity ) )
+	}
+
+	if ( file.categoryToFlavsMap[ categoryGUID ].len() == 0 )
+	{
+		
+		
+		return 100
+	}
+
+	int owned = 0
+	int rarityFilteredTotal = 0
+	foreach ( SettingsAssetGUID guid in file.categoryToFlavsMap[ categoryGUID ] )
+	{
+		if ( rarity == null )
+		{
+			if ( GetCachedOwnershipFor( guid ) )
+			{
+				owned += 1
+			}
+		}
+		else
+		{
+			ItemFlavor flav = GetItemFlavorByGUID( guid )
+			if ( ItemFlavor_GetQuality( flav ) == rarity )
+			{
+				rarityFilteredTotal += 1
+				if ( GetCachedOwnershipFor( guid ) )
+				{
+					owned += 1
+				}
+			}
+
+		}
+	}
+
+	
+	if ( rarity == null )
+	{
+		return int( float( owned ) / float( file.categoryToFlavsMap[ categoryGUID ].len() ) * 100.0 )
+	}
+
+	
+	return int( float( owned ) / float( rarityFilteredTotal ) * 100.0 )
+}
+
+
+array< int > function Wishlist_GetProgressForCategory( int categoryGUID )
+{
+	Assert( categoryGUID in file.categoryToFlavsMap, format( "Unrecognized category for wishlist: %d", categoryGUID ) )
+
+	if ( file.categoryToFlavsMap[ categoryGUID ].len() == 0 )
+	{
+		
+		
+		return [ 100, 100, 100 ]
+	}
+
+	array< int > ownedCounts = [ 0, 0, 0 ] 
+	array< int > totalCounts = [ 0, 0, 0 ]
+
+	int functionref ( int ) tierRemapFunc = int function ( int tier ) {
+		if ( tier == eRarityTier.RARE )
+		{
+			return 2
+		}
+		else if ( tier == eRarityTier.EPIC )
+		{
+			return 1
+		}
+		else if ( tier == eRarityTier.LEGENDARY )
+		{
+			return 0
+		}
+		unreachable
+	}
+
+	foreach ( SettingsAssetGUID guid in file.categoryToFlavsMap[ categoryGUID ] )
+	{
+		ItemFlavor flav = GetItemFlavorByGUID( guid )
+		int tier = ItemFlavor_GetQuality( flav )
+		int arrayIndex = tierRemapFunc( tier )
+
+		totalCounts[ arrayIndex ] += 1
+		if ( GetCachedOwnershipFor( guid ) )
+		{
+			ownedCounts[ arrayIndex ] += 1
+		}
+	}
+
+	return [
+		totalCounts[ 0 ] == 0 ? 100 : int( float( ownedCounts[ 0 ] ) / float( totalCounts[ 0 ] ) * 100.0 ),
+		totalCounts[ 1 ] == 0 ? 100 : int( float( ownedCounts[ 1 ] ) / float( totalCounts[ 1 ] ) * 100.0 ),
+		totalCounts[ 2 ] == 0 ? 100 : int( float( ownedCounts[ 2 ] ) / float( totalCounts[ 2 ] ) * 100.0 ),
+	]
+}
+
+Wishlist function Wishlist_BuildFromMarketplaceStrings( array< string > selections )
+{
+	Wishlist wishlist
+	foreach ( string mpString in selections )
+	{
+		if ( mpString in file.marketplaceRefToCategoryGUID )
+		{
+			int categoryGUID = file.marketplaceRefToCategoryGUID[ mpString ]
+			ItemFlavor categoryFlav = GetItemFlavorByGUID( categoryGUID )
+			if ( ItemFlavor_GetType( categoryFlav ) == eItemType.weapon_category )
+			{
+				wishlist.weaponCategories.append( categoryGUID )
+				wishlist.flattened.append( categoryGUID )
+			}
+			else if ( ItemFlavor_GetType( categoryFlav ) == eItemType.character )
+			{
+				wishlist.characters.append( categoryGUID )
+				wishlist.flattened.append( categoryGUID )
+			}
+		}
+		else
+		{
+			Assert( false, format( "Unrecognized wishlist category: %s", mpString ) )
+			continue
+		}
+	}
+
+	return wishlist
+}
+
+array< string > function Wishlist_BuildMarketplaceStringArray( Wishlist wishlist )
+{
+	array< string > selections = []
+	foreach ( int guid in wishlist.flattened )
+	{
+		if ( guid in file.categoryGUIDtomarketplaceRef )
+		{
+			selections.append( file.categoryGUIDtomarketplaceRef[ guid ] )
+		}
+		else
+		{
+			Assert( false, format( "Unrecognized wishlist category guid: %d", guid ) )
+			continue
+		}
+	}
+
+	return selections
+}
+
+GRXScriptOffer ornull function Wishlist_GetSaveOffer()
+{
+	if ( file.freeOffer == null || file.resetOffer == null )
+		return null
+
+	if ( GRXOffer_IsEligibleForPurchase( expect GRXScriptOffer( file.freeOffer ) ) )
+	{
+		return file.freeOffer
+	}
+	else if ( GRXOffer_IsEligibleForPurchase( expect GRXScriptOffer( file.resetOffer ) ) )
+	{
+		return file.resetOffer
+	}
+
+#if DEV
+	GRX_Warning( "Found null instead of wishlist offer; eWishlistFrontState=%d, freeOffer.ineligibilityCode=%d, resetOffer.ineligibilityCode=%d", Wishlist_GetSelectionUIState( 0, null ), expect GRXScriptOffer( file.freeOffer ).ineligibilityCode, expect GRXScriptOffer( file.resetOffer ).ineligibilityCode )
+#endif
+
+	return null
+}
+
+bool function Wishlist_GetCanAffordSaving()
+{
+	GRXScriptOffer ornull offer = Wishlist_GetSaveOffer()
+	if ( offer != null )
+	{
+		expect GRXScriptOffer( offer )
+		return GRX_CanAfford( offer.prices[0], 1 )
+	}
+
+	
+	return false
+}
+
+ItemFlavorBag ornull function Wishlist_GetSaveOfferPrice( GRXScriptOffer offer )
+{
+	int numOfferPrices = offer.prices.len()
+	Assert( numOfferPrices == 1, format( "Wishlist Save Offer has %d prices when it should only have 1.", numOfferPrices ) )
+	if ( numOfferPrices != 1 )
+		return null
+
+	return offer.prices[0]
+}
+
+string function Wishlist_GetSaveOfferFormatedPrice()
+{
+	GRXScriptOffer ornull offer = Wishlist_GetSaveOffer()
+	if ( offer == null )
+		return ""
+
+	expect GRXScriptOffer( offer )
+
+	ItemFlavorBag ornull priceBag = Wishlist_GetSaveOfferPrice( offer )
+
+	if ( priceBag == null )
+		return ""
+
+	expect ItemFlavorBag( priceBag )
+
+	string priceString = ""
+	if ( priceBag.flavors[0] == GRX_CURRENCIES[GRX_CURRENCY_CREDITS] )
+	{
+		priceString = GRX_GetFormattedPrice( priceBag, 1 )
+	}
+
+	return priceString
+}
+
+void function Wishlist_UpdateWishlistSelections( Wishlist wishlist, void functionref( int ) onDoneUICallback )
+{
+	GRXScriptOffer ornull offer = Wishlist_GetSaveOffer()
+	if ( offer == null || GRX_AreOffersReady() == false )
+	{
+		onDoneUICallback( eScriptGRXOperationStatus.INVALID )
+		return
+	}
+	expect GRXScriptOffer( offer )
+
+	ItemFlavorBag ornull price = Wishlist_GetSaveOfferPrice( offer )
+	if ( price == null )
+	{
+		onDoneUICallback( eScriptGRXOperationStatus.INVALID )
+		return
+	}
+	expect ItemFlavorBag( price )
+
+
+	ScriptGRXOperationInfo op
+	op.expectedQueryGoal = GRX_HTTPQUERYGOAL_UPDATE_WISHLIST_SELECTIONS
+
+	Wishlist previous
+	previous.flattened = clone file.wishlist.flattened
+	previous.weaponCategories = clone file.wishlist.weaponCategories
+	previous.characters = clone file.wishlist.characters
+
+	int editsRemaining = GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[ GRX_CURRENCY_WISHLIST_TOKEN ] )
+
+	array< string > selections = Wishlist_BuildMarketplaceStringArray( wishlist )
+	op.doOperationFunc = ( void function( int opId ) : ( op, selections, offer, price ) {
+		string priceAlias = GRXOffer_GetPriceAliasForPrice( offer, price )
+		GRX_UpdateWishlistSelections( opId, op.expectedQueryGoal, selections, offer.offerAlias, 1, priceAlias, GRX_GetCurrencyArrayFromBag( price ) )
+	} )
+
+	op.onDoneCallback = ( void function ( int status ) : ( selections, onDoneUICallback, previous, editsRemaining ) {
+		
+		
+		onDoneUICallback( status )
+		if ( status != eScriptGRXOperationStatus.DONE_SUCCESS )
+		{
+			return
+		}
+
+		file.wishlist = Wishlist_BuildFromMarketplaceStrings( selections )
+		PIN_Wishlist_Save( file.wishlist, previous, maxint( editsRemaining - 1, 0 ) )
+	} )
+	QueueGRXOperation( GetLocalClientPlayer(), op )
+}
+
+int function Wishlist_GetSelectionUIState( int packsToOpen, int ornull packRarity, string context = "" )
+{
+	WishlistParameters params = Wishlist_GetWishlistParametersForLocalPlayer()
+	Wishlist wishlistData = Wishlist_GetWishlistForLocalPlayer()
+
+	if ( params.adjustedWishlistLength <= 0 )
+	{
+		return eWishlistFrontState.COMPLETED
+	}
+
+	if ( wishlistData.flattened.len() == 0 ) 
+	{
+		return eWishlistFrontState.INACTIVE
+	}
+
+	foreach ( int categoryGUID in wishlistData.flattened )
+	{
+		if ( params.completedClasses.contains( categoryGUID ) )
+		{
+			
+			return eWishlistFrontState.INVALID
+		}
+	}
+
+	int validWeaponCategoryCount = wishlistData.weaponCategories.len()
+	foreach ( weaponCategory in wishlistData.weaponCategories )
+	{
+		if ( Wishlist_IsCategoryCompleted( weaponCategory, null ) )
+			validWeaponCategoryCount--
+	}
+
+	int validCharacterCount = wishlistData.characters.len()
+	foreach ( character in wishlistData.characters )
+	{
+		if ( Wishlist_IsCategoryCompleted( character, null ) )
+			validCharacterCount--
+	}
+
+	if ( validWeaponCategoryCount < params.adjustedWeaponCategoryCount || validCharacterCount < params.adjustedCharacterCount )
+	{
+		return eWishlistFrontState.INVALID
+	}
+
+	
+	if ( packsToOpen > 1 )
+	{
+		foreach ( int wishlistGUID in wishlistData.flattened )
+		{
+			if ( Wishlist_IsWishlistCategoryIsPossiblyInvalidWhenOpening( wishlistGUID, packsToOpen, packRarity, context ) )
+			{
+				return eWishlistFrontState.MAYBE_INVALID
+			}
+		}
+	}
+
+	return eWishlistFrontState.ACTIVE
+}
+
+array< ItemFlavor > function Wishlist_GetTargetItemsFromDatatable( int cosmeticType )
+{
+	Assert( Wishlist_IsWishlistCharacterCategory( cosmeticType ) || Wishlist_IsWishlistWeaponCategory( cosmeticType ) )
+
+	array< ItemFlavor > res = []
+
+	var dataTable = GetDataTable( $"datatable/wishlist/wishlist_core_pack_pool_items.rpak" )
+	int numRows = GetDataTableRowCount( dataTable )
+
+	int guidColumn = GetDataTableColumnByName( dataTable, "itemSettingsAssetGuid" )
+	int charCosmeticColumn = GetDataTableColumnByName( dataTable, "isCharacterCosmetic" )
+	int weaponCosmeticColumn = GetDataTableColumnByName( dataTable, "isWeaponCosmetic" )
+	int rarityColumn = GetDataTableColumnByName( dataTable, "rarity" )
+
+	for ( int row = 0; row < numRows; ++row )
+	{
+		
+		string rarity = GetDataTableString( dataTable, row, rarityColumn )
+		if ( !( rarity == "rare" || rarity == "epic" || rarity == "legendary" ) )
+		{
+			continue
+		}
+
+		bool isRightCosmetic = false
+
+		if ( Wishlist_IsWishlistCharacterCategory( cosmeticType ) )
+		{
+			isRightCosmetic = GetDataTableBool( dataTable, row, charCosmeticColumn )
+		}
+		else if ( Wishlist_IsWishlistWeaponCategory( cosmeticType ) )
+		{
+			isRightCosmetic = GetDataTableBool( dataTable, row, weaponCosmeticColumn )
+		}
+
+		if ( isRightCosmetic == false )
+		{
+			continue
+		}
+
+		int guid = GetDataTableInt( dataTable, row, guidColumn )
+
+		if ( IsValidItemFlavorGUID( guid ) == false )
+		{
+#if DEV
+				printf( "GUID %i from wishlist datatable is invalid; skipping", guid )
+#endif
+			continue
+		}
+
+		res.append( GetItemFlavorByGUID( guid ) )
+	}
+
+	return res
+}
+
+string function Wishlist_GetItemFlavorRewardShortDescription( ItemFlavor item )
+{
+	if ( Wishlist_IsCompleted() && ItemFlavor_IsWishlistUpgradablePack( item ) )
+		return ""
+
+	return ItemFlavor_GetRewardShortDescription( item )
+}
+
+void function AddCallback_OnWishlistSaved( void functionref() cb )
+{
+	if ( file.onWishlistSaved.contains( cb ) )
+	{
+		Assert( false, "Tried to add a callback to AddCallback_OnWishlistSaved that was already added" )
+	}
+	file.onWishlistSaved.append( cb )
+}
+
+void function RemoveCallback_OnWishlistSaved( void functionref() cb )
+{
+	if ( !file.onWishlistSaved.contains( cb ) )
+	{
+		Assert( false, "Tried to remove a callback in AddCallback_OnWishlistSaved that doesn't exist" )
+	}
+	file.onWishlistSaved.removebyvalue( cb )
+}
+
+GRXScriptOffer ornull function Wishlist_GetUpgradePackOffer( ItemFlavor pack )
+{
+	Assert( ItemFlavor_GetType( pack ) == eItemType.account_pack )
+
+	if ( !GRX_AreOffersReady() )
+		return null
+
+	if ( !ItemFlavor_IsWishlistUpgradablePack( pack ) )
+		return null
+
+	array<GRXScriptOffer> offers = GRX_GetLocationOffers( WISHLIST_PACK_UPGRADE_OFFER_LOCATION )
+	foreach ( GRXScriptOffer offer in offers )
+	{
+
+		Assert( offer.prices.len() == 1, format( "Upgrade Pack Offer must have a single price, %i were found", offer.prices.len() ) )
+
+		if ( offer.prices[0].flavors.contains( pack ) )
+		{
+			return offer
+		}
+	}
+	return null
+}
+
+bool function Wishlist_IsUpgradingEnabled()
+{
+	return GetConVarBool( "mtx_pack_upgrade_enabled" )
+}
+
+bool function Wishlist_IsPackUpgradable( ItemFlavor pack )
+{
+	if ( Wishlist_IsCompleted() )
+	{
+		return false
+	}
+
+	if ( !ItemFlavor_IsWishlistUpgradablePack( pack ) )
+	{
+		return false
+	}
+
+	
+	bool isRarityComplete = true
+	int packRarity = ItemFlavor_GetQuality( pack )
+
+	foreach ( int categoryGUID, _ in file.categoryToFlavsMap )
+	{
+		if ( !Wishlist_IsCategoryCompleted( categoryGUID, packRarity ) )
+		{
+			isRarityComplete = false
+			break
+		}
+	}
+
+	return !isRarityComplete
+}
+
+#if DEV
+bool function DEV_WishlistContainsAnyOf( Wishlist wishlist, array< int > search, int searchType )
+{
+	if ( searchType == eWishlistTrimMode.CHARACTERS )
+	{
+		return ListContainsAnyOfList( wishlist.characters, search ) && ListContainsAnyOfList( wishlist.flattened, search )
+	}
+
+	return ListContainsAnyOfList( wishlist.weaponCategories, search ) && ListContainsAnyOfList( wishlist.flattened, search )
+}
+
+void function DEV_PrintWishlist( Wishlist wishlist )
+{
+	printt( "-------- WISHLIST DEBUG PRINT --------" )
+	foreach ( int charGUID in wishlist.characters )
+	{
+		ItemFlavor charFlav = GetItemFlavorByGUID( charGUID )
+		printf( "\tcharacter: %s", ItemFlavor_GetAssetString( charFlav ) )
+	}
+
+	foreach ( int weaponCatGUID in wishlist.weaponCategories )
+	{
+		ItemFlavor weaponCatFlav = GetItemFlavorByGUID( weaponCatGUID )
+		printf( "\tweaponcat: %s", ItemFlavor_GetAssetString( weaponCatFlav ) )
+	}
+
+	printt( "-------- WISHLIST DEBUG PRINT --------" )
+}
+
+void function DEV_WishlistTest()
+{
+	
+	printt( " **** BASE WISHLIST TEST ****" )
+	Wishlist baseWishlist = Wishlist_Generate( null )
+	DEV_PrintWishlist( baseWishlist )
+
+	Assert( baseWishlist.flattened.len() == WISHLIST_REQUIRED_TOTAL_LENGTH )
+	Assert( baseWishlist.characters.len() == WISHLIST_REQUIRED_CHARACTER_COUNT )
+	Assert( baseWishlist.weaponCategories.len() == WISHLIST_REQUIRED_WEAPONCLASS_COUNT )
+	Assert( DEV_WishlistContainsAnyOf( baseWishlist, WISHLIST_COINFLIP_SEEDING_LEGENDS, eWishlistTrimMode.CHARACTERS ) )
+
+	
+	printt( " **** PARTIAL WISHLIST TEST ****" )
+	Wishlist partial = Wishlist_BuildFromFlatArray( [ file.marketplaceRefToCategoryGUID[ "bangalore" ], file.marketplaceRefToCategoryGUID[ "ar" ] ] )
+	DEV_PrintWishlist( partial )
+
+	Assert( partial.weaponCategories.len() == 1 )
+	Assert( partial.characters.len() == 1 )
+
+	
+	printt( " **** BASE + PARTIAL WISHLIST TEST ****" )
+	Wishlist usingPartial = Wishlist_Generate( partial )
+	DEV_PrintWishlist( usingPartial )
+
+	Assert( usingPartial.flattened.len() == WISHLIST_REQUIRED_TOTAL_LENGTH )
+	Assert( usingPartial.characters.len() == WISHLIST_REQUIRED_CHARACTER_COUNT )
+	Assert( usingPartial.weaponCategories.len() == WISHLIST_REQUIRED_WEAPONCLASS_COUNT )
+	Assert( DEV_WishlistContainsAnyOf( usingPartial, partial.characters, eWishlistTrimMode.CHARACTERS ) )
+	Assert( DEV_WishlistContainsAnyOf( usingPartial, partial.weaponCategories, eWishlistTrimMode.WEAPON_CATEGORIES ) )
+	Assert( DEV_WishlistContainsAnyOf( usingPartial, WISHLIST_COINFLIP_SEEDING_LEGENDS, eWishlistTrimMode.CHARACTERS ) )
+
+	
+	printt( "**** Core Pack Pool Registration ****" )
+	foreach( int guid, array<int> arr in file.categoryToFlavsMap )
+	{
+		printt( "type " + ItemFlavor_GetHumanReadableRefForPIN_Slow( GetItemFlavorByGUID( guid ) ) + " has " + arr.len() + " item registered" )
+	}
+
+	
+	bool originalNonBaseLegendsFlag = file.ownsNonBaseLegends
+	file.ownsNonBaseLegends = false
+
+	WishlistParameters params = GenerateWishlistParameters( true )
+	Assert( params.availableOwnedCharacters.len() == 5 )
+	foreach ( int index, WishlistCategory category in params.availableOwnedCharacters )
+	{
+		if ( index == 4 )
+		{
+			Assert( WISHLIST_COINFLIP_SEEDING_LEGENDS.contains( category.guid ), format( "%s was not a coinflip legend - initial seeding error.", category.description ) )
+		}
+		else
+		{
+			Assert( WISHLIST_BASE_SEEDING_LEGENDS.contains( category.guid ), format( "%s was not a base legend for seeding - initial seeding error.", category.description ) )
+		}
+	}
+
+	WishlistParameters originalParams = file.params
+	file.params = params
+
+	Wishlist wishlist = Wishlist_Generate( null )
+
+	printt( "Generated wishlist contained:" )
+
+	array< int > selectedLegends
+	array< int > selectedBaseLegends
+	array< int > selectedCoinFlipLegends
+	foreach ( int index, int guid in wishlist.characters )
+	{
+		ItemFlavor charFlav = GetItemFlavorByGUID( guid )
+		printf( "index [ %d ] had character: %s", index, ItemFlavor_GetAssetString( charFlav ) )
+
+		if ( WISHLIST_COINFLIP_SEEDING_LEGENDS.contains( guid ) )
+		{
+			selectedCoinFlipLegends.append( guid )
+		}
+		else if ( WISHLIST_BASE_SEEDING_LEGENDS.contains( guid ) )
+		{
+			selectedBaseLegends.append(guid)
+		}
+		else
+		{
+			Assert( false, format( "Unrecognized legend for new player seeding: %s", ItemFlavor_GetAssetString( charFlav ) ) )
+		}
+
+		selectedLegends.append( guid )
+	}
+
+	Assert( selectedBaseLegends.len() == 4 )
+	Assert( selectedCoinFlipLegends.len() == 1 )
+
+	foreach ( int guid in selectedLegends )
+	{
+		Assert( wishlist.flattened.contains( guid ) )
+	}
+
+	file.params = originalParams
+	file.ownsNonBaseLegends = originalNonBaseLegendsFlag
+}
+#endif
+
+
+
+
+bool function Wishlist_IsEnabled()
+{
+	return GetConVarBool( "mtx_wishlist_enabled" )
+}
+
+ItemFlavor function Wishlist_GetWishlistCategory( ItemFlavor cosmeticFlav )
+{
+	
+	if ( Wishlist_IsWishlistCharacterCategory( ItemFlavor_GetType( cosmeticFlav ) ) )
+	{
+		return GetItemFlavorByAsset( GetGlobalSettingsAsset( ItemFlavor_GetAsset( cosmeticFlav ), "parentItemFlavor" ) )
+	}
+	else if ( Wishlist_IsWishlistWeaponCategory( ItemFlavor_GetType( cosmeticFlav ) ) )
+	{
+		ItemFlavor weapon = GetItemFlavorByAsset( GetGlobalSettingsAsset( ItemFlavor_GetAsset( cosmeticFlav ), "parentItemFlavor" ) )
+		return WeaponItemFlavor_GetCategory( weapon )
+	}
+
+	Assert( false, format( "Unknown item type for wishlist category: %s", ItemFlavor_GetAssetString( cosmeticFlav ) ) )
+	unreachable
+}
+
+bool function Wishlist_IsWishlistCharacterCategory( int cosmeticType )
+{
+	return WISHLIST_CORE_PACK_POOL_CHARACTER_CATEGORY_TYPES.contains( cosmeticType )
+}
+
+bool function Wishlist_IsWishlistWeaponCategory( int weaponType )
+{
+	return WISHLIST_CORE_PACK_POOL_WEAPON_CATEGORY_TYPES.contains( weaponType )
+}
+
+bool function Wishlist_IsCompleted()
+{
+	return file.params.adjustedWishlistLength <= 0
+}
+
+

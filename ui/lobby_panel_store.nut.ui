@@ -1,0 +1,1102 @@
+global function InitStorePanel
+global function InitLootPanel
+global function IsWalletModalOpened
+
+global function JumpToStoreTab
+global function JumpToStoreOffer
+global function JumpToStorePacks
+global function JumpToHeirloomShop
+global function JumpToStorePanel
+global function JumpToStoreSection
+global function JumpToMythicSection
+global function JumpToSpecialOffersSection
+
+global function OpenWalletInventoryModal
+global function OpenVCPopUp
+global function OpenExoticShardsModal
+
+global function OnGRXStoreUpdate
+global function GetLimitedTimeApexPacksOffers
+global function GetLootTickPurchaseOffers
+global function UpdatePackGiftButton
+global function UpdateDisclaimer
+
+global function GetBPPresaleOfferData
+global function JumpToBPPresaleStoreOffer
+global function OpenBPPresaleDialog
+
+global function CanOpenWalletModal
+global function OpenWalletModal
+
+global function RegisterWalletButtonPressCallbacks
+global function DeregisterWalletButtonPressCallbacks
+
+enum eStoreSection
+{
+	SHOP,
+	LOOT,
+	CHARACTERS,
+	CURRECNY
+}
+
+global const string STORE_SPECIAL_OFFERS = "StoreSpecialOffers"
+global const string STORE_OFFER_SHOP = "StoreItemShop"
+global const string STORE_MYTHIC_SHOP = "StoreMythicShop"
+global const string STORE_SET_ITEM_SHOP = "StoreSetItemShop"
+global const string RTK_APEX_PACKS_PANEL = "ApexPacksPanel"
+
+global struct bpPresaleOfferData
+{
+	TabDef ornull offerTab = null
+	GRXScriptOffer ornull basicOffer = null
+	GRXScriptOffer ornull bundleOffer = null
+}
+
+enum bpPresaleOfferType
+{
+	NOT_PRESALE,
+	BASIC,
+	BUNDLE
+}
+
+struct
+{
+	var  storePanel
+	bool tabsInitialized = false
+	bool storeCacheValid = false
+	var  hotDropsTab
+	bool openDLCStoreCallbackCalled = false
+	bool isOpened = false
+	bool isWalletOpened = false
+	bool isInitDLCStoreOngoing = false
+} file
+
+struct
+{
+	var lootPanel
+	var lootButtonOpen
+	var lootButtonPurchase
+	var lootButtonGift
+	var lootButtonInfo
+	var lootButtonInfoInvis
+	var lootPriceText
+} s_loot
+
+void function InitStorePanel( var panel )
+{
+	file.storePanel = panel
+
+	SetPanelTabTitle( panel, "#STORE" )
+	SetTabRightSound( panel, "UI_Menu_StoreTab_Select" )
+	SetTabLeftSound( panel, "UI_Menu_StoreTab_Select" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, OnStorePanel_Show )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, OnStorePanel_Hide )
+
+	SetUpAccessToTheCurrenciesWallet()
+	AddTabsToStoreMenu( panel )
+}
+
+void function AddTabsToStoreMenu( var panel, bool reOpen = false )
+{
+	if ( reOpen )
+		return
+
+	ClearTabs( panel )
+
+	
+	{
+		var tabBody = Hud_GetChild( panel, STORE_OFFER_SHOP )
+		AddTab( panel, tabBody, "#STORE_V2_SHOP_NAME" )
+	}
+
+	{
+		var tabBody = Hud_GetChild( panel, STORE_SPECIAL_OFFERS )
+		AddTab( panel, tabBody, "#STORE_SPECIAL_OFFERS_NAME" )
+	}
+
+	
+	{
+		var tabBody = Hud_GetChild( panel, GetApexPacksPanelName() )
+		AddTab( panel, tabBody, "#MENU_STORE_PANEL_LOOT" )
+	}
+
+	
+	{
+		var tabBody = Hud_GetChild( panel, GetMythicShopName() )
+		AddTab( panel, tabBody, "#MENU_STORE_PANEL_PRESTIGE_SHOP" )
+	}
+
+}
+
+
+void function OnStorePanel_Show( var panel )
+{
+	AddTabsToStoreMenu( panel, true )
+	Lobby_AdjustScreenFrameToMaxSize( Hud_GetChild( panel, "ScreenFrame" ), true )
+
+	file.isOpened = true
+	SetCurrentHubForPIN( Hud_GetHudName( panel ) )
+	UI_SetPresentationType( ePresentationType.WEAPON_CATEGORY )
+
+	TabData tabData = GetTabDataForPanel( panel )
+	tabData.centerTabs = true
+	SetTabBackground( tabData, Hud_GetChild( file.storePanel, "TabsBackground" ), eTabBackground.STANDARD )
+	SetTabDefsToSeasonal( tabData )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+		thread AnimateInSmallTabBar( tabData )
+
+	if ( !file.tabsInitialized )
+	{
+		SetTabNavigationEndCallback( tabData, eTabDirection.PREV, TabNavigateToLobby )
+		file.tabsInitialized = true
+	}
+
+	
+	DeactivateTab( tabData )
+	SetTabNavigationEnabled( file.storePanel, false )
+
+	foreach ( tabDef in GetPanelTabs( file.storePanel ) )
+	{
+		SetTabDefEnabled( tabDef, false )
+	}
+
+	file.storeCacheValid = false
+
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( OnGRXStoreUpdate )
+	AddCallbackAndCallNow_OnGRXOffersRefreshed( OnGRXStoreUpdate )
+
+	RegisterWalletButtonPressCallbacks()
+
+	Hud_AddEventHandler( Hud_GetChild( file.storePanel, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_AddEventHandler( Hud_GetChild( file.storePanel, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+
+	RuiSetBool( Hud_GetRui( Hud_GetChild( file.storePanel, "CoinsPopUpButton" ) ), "hasACBonus", GRX_IsPlayerEligibleForACBonus() )
+
+	var parentPanel = Hud_GetParent( file.storePanel )
+	var mmStatus = Hud_GetChild( parentPanel, "MatchmakingStatus" )
+	HudElem_SetRuiArg( mmStatus, "verticalScrollPosition", true )
+	HudElem_SetRuiArg( mmStatus, "hideBlur", true )
+
+	GRX_SetLobbyLocationIfSafe( "store" )
+}
+
+
+
+void function TabNavigateToLobby()
+{
+	TabData lobbyTabData = GetTabDataForPanel( GetMenu( "LobbyMenu" ) )
+
+	
+	ActivateTabPrev( lobbyTabData )
+}
+
+
+void function OnStorePanel_Hide( var panel )
+{
+	file.isOpened = false
+	TabData tabData = GetTabDataForPanel( panel )
+	DeactivateTab( tabData )
+
+	RemoveCallback_OnGRXInventoryStateChanged( OnGRXStoreUpdate )
+	RemoveCallback_OnGRXOffersRefreshed( OnGRXStoreUpdate )
+
+	DeregisterWalletButtonPressCallbacks()
+
+	Hud_RemoveEventHandler( Hud_GetChild( file.storePanel, "CoinsPopUpButton" ), UIE_CLICK, OpenVCPopUp )
+	Hud_RemoveEventHandler( Hud_GetChild( file.storePanel, "ExoticShardsPopUpButton" ), UIE_CLICK, OpenExoticShardsModal )
+
+	file.storeCacheValid = false
+
+	var parentPanel = Hud_GetParent( file.storePanel )
+	var mmStatus = Hud_GetChild( parentPanel, "MatchmakingStatus" )
+	HudElem_SetRuiArg( mmStatus, "verticalScrollPosition", false )
+	HudElem_SetRuiArg( mmStatus, "hideBlur", false )
+}
+
+
+void function CallDLCStoreCallback_Safe()
+{
+	file.isInitDLCStoreOngoing = false
+
+	if ( !file.openDLCStoreCallbackCalled )
+	{
+		file.openDLCStoreCallbackCalled = true	
+		if( IsStoreEmpty() == true)
+		{
+			ShowDLCStoreUnavailableNotice()
+			file.openDLCStoreCallbackCalled = false
+			CloseActiveMenu()
+		}
+		else
+		{
+			OnOpenDLCStore()
+		}
+	}
+}
+
+
+void function OnGRXStoreUpdate()
+{
+	TabData tabData = GetTabDataForPanel( file.storePanel )
+	int numTabs     = tabData.tabDefs.len()
+
+	if ( !GRX_IsInventoryReady() || !GRX_AreOffersReady() )
+	{
+		DeactivateTab( tabData )
+		SetTabNavigationEnabled( file.storePanel, false )
+
+		foreach ( tabDef in GetPanelTabs( file.storePanel ) )
+		{
+			SetTabDefEnabled( tabDef, false )
+		}
+
+		Hud_SetVisible( Hud_GetChild( file.storePanel, "BusyPanel" ), true )
+
+		if ( file.openDLCStoreCallbackCalled )
+		{
+			OnCloseDLCStore()
+		}
+
+		file.openDLCStoreCallbackCalled = false
+	}
+	else
+	{
+		bool haveLootTickPurchaseOffer          = ( GetLootTickPurchaseOffers() != null ) && !GRX_IsOfferRestricted()
+
+		ItemFlavor ornull activeCollectionEvent = GetActiveCollectionEvent( GetUnixTimestamp() )
+		bool haveActiveCollectionEvent          = ( activeCollectionEvent != null )
+		ItemFlavor ornull activeThemedShopEvent = GetActiveThemedShopEvent( GetUnixTimestamp() )
+		bool haveActiveThemedShopEvent          = ( activeThemedShopEvent != null )
+		bool haveActiveHeirloomTab				= HeirloomShop_IsVisibleWithoutCurrency() || GRXCurrency_GetPlayerBalance( GetLocalClientPlayer(), GRX_CURRENCIES[GRX_CURRENCY_HEIRLOOM] ) > 0
+
+		SetTabNavigationEnabled( file.storePanel, true )
+		
+		foreach ( TabDef tabDef in GetPanelTabs( file.storePanel ) )
+		{
+			bool showTab   = true
+			bool enableTab = true
+
+			if ( Hud_GetHudName( tabDef.panel ) == "CollectionEventPanel" || Hud_GetHudName( tabDef.panel ) == "SpecialCurrencyShopPanel" )
+			{
+				showTab = haveActiveCollectionEvent
+				enableTab = true
+				if ( haveActiveCollectionEvent )
+				{
+					expect ItemFlavor(activeCollectionEvent)
+
+					tabDef.title = CollectionEvent_GetFrontTabText( activeCollectionEvent )
+
+					
+					
+					
+					
+					
+				}
+			}
+			else if ( Hud_GetHudName( tabDef.panel ) == GetMythicShopName() )
+			{
+				showTab = haveActiveHeirloomTab
+				enableTab = haveActiveHeirloomTab
+			}
+			else if ( Hud_GetHudName( tabDef.panel ) == "ThemedShopPanel" )
+			{
+				showTab = haveActiveThemedShopEvent
+				if ( haveActiveThemedShopEvent )
+				{
+					expect ItemFlavor(activeThemedShopEvent)
+
+					tabDef.title = ThemedShopEvent_GetTabText( activeThemedShopEvent )
+
+					
+					
+					
+					
+					
+				}
+			}
+			else if ( Hud_GetHudName( tabDef.panel ) == STORE_SPECIAL_OFFERS )
+			{
+				showTab = ChainedOffer_GetSortedChainedOffers().len() > 0
+				enableTab = showTab
+			}
+
+			SetTabDefVisible( tabDef, showTab )
+			SetTabDefEnabled( tabDef, enableTab )
+		}
+
+		int activeIndex = tabData.activeTabIdx
+		if ( !file.storeCacheValid && GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+			activeIndex = 0
+
+		while( (!IsTabIndexEnabled( tabData, activeIndex ) || !IsTabIndexVisible( tabData, activeIndex )) && activeIndex < numTabs )
+			activeIndex++
+
+		if ( !IsTabActive( tabData ) && file.isOpened )
+			ActivateTab( tabData, activeIndex )
+
+		file.storeCacheValid = true
+
+		UpdateLootTickTabNewness()
+
+		Hud_SetVisible( Hud_GetChild( file.storePanel, "BusyPanel" ), false )
+	}
+}
+
+bool function HeirloomShop_IsVisibleWithoutCurrency()
+{
+	return GetCurrentPlaylistVarBool( "heirloom_shop_visible_without_currency", true )
+}
+
+void function UpdateLootTickTabNewness()
+{
+	if ( !GRX_IsInventoryReady() )
+		return
+
+	int packCount = GRX_GetTotalPackCount()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function IsWalletModalOpened()
+{
+	return file.isWalletOpened
+}
+
+bool function CanOpenWalletModal()
+{
+	var activeMenu = GetActiveMenu()
+	
+	bool activeMenuShouldBlock = IsSelfClosingMenu( activeMenu )
+	return activeMenu != file.isWalletOpened && !activeMenuShouldBlock
+}
+
+void function RegisterWalletButtonPressCallbacks()
+{
+	if ( !IsRegisteredButtonPressedCallback( KEY_TAB, ToggleApexCoinsWalletModal ) )
+	{
+		RegisterButtonPressedCallback( KEY_TAB, ToggleApexCoinsWalletModal )
+	}
+
+	if ( !IsRegisteredButtonPressedCallback( BUTTON_BACK, ToggleApexCoinsWalletModal ) )
+	{
+		RegisterButtonPressedCallback( BUTTON_BACK, ToggleApexCoinsWalletModal )
+	}
+
+	if ( !IsRegisteredButtonPressedCallback( KEY_Q, ToggleExoticShardsWalletModal ) )
+	{
+		RegisterButtonPressedCallback( KEY_Q, ToggleExoticShardsWalletModal )
+	}
+
+	if ( !IsRegisteredButtonPressedCallback( BUTTON_STICK_LEFT, ToggleExoticShardsWalletModal ) )
+	{
+		RegisterButtonPressedCallback( BUTTON_STICK_LEFT, ToggleExoticShardsWalletModal )
+	}
+}
+
+void function DeregisterWalletButtonPressCallbacks()
+{
+	if ( IsRegisteredButtonPressedCallback( KEY_TAB, ToggleApexCoinsWalletModal ) )
+	{
+		DeregisterButtonPressedCallback( KEY_TAB, ToggleApexCoinsWalletModal )
+	}
+
+	if ( IsRegisteredButtonPressedCallback( BUTTON_BACK, ToggleApexCoinsWalletModal ) )
+	{
+		DeregisterButtonPressedCallback( BUTTON_BACK, ToggleApexCoinsWalletModal )
+	}
+
+	if ( IsRegisteredButtonPressedCallback( KEY_Q, ToggleExoticShardsWalletModal ) )
+	{
+		DeregisterButtonPressedCallback( KEY_Q, ToggleExoticShardsWalletModal )
+	}
+
+	if ( IsRegisteredButtonPressedCallback( BUTTON_STICK_LEFT, ToggleExoticShardsWalletModal ) )
+	{
+		DeregisterButtonPressedCallback( BUTTON_STICK_LEFT, ToggleExoticShardsWalletModal )
+	}
+}
+
+void function OpenWalletInventoryModal( var button )
+{
+	if ( CanOpenWalletModal() )
+		OpenWalletModal(eTabbedModalType.WALLET_INVENTORY)
+}
+
+void function OpenVCPopUp( var button )
+{
+	if ( CanOpenWalletModal() )
+		OpenWalletModal(eTabbedModalType.WALLET_APEX_COINS)
+}
+
+void function OpenExoticShardsModal( var button )
+{
+	if ( CanOpenWalletModal() )
+		OpenWalletModal(eTabbedModalType.WALLET_EXOTIC_SHARDS)
+}
+
+void function OpenWalletModal( int defaultTabType )
+{
+	int tabIndex = 0
+
+	array<int> types = [ eTabbedModalType.WALLET_INVENTORY,
+		eTabbedModalType.WALLET_APEX_COINS,
+		eTabbedModalType.WALLET_EXOTIC_SHARDS
+	]
+
+	array<string> titles = [ "#CURRENCIES_WALLET_TITLE",
+		"#CURRENCY_PREMIUM",
+		"#CURRENCIES_WALLET_EXOTIC_SHARDS"
+	]
+
+	for ( int typeIndex = 0; typeIndex < types.len(); typeIndex++ )
+	{
+		if ( types[typeIndex] == defaultTabType )
+		{
+			tabIndex = typeIndex
+			break
+		}
+	}
+
+	UI_RTKTabbedModal_Open( "", Localize("#CURRENCIES_TITLE").toupper(), types, titles, tabIndex, OnWalletModalOpened, OnWalletModalClosed )
+}
+
+void function OnWalletModalOpened()
+{
+	RegisterSignal( "WalletShutDown" )
+	file.isWalletOpened = true
+	thread WalletModalThink()
+}
+
+void function WalletModalThink()
+{
+	EndSignal( uiGlobal.signalDummy, "WalletShutDown" )
+
+	while ( file.isWalletOpened )
+	{
+		int tabType = UI_RTKTabbedModal_GetCurrentTabType()
+
+		if ( tabType == eTabbedModalType.WALLET_APEX_COINS || tabType == eTabbedModalType.WALLET_EXOTIC_SHARDS )
+		{
+			if ( IsDLCStoreInitialized() )
+			{
+				if ( GRX_IsInventoryReady() || GRX_AreOffersReady() )
+				{
+					CallDLCStoreCallback_Safe()
+				}
+			}
+			else
+			{
+				if ( !file.isInitDLCStoreOngoing )
+				{
+					file.isInitDLCStoreOngoing = true
+					InitDLCStore()
+				}
+			}
+		}
+		else if ( tabType == eTabbedModalType.WALLET_INVENTORY )
+		{
+			if ( file.openDLCStoreCallbackCalled )
+			{
+				OnCloseDLCStore()
+			}
+
+			file.openDLCStoreCallbackCalled = false
+		}
+
+		WaitFrame()
+	}
+}
+
+void function OnWalletModalClosed()
+{
+	file.isWalletOpened = false
+
+	Signal( uiGlobal.signalDummy, "WalletShutDown" )
+
+	if ( file.openDLCStoreCallbackCalled )
+	{
+		OnCloseDLCStore()
+	}
+
+	file.openDLCStoreCallbackCalled = false
+
+	if ( ShouldShowPremiumCurrencyDialog( false, true ) )
+	{
+		ShowPremiumCurrencyDialog( false )
+	}
+
+	if ( IsSteamDelayFulfilment() )
+	{
+		ShowPendingPurchaseDialog()
+		ClearSteamDelayFulfilment()
+	}
+}
+
+void function ToggleApexCoinsWalletModal( var button )
+{
+	if ( !file.isWalletOpened && IsDialog( GetActiveMenu() ) )
+		return
+
+	if ( file.isWalletOpened && UI_RTKTabbedModal_GetCurrentTabType() == eTabbedModalType.WALLET_APEX_COINS )
+	{
+		CloseActiveMenu()
+	}
+	else
+	{
+		OpenVCPopUp( button )
+	}
+}
+
+void function ToggleExoticShardsWalletModal( var button )
+{
+	if ( !file.isWalletOpened && IsDialog( GetActiveMenu() ) )
+		return
+
+	if ( file.isWalletOpened && UI_RTKTabbedModal_GetCurrentTabType() == eTabbedModalType.WALLET_EXOTIC_SHARDS )
+	{
+		CloseActiveMenu()
+	}
+	else
+	{
+		OpenExoticShardsModal( button )
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function InitLootPanel( var panel )
+{
+	var lootPanelA = Hud_GetChild( panel, "LootPanelA" )
+	s_loot.lootPanel = Hud_GetChild( lootPanelA, "PanelContent" )
+
+	HudElem_SetRuiArg( s_loot.lootPanel, "titleText", Localize( "#RARE_LOOT_TICK" ) )
+	HudElem_SetRuiArg( s_loot.lootPanel, "descText", Localize( "#LOOT_TICK_INFO" ) )
+	HudElem_SetRuiArg( s_loot.lootPanel, "priceText1", Localize( "#LOOT_TICK_PRICE_1", "100" ) )
+
+	var lootPanelB = Hud_GetChild( panel, "LootPanelB" )
+	s_loot.lootButtonOpen = Hud_GetChild( lootPanelB, "OpenOwnedButton" )
+	HudElem_SetRuiArg( s_loot.lootButtonOpen, "buttonText", "#ACTIVATE_APEX_PACK" )
+	HudElem_SetRuiArg( s_loot.lootButtonOpen, "descText", "" )
+
+	s_loot.lootButtonGift = Hud_GetChild( lootPanelA, "GiftButton" )
+	s_loot.lootButtonPurchase = Hud_GetChild( lootPanelA, "PurchaseButton" )
+
+	HudElem_SetRuiArg( s_loot.lootButtonGift, "buttonText", "#INBOX_GIFT_TITLE" )
+	HudElem_SetRuiArg( s_loot.lootButtonPurchase, "buttonText", "#PURCHASE" )
+
+	s_loot.lootButtonInfo = Hud_GetChild( lootPanelA, "PackInfoButton" )
+	s_loot.lootButtonInfoInvis = Hud_GetChild( lootPanelA, "PackInfoButtonInvisible" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, LootPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, LootPanel_OnHide )
+
+	Hud_AddEventHandler( s_loot.lootButtonOpen, UIE_CLICK, OpenLootBoxButton_OnActivate )
+
+	Hud_AddEventHandler( s_loot.lootButtonGift, UIE_CLICK, LootTickGiftButton_Activate )
+	Hud_AddEventHandler( s_loot.lootButtonPurchase, UIE_CLICK, LootTickPurchaseButton_Activate )
+	Hud_AddEventHandler( s_loot.lootButtonInfo, UIE_CLICK, OpenPackInfoDialog )
+	Hud_AddEventHandler( s_loot.lootButtonInfoInvis, UIE_CLICK, OpenPackInfoDialog )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, true, "#X_GIFT_INFO_TITLE", "#GIFT_INFO_TITLE", OpenGiftInfoPopUp, IsGiftingEnabled )
+	AddPanelFooterOption( panel, LEFT, BUTTON_Y, true, "#Y_BUTTON_REDEEM_CODE", "#REDEEM_CODE_TEXT", void function( var button ) : () {
+		AdvanceMenu( GetMenu( "CodeRedemptionDialog" ) )
+	} )
+	AddPanelEventHandler_FocusChanged( panel, LootTick_OnFocusChanged )
+}
+
+void function LootPanel_OnShow( var panel )
+{
+	SetCurrentTabForPIN( Hud_GetHudName( panel ) )
+	AddCallbackAndCallNow_OnGRXInventoryStateChanged( UpdateLootTickButtons )
+	UI_SetPresentationType( ePresentationType.WEAPON_CATEGORY )
+	ItemFlavorBag basePrice = expect array<GRXScriptOffer>( GetLootTickPurchaseOffers() )[0].prices[0]
+	HudElem_SetRuiArg( s_loot.lootPanel, "priceText1", Localize( "#LOOT_TICK_PRICE_1", GRX_GetFormattedPrice( basePrice, 1 ) ) )
+}
+
+
+void function LootPanel_OnHide( var panel )
+{
+	RemoveCallback_OnGRXInventoryStateChanged( UpdateLootTickButtons )
+}
+
+
+void function OpenLootBoxButton_OnActivate( var button )
+{
+	if ( Hud_IsLocked( button ) )
+		return
+
+	AdvanceMenu( GetMenu( "LootBoxOpen" ) )
+}
+
+array<GRXScriptOffer> ornull function GetLimitedTimeApexPacksOffers()
+{
+	array<GRXScriptOffer> offers = GRX_GetLocationOffers( "packShop" )
+	offers.sort( SortOffersInOrderBySlot )
+	return offers.len() > 0 ? offers : null
+}
+
+array<GRXScriptOffer> ornull function GetLootTickPurchaseOffers()
+{
+	ItemFlavor lootTick          = GetItemFlavorByAsset( $"settings/itemflav/pack/cosmetic_rare.rpak" )
+	array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( lootTick, "loot" )
+	offers.sort( int function( GRXScriptOffer a, GRXScriptOffer b ){
+		if ( a.items[0].itemQuantity > b.items[0].itemQuantity )
+			return 1
+		else if ( a.items[0].itemQuantity < b.items[0].itemQuantity )
+			return -1
+		return 0
+	} )
+	return offers.len() > 0 ? offers : null
+}
+
+GRXScriptOffer ornull function GetLootTickPurchaseOffer()
+{
+	ItemFlavor lootTick          = GetItemFlavorByAsset( $"settings/itemflav/pack/cosmetic_rare.rpak" )
+	array<GRXScriptOffer> offers = GRX_GetItemDedicatedStoreOffers( lootTick, "loot" )
+	
+	offers.sort( int function( GRXScriptOffer a, GRXScriptOffer b ){
+		if ( a.items[0].itemQuantity > b.items[0].itemQuantity )
+			return 1
+		else if ( a.items[0].itemQuantity < b.items[0].itemQuantity )
+			return -1
+		return 0
+	} )
+	return offers.len() > 0 ? offers[0] : null
+}
+
+void function UpdateLootTickButtons()
+{
+	UpdatePackGiftButton( s_loot.lootButtonGift, false )
+	UpdateLootBoxButton( s_loot.lootButtonOpen )
+	UpdateDisclaimer( s_loot.lootPanel )
+}
+
+void function UpdateLootTickButton( var button, int quantity )
+{
+	HudElem_SetRuiArg( button, "buttonText", "#PURCHASE" )
+
+	bool purchaseLock   = false
+	string purchaseDesc = ""
+	if ( GRX_IsInventoryReady() && GRX_AreOffersReady() )
+	{
+		array<GRXScriptOffer> ornull offers = GetLootTickPurchaseOffers()
+		if ( offers != null )
+		{
+			GRXScriptOffer offer = expect array<GRXScriptOffer>( offers )[0]
+			purchaseDesc = Localize( "#STORE_PURCHASE_N_FOR_N", quantity, GRX_GetFormattedPrice( offer.prices[0], quantity ) )
+			ItemFlavor lootTickFlavor = offer.output.flavors[0] 
+
+			purchaseLock = false
+		}
+	}
+	else
+	{
+		purchaseLock = true
+	}
+
+	Hud_SetLocked( button, purchaseLock )
+	HudElem_SetRuiArg( button, "descText", purchaseDesc )
+}
+
+void function LootTickPurchaseButton_Activate( var button )
+{
+	if ( Hud_IsLocked( button ) )
+		return
+
+	int quantity = 1
+
+	array<GRXScriptOffer> ornull offers = GetLootTickPurchaseOffers()
+	if ( offers == null )
+	{
+		EmitUISound( "menu_deny" )
+		return
+	}
+
+	PurchaseDialogConfig pdc
+	pdc.offer = expect array<GRXScriptOffer>( offers )[0]
+	pdc.quantity = quantity
+	pdc.markAsNew = false
+	pdc.onPurchaseResultCallback = OnLootTickPurchaseResult
+	PurchaseDialog( pdc )
+}
+
+void function LootTickGiftButton_Activate( var button )
+{
+	if ( Hud_IsLocked( button ) )
+		return
+
+	if ( !IsTwoFactorAuthenticationEnabled() )
+	{
+		OpenTwoFactorInfoDialog( button )
+		return
+	}
+
+	array<GRXScriptOffer> ornull offers = GetLootTickPurchaseOffers()
+	if ( offers == null )
+	{
+		EmitUISound( "menu_deny" )
+		return
+	}
+
+	int quantity = 1
+	PurchaseDialogConfig pdc
+	pdc.offer = expect array<GRXScriptOffer>( offers )[0]
+	pdc.quantity = quantity
+	pdc.markAsNew = false
+	pdc.isGiftPack = true
+	PurchaseDialog( pdc )
+}
+
+
+void function LootTick_OnFocusChanged( var panel, var oldFocus, var newFocus )
+{
+	if ( !IsValid( panel ) )
+		return
+
+	if ( !newFocus )
+		return
+
+	if ( GetParentMenu( panel ) != GetActiveMenu() )
+		return
+
+	if( !Hud_IsFocused( s_loot.lootButtonInfo ) )
+	{
+		if ( s_loot.lootButtonInfo != null && s_loot.lootButtonInfoInvis != null )
+			HudElem_SetRuiArg( s_loot.lootButtonInfo, "isFocused", Hud_IsFocused( s_loot.lootButtonInfoInvis ) )
+	}
+}
+
+void function OnLootTickPurchaseResult( bool wasSuccessful )
+{
+	if ( wasSuccessful )
+	{
+		UpdateLootTickButtons()
+	}
+}
+
+void function JumpToStoreTab()
+{
+	while ( GetActiveMenu() != GetMenu( "LobbyMenu" ) )
+		CloseActiveMenu()
+
+	TabData lobbyTabData = GetTabDataForPanel( GetMenu( "LobbyMenu" ) )
+	ActivateTab( lobbyTabData, Tab_GetTabIndexByBodyName( lobbyTabData, "StorePanel" ) )
+}
+
+bool function JumpToStorePanel( string panelName )
+{
+	JumpToStoreTab()
+	if ( panelName.len() == 0 )
+	{
+		printt( "Store panel name was empty." )
+		return false
+	}
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	int tabIndex = Tab_GetTabIndexByBodyName( storeTabData, panelName )
+	if ( IsTabIndexVisible( storeTabData, tabIndex ) && IsTabIndexEnabled( storeTabData, tabIndex ) )
+	{
+		ActivateTab( storeTabData, Tab_GetTabIndexByBodyName( storeTabData, panelName ) )
+		return true
+	}
+	printt( "Failed to activate tab \"" + panelName + "\"." )
+	return false
+}
+
+void function JumpToStoreSection( string sectionName )
+{
+	RTKStore_SetOverrideStartingSection( STORE_OFFER_SHOP )
+	RTKStore_SetStartingSection( sectionName, 0, STORE_OFFER_SHOP )
+	StoreTelemetry_SaveDeepLink( sectionName )
+
+	JumpToStoreTab()
+
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	storeTabData.activeTabIdx = Tab_GetTabIndexByBodyName( storeTabData, STORE_OFFER_SHOP )
+
+	if ( !IsTabActive( storeTabData ) )
+		ActivateTab( storeTabData, storeTabData.activeTabIdx )
+}
+
+void function JumpToMythicSection( string sectionName )
+{
+	RTKStore_SetOverrideStartingSection( STORE_MYTHIC_SHOP )
+	RTKStore_SetStartingSection( sectionName, 0, STORE_MYTHIC_SHOP )
+	StoreTelemetry_SaveDeepLink( sectionName )
+
+	JumpToHeirloomShop()
+}
+
+void function JumpToSpecialOffersSection( string sectionName )
+{
+	RTKStore_SetOverrideStartingSection( STORE_SPECIAL_OFFERS )
+	RTKStore_SetStartingSection( sectionName, 0, STORE_SPECIAL_OFFERS )
+	StoreTelemetry_SaveDeepLink( sectionName )
+
+	JumpToStoreTab()
+
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	storeTabData.activeTabIdx = Tab_GetTabIndexByBodyName( storeTabData, STORE_SPECIAL_OFFERS )
+
+	if ( !IsTabActive( storeTabData ) )
+		ActivateTab( storeTabData, storeTabData.activeTabIdx )
+}
+
+int function GetBPPresaleOfferType( GRXScriptOffer offer )
+{
+	bool hasPresaleVoucher = false
+	bool hasBPLevels = false
+	foreach ( ItemFlavor flav in offer.output.flavors )
+	{
+		if ( ItemFlavor_GetType( flav ) == eItemType.battlepass_presale_voucher )
+		{
+			hasPresaleVoucher = true
+		}
+		else if ( ItemFlavor_GetType( flav ) == eItemType.battlepass_purchased_xp )
+		{
+			hasBPLevels = true
+		}
+	}
+	if ( hasPresaleVoucher && hasBPLevels )
+	{
+		return bpPresaleOfferType.BUNDLE
+	}
+	if ( hasPresaleVoucher )
+	{
+		return bpPresaleOfferType.BASIC
+	}
+	return bpPresaleOfferType.NOT_PRESALE
+}
+
+void function JumpToBPPresaleStoreOffer( GRXScriptOffer offer, TabDef tabDef )
+{
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	int currentStoreLocation = GetStoreLocationFromPanel( tabDef.panel )
+	Assert(tabDef.visible && tabDef.enabled, "Presale store tab location is either invisible or disabled.")
+	ActivateTab( storeTabData, Tab_GetTabIndexByBodyName( storeTabData, Hud_GetHudName( tabDef.panel ) ) )
+	StoreInspectMenu_AttemptOpenWithOffer( offer )
+}
+
+void function OpenBPPresaleDialog( bpPresaleOfferData bpPresaleOffers )
+{
+	Assert( bpPresaleOffers.basicOffer != null && bpPresaleOffers.bundleOffer != null,
+		    "Attempted to Open BP Presale Dialog with a null basic or bundle offer." )
+	ConfirmDialogData data
+	data.headerText = "#BP_PRESALE_DIALOG_PRIMARY_TEXT"
+	data.messageText = "#BP_PRESALE_DIALOG_SECONDARY_TEXT"
+	data.yesText = [ "#BP_PRESALE_DIALOG_OPTION_BASIC" "#BP_PRESALE_DIALOG_OPTION_BASIC" ]
+	data.noText = [ "#BP_PRESALE_DIALOG_OPTION_BUNDLE" "#BP_PRESALE_DIALOG_OPTION_BUNDLE" ]
+	
+	data.msgTextVerticalOffset = 150.0
+
+	data.resultCallback = void function ( int result ) : ( bpPresaleOffers )
+	{
+		TabDef offersTab = expect TabDef( bpPresaleOffers.offerTab )
+		if ( result == eDialogResult.YES )
+		{
+			JumpToBPPresaleStoreOffer( expect GRXScriptOffer( bpPresaleOffers.basicOffer ), offersTab )
+		}
+		else if ( result == eDialogResult.NO )
+		{
+			JumpToBPPresaleStoreOffer( expect GRXScriptOffer( bpPresaleOffers.bundleOffer ), offersTab )
+		}
+	}
+	OpenConfirmDialogFromData( data )
+}
+
+bpPresaleOfferData function GetBPPresaleOfferData()
+{
+	bpPresaleOfferData offerData
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	foreach ( tabDef in storeTabData.tabDefs )
+	{
+		int currentStoreLocation = GetStoreLocationFromPanel( tabDef.panel )
+		if ( !tabDef.visible || !tabDef.enabled )
+			continue
+
+		foreach ( GRXScriptOffer offer in GRX_GetStoreOffers( currentStoreLocation ) )
+		{
+			int offerType = GetBPPresaleOfferType( offer )
+			if ( offerType == bpPresaleOfferType.BASIC || offerType == bpPresaleOfferType.BUNDLE )
+			{
+				offerData.offerTab = tabDef
+			}
+			switch ( offerType )
+			{
+				case bpPresaleOfferType.BASIC:
+					offerData.basicOffer = offer
+					break
+				case bpPresaleOfferType.BUNDLE:
+					offerData.bundleOffer = offer
+					break
+				default:
+					break
+			}
+		}
+	}
+	
+	
+	Assert( ( offerData.basicOffer == null ) == ( offerData.bundleOffer == null ),
+		"The BP Presale period is currently live, but one of the bundle or basic tier offers is null. Both offer tiers must be present while presale is live." )
+	return offerData
+}
+
+void function JumpToStoreOffer( string panel, string storeOfferName )
+{
+	if ( !JumpToStorePanel( panel ) )
+		return
+
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	foreach ( tabDef in storeTabData.tabDefs )
+	{
+		int currentStoreLocation = GetStoreLocationFromPanel( tabDef.panel )
+		if ( !tabDef.visible || !tabDef.enabled )
+			continue
+
+		foreach ( offer in GRX_GetStoreOffers( currentStoreLocation ) )
+		{
+			if ( offer.offerAlias == storeOfferName )
+			{
+				int currentStoreLocationIndex = Tab_GetTabIndexByBodyName( storeTabData, Hud_GetHudName( tabDef.panel ) )
+				ActivateTab( storeTabData, currentStoreLocationIndex )
+				StoreInspectMenu_AttemptOpenWithOffer( offer )
+				return
+			}
+		}
+	}
+}
+
+void function JumpToStorePacks()
+{
+	JumpToStoreTab()
+	TabData legendsTabData = GetTabDataForPanel( file.storePanel )
+	ActivateTab( legendsTabData, Tab_GetTabIndexByBodyName( legendsTabData, GetApexPacksPanelName() ) )
+}
+
+void function JumpToHeirloomShop()
+{
+	JumpToStoreTab()
+	TabData storeTabData = GetTabDataForPanel( file.storePanel )
+	ActivateTab( storeTabData, Tab_GetTabIndexByBodyName( storeTabData, GetMythicShopName() ) )
+}
+
+string function GetMythicShopName()
+{
+	return STORE_MYTHIC_SHOP
+}
+
+string function GetApexPacksPanelName()
+{
+	return RTK_APEX_PACKS_PANEL
+}
+
+int function GetStoreLocationFromPanel( var panel )
+{
+	string panelName = Hud_GetHudName( panel )
+
+	switch( panelName )
+	{
+		default:
+			return eStoreLocation.SHOP
+	}
+	unreachable
+}
+
+void function UpdatePackGiftButton( var button, bool hasAsterisk = true )
+{
+	int giftsLeft = Gifting_GetRemainingDailyGifts()
+	bool isPlayerLeveledForGifting = IsPlayerLeveledForGifting()
+	bool isPlayerWithinGiftingLimit = IsPlayerWithinGiftingLimit()
+	bool isTwoFactorEnabled = IsTwoFactorAuthenticationEnabled()
+	bool canLocalPlayerGift = CanLocalPlayerGift()
+
+	string giftMainText = Localize( hasAsterisk ? "#BUY_GIFT_STAR" : "#BUY_GIFT"  )
+	string giftDescText = Localize( "#GIFTS_LEFT_FRACTION", giftsLeft )
+
+	Hud_ClearToolTipData( button )
+
+	if ( !canLocalPlayerGift )
+	{
+		ToolTipData giftTooltipData
+		giftMainText = Localize( "#LOCKED_GIFT" )
+
+		if( !isPlayerLeveledForGifting )
+		{
+			giftDescText = Localize( "#LEVEL_REQUIRED", GetConVarInt( "mtx_giftingMinAccountLevel" ) )
+		}
+		else if ( !isPlayerWithinGiftingLimit )
+		{
+			giftTooltipData.titleText =  Localize( "#GIFTS_LEFT", giftsLeft )
+
+			DisplayTime giftTime = SecondsToDHMS( GRX_GetGiftingLimitResetDate() - GetUnixTimestamp() )
+			if ( giftTime.hours == 1 )
+				giftTooltipData.descText =  Localize( "#GIFTS_MAXED_OUT_REASON_HOUR_ONE", string( GetGiftingMaxLimitPerResetPeriod() ), giftTime.hours )
+			else if ( giftTime.hours > 0 )
+				giftTooltipData.descText =  Localize( "#GIFTS_MAXED_OUT_REASON_HOURS", string( GetGiftingMaxLimitPerResetPeriod() ), giftTime.hours )
+			else if ( giftTime.minutes == 1 )
+				giftTooltipData.descText =  Localize( "#GIFTS_MAXED_OUT_REASON_MINUTE_ONE", string( GetGiftingMaxLimitPerResetPeriod() ), giftTime.minutes )
+			else if ( giftTime.minutes > 0 )
+				giftTooltipData.descText =  Localize( "#GIFTS_MAXED_OUT_REASON_MINUTES", string( GetGiftingMaxLimitPerResetPeriod() ), giftTime.minutes )
+			else
+				giftTooltipData.descText =  Localize( "#GIFTS_MAXED_OUT_REASON_MINUTE_ONE", string( GetGiftingMaxLimitPerResetPeriod() ), "<1" )
+
+			Hud_SetToolTipData( button, giftTooltipData )
+		}
+		else if ( !isTwoFactorEnabled )
+		{
+			giftDescText = Localize( "#TWO_FACTOR_NEEDED" )
+
+			giftTooltipData.titleText = Localize( "#ENABLE_TWO_FACTOR" )
+			giftTooltipData.descText = Localize( "#TWO_FACTOR_NEEDED_DETAILS" )
+			giftTooltipData.tooltipFlags = giftTooltipData.tooltipFlags | eToolTipFlag.SOLID
+			giftTooltipData.tooltipStyle = eTooltipStyle.DEFAULT
+
+			Hud_SetToolTipData( button, giftTooltipData )
+		}
+	}
+
+	bool purchaseLock = true
+	bool isPurchaseReady = GRX_IsInventoryReady() && GRX_AreOffersReady() && GetLootTickPurchaseOffers() != null
+	bool onlyMissingTwoFactor = isPlayerLeveledForGifting && isPlayerWithinGiftingLimit && !isTwoFactorEnabled
+	if ( isPurchaseReady && ( canLocalPlayerGift || onlyMissingTwoFactor ) )
+	{
+		purchaseLock = false
+	}
+
+	Hud_SetLocked( button, purchaseLock )
+
+	HudElem_SetRuiArg( button, "buttonText", giftMainText )
+	HudElem_SetRuiArg( button, "buttonDescText", giftDescText )
+}
+
+void function UpdateDisclaimer( var container )
+{
+	
+	HudElem_SetRuiArg( container, "hideDisclaimer", true )
+}

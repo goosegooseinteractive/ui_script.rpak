@@ -1,0 +1,1047 @@
+
+
+global function PreGame_GetWaitingForPlayersHasBlackScreen
+global function PreGame_GetWaitingForPlayersSpawningEnabled
+global function PreGame_GetWaitingForPlayersDelayMin
+global function PreGame_GetWaitingForPlayersDelayMax
+global function PreGame_GetWaitingForPlayersCountdown
+global function CharSelect_GetIntroMusicStartTime
+global function CharSelect_GetIntroTransitionDuration
+global function CharSelect_GetIntroCountdownDuration
+global function CharSelect_GetPickingDelayBeforeAll
+global function CharSelect_GetPickingDelayOnFirst
+global function CharSelect_GetPickingSingleDurationMax
+global function CharSelect_GetPickingSingleDurationMin
+global function CharSelect_GetPickingDelayAfterEachLock
+global function CharSelect_GetPickingDelayAfterAll
+global function CharSelect_GetOutroSceneChangeDuration
+global function CharSelect_GetOutroAllSquadsPresentDuration
+global function CharSelect_GetOutroSquadPresentDuration
+global function CharSelect_GetOutroMVPPresentDuration
+global function CharSelect_GetOutroChampionPresentDuration
+global function CharSelect_GetOutroTransitionDuration
+
+global function CharSelect_GetAllSquadIntroEnabled
+global function CharSelect_GetSquadIntroEnabled
+global function CharSelect_GetGladiatorCardsEnabled
+global function CharSelect_GetMVPGladCardEnabled
+
+global function CharSelect_GetSquad3dPresentationEnabled
+global function CharSelect_GetSquad3dPresentationDuration
+
+
+global function Survival_AbilitiesEnabled
+
+global function Survival_HasInitialJumpmaster
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function CharacterSelectIsLockStep
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+global function GamemodeSurvivalShared_UI_Init
+
+
+global function IsSquadDataPersistenceEmpty
+
+global const float MAX_MAP_BOUNDS = 61000.0
+
+global const float CHARACTER_SELECT_OPEN_TRANSITION_DURATION = 3.0
+global const float CHARACTER_SELECT_CLOSE_TRANSITION_DURATION = 3.0
+global const float CHARACTER_SELECT_CHARACTER_LOCK_DURATION = 0.5
+global const float CHARACTER_SELECT_FINISHED_HOLD_DURATION = 2.5
+global const float CHARACTER_SELECT_PRE_PICK_COUNTDOWN_DURATION = 4.0
+global const float CHARACTER_SELECT_SCENE_ROTATE_DURATION = 4.0
+
+global const float SURVIVAL_MINIMAP_RING_SCALE = 65536
+
+global const SURVIVAL_SQUAD_SUMMARY_MODEL = $"mdl/levels_terrain/mp_lobby/mp_setting_menu.rmdl"
+
+global const int AIR_DROP_BAD_PLACE_RADIUS = 196
+
+const string PODIUM_FX_SPARKS_L1 = "sparks_L1"
+const string PODIUM_FX_SPARKS_L2 = "sparks_L2"
+const string PODIUM_FX_SPARKS_R1 = "sparks_R1"
+const string PODIUM_FX_SPARKS_R2 = "sparks_R2"
+const string PODIUM_FX_FIREBALL_L1 = "Fireball_L1"
+const string PODIUM_FX_FIREBALL_L2 = "Fireball_L2"
+const string PODIUM_FX_FIREBALL_R1 = "Fireball_R1"
+const string PODIUM_FX_FIREBALL_R2 = "Fireball_R2"
+const string PODIUM_FX_CONFETTI = "confetti_burst"
+
+
+global const float CHARACTER_SELECT_3D_SQUAD_TIME = 8.0
+
+
+
+
+global const int NUMBER_OF_SUMMARY_DISPLAY_VALUES = 7 
+global const array< int > SUMMARY_DISPLAY_EMPTY_SET = [ 0, 0, 0, 0, 0, 0, 0 ]
+
+
+
+
+
+
+
+global enum eSurvivalHints
+{
+	EQUIP,
+	ORDNANCE,
+
+	ORDNANCE_FUSE,
+	ORDNANCE_FUSE_MULTI,
+
+	CRYPTO_DRONE_ACCESS,
+
+
+
+
+}
+
+global enum ePodiumBanner
+{
+	NORMAL = 0,
+	ANNIVERSARY,
+	FREEDM,
+	CONTROL,
+	LTM,
+	MIXTAPE,
+
+
+
+
+	TURBO,
+	_COUNT
+}
+
+global struct VictoryPlatformModelData
+{
+	bool   isSet = false 
+	asset  modelAsset = $"mdl/dev/empty_model.rmdl"
+	vector originOffset = < 0, 0, -10 >
+	vector modelAngles = < 0, 0, 0 >
+}
+
+struct
+{
+	VictoryPlatformModelData & victorySequencePlatforData
+
+
+
+
+
+
+
+
+
+} file
+
+
+bool function HasFastIntro()
+{
+	if ( GetCurrentPlaylistVarBool( "fast_intro", false ) )
+		return true
+
+	return GetConVarBool( "fast_intro" )
+}
+
+
+bool function PreGame_GetWaitingForPlayersHasBlackScreen()		{ return GetCurrentPlaylistVarBool( "waiting_for_players_has_black_screen", false ) }
+bool function PreGame_GetWaitingForPlayersSpawningEnabled()		{ return GetCurrentPlaylistVarBool( "waiting_for_players_spawning_enabled", false ) }
+float function PreGame_GetWaitingForPlayersDelayMin()			{ return GetCurrentPlaylistVarFloat( "waiting_for_players_min_wait", 0.0 ) }
+float function PreGame_GetWaitingForPlayersDelayMax()			{ return GetCurrentPlaylistVarFloat( "waiting_for_players_timeout_seconds", 45.0 ) }
+float function PreGame_GetWaitingForPlayersCountdown()			{ return (HasFastIntro() ? 0.0 : GetCurrentPlaylistVarFloat( "waiting_for_players_countdown_seconds", 8.0 ) ) }
+
+float function CharSelect_GetIntroMusicStartTime()		 		{ return GetCurrentPlaylistVarFloat( "charselect_intro_music_start_time", -0.8 ) }
+float function CharSelect_GetIntroTransitionDuration()			{ return GetCurrentPlaylistVarFloat( "charselect_intro_transition_duration", 3.0 ) }
+float function CharSelect_GetIntroCountdownDuration()			{ return GetCurrentPlaylistVarFloat( "charselect_intro_countdown_duration", 0.0 ) }
+
+float function CharSelect_GetPickingDelayBeforeAll()			{ return GetCurrentPlaylistVarFloat( "charselect_picking_delay_before_all", 0.0 ) }
+float function CharSelect_GetPickingDelayOnFirst()				{ return GetCurrentPlaylistVarFloat( "charselect_picking_delay_on_first", 1.5 ) }
+float function CharSelect_GetPickingSingleDurationMax()			{ return (HasFastIntro() ? 0.0 : GetCurrentPlaylistVarFloat( "character_select_time_max", 7.0 ) ) }
+float function CharSelect_GetPickingSingleDurationMin()			{ return (HasFastIntro() ? 0.0 : GetCurrentPlaylistVarFloat( "character_select_time_min", 7.0 ) ) }
+float function CharSelect_GetPickingDelayAfterEachLock()		{ return GetCurrentPlaylistVarFloat( "charselect_picking_delay_after_each_lock", 0.5 ) }
+float function CharSelect_GetPickingDelayAfterAll()				{ return GetCurrentPlaylistVarFloat( "charselect_picking_delay_after_all", 1.5 ) }
+
+
+bool function CharSelect_GetAllSquadIntroEnabled()					{ return GetCurrentPlaylistVarBool( "survival_enable_all_squads_intro", false ) }
+
+	bool function CharSelect_GetSquad3dPresentationEnabled()		{ return GetCurrentPlaylistVarBool( "survival_enable_3d_gladiator_intros", false ) }
+
+bool function CharSelect_GetSquadIntroEnabled()					{ return GetCurrentPlaylistVarBool( "survival_enable_squad_intro", true ) }
+bool function CharSelect_GetGladiatorCardsEnabled()				{ return GetCurrentPlaylistVarBool( "survival_enable_gladiator_intros", true ) }
+bool function CharSelect_GetMVPGladCardEnabled()				{ return GetCurrentPlaylistVarBool( "survival_enable_mvp_intros", false ) }
+
+float function CharSelect_GetOutroSceneChangeDuration()			{ return GetCurrentPlaylistVarFloat( "charselect_outro_scene_change_duration", 4.0 ) }
+float function CharSelect_GetOutroTransitionDuration()			{ return GetCurrentPlaylistVarFloat( "charselect_outro_transition_duration", 3.0 ) }
+
+float function CharSelect_GetOutroAllSquadsPresentDuration() {
+	if( CharSelect_GetAllSquadIntroEnabled() )
+		return GetCurrentPlaylistVarFloat( "charselect_outro_all_squads_present_duration", 0.0 )
+
+	return 0
+}
+
+
+float function CharSelect_GetSquad3dPresentationDuration() {
+	if( CharSelect_GetSquad3dPresentationEnabled() )
+		return ( MAX_TEAM_PLAYERS ) * GetCurrentPlaylistVarFloat( "charselect_outro_squad_3d_present_duration", CHARACTER_SELECT_3D_SQUAD_TIME )
+
+	return 0
+}
+
+
+bool function Survival_AbilitiesEnabled()
+{
+	return GetCurrentPlaylistVarBool( "survival_abilities_enabled", true )
+}
+
+float function CharSelect_GetOutroSquadPresentDuration() {
+	if( CharSelect_GetSquadIntroEnabled() )
+		return GetCurrentPlaylistVarFloat( "charselect_outro_squad_present_duration", 6.0  )
+
+	return 0
+}
+
+float function CharSelect_GetOutroMVPPresentDuration() {
+	if( CharSelect_GetMVPGladCardEnabled() )
+		return GetCurrentPlaylistVarFloat( "charselect_outro_mvp_present_duration", 0.0 )
+
+	return 0
+}
+
+float function CharSelect_GetOutroChampionPresentDuration()	{
+	if( CharSelect_GetGladiatorCardsEnabled() )
+		return GetCurrentPlaylistVarFloat( "charselect_outro_champion_present_duration", 8.0 )
+
+	return 0
+}
+
+bool function Survival_HasInitialJumpmaster()
+{
+	
+	
+
+	bool planeEnabled = GetCurrentPlaylistVarBool( "jump_from_plane_enabled", true )
+	planeEnabled = planeEnabled && !IsTestMap()
+
+
+		bool forcedSpawnEnabled = GetCurrentPlaylistVarInt( "forced_spawn_mode", 0 ) != 0
+		planeEnabled = planeEnabled && !forcedSpawnEnabled
+
+
+	if ( planeEnabled )
+		return true
+
+	if ( GetCurrentPlaylistVarBool( "poiplayerspawning_exists", false ) )
+		return false
+
+
+
+
+
+
+
+		if ( forcedSpawnEnabled )
+			return GetCurrentPlaylistVarBool( "forced_spawn_use_jumpmaster", false )
+
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void function GamemodeSurvivalShared_UI_Init()
+{
+	AddUICallback_InputModeChanged( UIInputChanged )
+}
+
+void function UIInputChanged( bool controllerModeActive )
+{
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function IsSquadDataPersistenceEmpty( entity player )
+{
+	int maxTrackedSquadMembers = PersistenceGetArrayCount( "lastGameSquadStats" )
+	for ( int i = 0 ; i < maxTrackedSquadMembers ; i++ )
+	{
+		int eHandle = player.GetPersistentVarAsInt( "lastGameSquadStats[" + i + "].eHandle" )
+
+		
+		if ( eHandle > 0 )
+			return false
+	}
+	return true
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function CharacterSelectIsLockStep()
+{
+	return GetCurrentPlaylistVarBool( "character_select_is_lockstep", true )
+}
+
+
+
+
+
+
+
+
+
+
+

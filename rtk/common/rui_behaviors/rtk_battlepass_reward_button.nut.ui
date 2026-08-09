@@ -1,0 +1,163 @@
+global function RTKBattlePassRewardButton_InitMetaData
+global function RTKBattlePassRewardButton_OnInitialize
+global function RTKBattlePassRewardButton_OnDrawBegin
+
+global struct RTKBattlePassRewardButton_Properties
+{
+	asset battlepassRewardRui
+
+	rtk_behavior button
+
+	int quantity = 0
+	int level = 0
+
+	bool isOwned = false
+	bool isTall = false
+	bool isRumble = false
+	bool isMastery = false
+
+	int flavGUID = 0
+	int rarityOrBadgeDisplayTier = 0
+}
+
+void function RTKBattlePassRewardButton_InitMetaData( string behaviorType, string structType )
+{
+	RTKMetaData_SetAllowedBehaviorTypes( structType, "button", [ "Button" ] )
+}
+
+void function RTKBattlePassRewardButton_OnInitialize( rtk_behavior self )
+{
+	self.AddPropertyCallback( "battlepassRewardRui", UpdateBattlePassRewardRuiAsset )
+
+	rtk_behavior ornull button = self.PropGetBehavior( "button" )
+	if ( button != null )
+	{
+		self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+			BattlePassRewardButton_OnActivate( self )
+		} )
+
+		self.AutoSubscribe( button, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self ) {
+			BattlePassRewardButton_OnFocus( self, true )
+		} )
+
+		self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self ) {
+			BattlePassRewardButton_OnFocus( self, false )
+		} )
+	}
+
+	UpdateBattlePassRewardRuiAsset( self )
+}
+
+void function BattlePassRewardButton_OnActivate( rtk_behavior self )
+{
+	
+	rtk_behavior ornull button = self.PropGetBehavior( "button" )
+	if ( button == null )
+		return
+
+	expect rtk_behavior( button )
+	if ( !button.IsActiveSelf() )
+		return
+
+	if( !IsValidItemFlavGUID( self ) )
+		return
+
+	BattlePassReward item = GetBattlePassRewardItemFlav( self )
+
+	if ( ItemFlavor_GetType( item.flav ) == eItemType.loadscreen )
+	{
+		LoadscreenPreviewMenu_SetLoadscreenToPreview( item.flav )
+		AdvanceMenu( GetMenu( "LoadscreenPreviewMenu" ) )
+	}
+	else if ( ItemFlavor_GetType( item.flav ) == eItemType.gladiator_card_badge )
+	{
+		int badgeDataInteger = item.rarityOrBadgeDisplayTier
+
+		string grxRef = GetGlobalSettingsString( ItemFlavor_GetAsset( item.flav ), "grxRef" )
+
+		const string MASTERY_TAG = "mastery_"
+
+		if( grxRef.len() > MASTERY_TAG.len() && grxRef.find( MASTERY_TAG ) > 0 ) 
+		{
+			entity player = GetLocalClientPlayer()
+			EHI playerEHI = ToEHI( player )
+			int tier =  GetPlayerBadgeDataInteger( playerEHI, item.flav, 0, null )
+			int badgeTier = ( tier < 0 )? 0: Mastery_GetTierFromBitfield( tier )
+
+			badgeDataInteger = badgeTier
+
+			if( !item.isOwned )
+				badgeDataInteger = int( min( badgeDataInteger + 1, MASTERY_TRIAL_TIERS_FOR_BADGE.len() ) ) 
+		}
+
+		SetChallengeRewardPresentationModeActive( item.flav, item.quantity,
+			badgeDataInteger,
+			"",
+			"",
+			item.isOwned,
+			true
+		)
+	}
+	else if ( InspectItemTypePresentationSupported( item.flav ) )
+	{
+		RunClientScript( "ClearBattlePassItem" )
+		SetBattlePassItemPresentationModeActive( item )
+	}
+}
+
+void function BattlePassRewardButton_OnFocus( rtk_behavior self, bool value )
+{
+	if ( self.HasRui() )
+		self.SetRuiArgBool( "isHovered", value )
+}
+
+void function UpdateBattlePassRewardRuiAsset( rtk_behavior self )
+{
+	asset battlepassRewardRuiAsset = self.PropGetAssetPath( "battlepassRewardRui" )
+
+	if ( battlepassRewardRuiAsset != "" )
+		self.CreateRui( battlepassRewardRuiAsset )
+	else if ( self.HasRui() )
+		self.DestroyRui()
+}
+
+void function RTKBattlePassRewardButton_OnDrawBegin( rtk_behavior self )
+{
+	if ( !self.HasRui() || !IsValidItemFlavGUID( self ) )
+		return
+
+	ItemFlavor itemFlav = GetItemFlavorByGUID( self.PropGetInt( "flavGUID" ) )
+	asset rewardIcon = ItemFlavor_GetBattlepassRewardButtonImage( itemFlav )
+	int quantity = self.PropGetInt( "quantity" )
+	bool isOwned = self.PropGetBool( "isOwned" )
+
+	self.SetRuiArgFloat2( "customIconAspectRatio", GetImageSize( rewardIcon ) )
+	self.SetRuiArgImage( "icon", rewardIcon )
+	self.SetRuiArgInt( "itemTier", GRX_GetRarityOverrideFromQuantity( itemFlav, ItemFlavor_GetQuality( itemFlav, 0 ), quantity ) )
+	self.SetRuiArgInt( "quantity", quantity )
+	self.SetRuiArgBool( "isChecked", isOwned )
+}
+
+bool function IsValidItemFlavGUID( rtk_behavior self )
+{
+	int flavGUID = self.PropGetInt( "flavGUID" )
+	return IsValidItemFlavorGUID(flavGUID)
+}
+
+BattlePassReward function GetBattlePassRewardItemFlav( rtk_behavior self )
+{
+	BattlePassReward item
+
+	if( IsValidItemFlavGUID( self ) )
+	{
+		item.quantity                 = self.PropGetInt( "quantity" )
+		item.level                    = self.PropGetInt( "level" )
+		item.flav                     = GetItemFlavorByGUID( self.PropGetInt( "flavGUID" ) )
+		item.isOwned                  = self.PropGetBool( "isOwned" )
+		item.isTall                   = self.PropGetBool( "isTall" )
+		item.isRumble                 = self.PropGetBool( "isRumble" )
+		item.rarityOrBadgeDisplayTier = self.PropGetInt( "rarityOrBadgeDisplayTier" )
+		item.isMastery                = self.PropGetBool( "isMastery" )
+	}
+	return item
+}

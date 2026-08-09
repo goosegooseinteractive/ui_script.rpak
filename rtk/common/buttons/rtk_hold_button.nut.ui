@@ -1,0 +1,97 @@
+global function RTKHoldButton_OnInitialize
+global function RTKHoldButton_OnPreDestroy
+
+global struct RTKHoldButton_Properties
+{
+	rtk_behavior buttonBehavior
+
+	float holdTimeSeconds = 0.4
+	float linearProgress
+
+	void functionref( rtk_behavior button, int keycode, int prevState ) onPressed
+	void functionref( rtk_behavior button, int keycode ) onCompletedHold
+	void functionref( rtk_behavior button, int keycode ) onInterrumptedHold
+}
+
+struct PrivateData
+{
+	int currentHeldKey = -1
+	bool interruptHold = false
+}
+
+void function RTKHoldButton_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.currentHeldKey = -1
+	p.interruptHold = false
+
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( button, "OnPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		self.InvokeEvent( "onPressed", self, button, keycode )
+		thread RTKHoldButton_HoldToActivate( self, button, keycode )
+	} )
+	self.AutoSubscribe( button, "OnReleased", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		self.InvokeEvent( "onPressed", self, button, keycode )
+		RTKHoldButton_ButtonReleased( self, button, keycode )
+	} )
+	RegisterSignal( "RTKHoldButton_OnPreDestroy" )
+}
+
+void function RTKHoldButton_OnPreDestroy( rtk_behavior self )
+{
+	Signal( uiGlobal.signalDummy, "RTKHoldButton_OnPreDestroy" )
+}
+
+void function RTKHoldButton_HoldToActivate( rtk_behavior self, rtk_behavior button, int keycode )
+{
+	EndSignal( uiGlobal.signalDummy, "RTKHoldButton_OnPreDestroy" )
+
+	PrivateData p
+	self.Private( p )
+	p.currentHeldKey = keycode
+
+	float startTime = ClientTime()
+	float endTime = startTime + self.PropGetFloat( "holdTimeSeconds" )
+	bool wasHeld = true
+	while( ClientTime() < endTime )
+	{
+		if ( p.interruptHold )
+		{
+			wasHeld = false
+			break
+		}
+
+		float linearizedProgress = (ClientTime() - startTime) / (endTime - startTime)
+		self.PropSetFloat( "linearProgress", linearizedProgress )
+		WaitFrame()
+	}
+
+	OnThreadEnd(
+		function() : ( self, button, keycode, wasHeld, p )
+		{
+			if ( wasHeld )
+			{
+				self.PropSetFloat( "linearProgress", 1.0 )
+				self.InvokeEvent( "onCompletedHold", button, keycode )
+			}
+			else
+			{
+				self.InvokeEvent( "onInterrumptedHold", button ,keycode )
+				self.PropSetFloat( "linearProgress", 0 )
+			}
+
+			p.currentHeldKey = -1
+			p.interruptHold = false
+		}
+	)
+}
+
+void function RTKHoldButton_ButtonReleased( rtk_behavior self, rtk_behavior button, int keycode )
+{
+	PrivateData p
+	self.Private( p )
+	if ( keycode == p.currentHeldKey )
+		p.interruptHold = true
+}

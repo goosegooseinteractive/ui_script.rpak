@@ -1,0 +1,197 @@
+global function RTKWishlistWidget_OnInitialize
+global function RTKWishlistWidget_OnDestroy
+global function RTKWishlistWidget_SetPackSelected
+
+
+global function RTKMutator_IsWishlistInactiveWishlistWidget
+global function RTKMutator_IsWishlistActiveWishlistWidget
+global function RTKMutator_GetStateLocStringWishlistWidget
+global function RTKMutator_GetStateStringColorWishlistWidget
+
+
+const string MODEL_PATH_NAME = "wishlistWidget"
+const vector WISHLIST_WIDGET_INACTIVE_COLOR = <238, 41, 40> / 255.0
+const vector WISHLIST_WIDGET_ACTIVE_COLOR = <255, 78, 29> / 255.0
+const vector WISHLIST_WIDGET_COMPLETED_COLOR = <153, 153, 153> / 255.0
+
+global enum eWishlistWidgetState
+{
+	INACTIVE,
+	ACTIVE,
+	COMPLETED,
+}
+
+global struct RTKWishlistWidget_Properties
+{
+	rtk_behavior buttonBehavior
+}
+
+global struct RTKWishlistWidgetModel
+{
+	bool active
+	bool isPackUpgradable
+	int state = eWishlistWidgetState.INACTIVE
+	string bodyMessage
+	array<RTKWishlistItemData> weaponData
+	array<RTKWishlistItemData> characterData
+}
+
+void function RTKWishlistWidget_OnInitialize( rtk_behavior self )
+{
+	if ( !Wishlist_IsEnabled() )
+	{
+		self.GetPanel().SetVisible( false )
+		self.GetPanel().SetActive( false )
+		return
+	}
+
+	rtk_struct model = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistWidgetModel" )
+	self.GetPanel().SetBindingRootPath( RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, true ) )
+
+	RTKWishlistWidget_SetUpAccessButton( self )
+	RTKWishlistWidget_Update()
+}
+
+void function RTKWishlistWidget_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME )
+}
+
+void function RTKWishlistWidget_SetUpAccessButton( rtk_behavior self )
+{
+	rtk_behavior button = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( button, "OnPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		OpenWishlistMenu()
+	} )
+}
+
+void function  RTKWishlistWidget_Update()
+{
+	rtk_struct modelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistWidgetModel" )
+
+	Wishlist wishlist = Wishlist_GetWishlistForLocalPlayer()
+
+	RTKWishlistWidgetModel data
+
+	data.characterData = RTKWishlistMenu_GetAllCharacterWishlistData( wishlist )
+	data.weaponData = RTKWishlistWidget_GetAllWeaponWishlistData( wishlist )
+	data.state = RTKWishlistWidget_GetState()
+	data.bodyMessage = RTKWishlistWidget_GetStateBodyMessage()
+
+	RTKStruct_SetValue( modelStruct, data )
+}
+
+array<RTKWishlistItemData> function RTKWishlistWidget_GetAllWeaponWishlistData( Wishlist wishlist )
+{
+	array<RTKWishlistItemData> weaponData
+	foreach ( guid in wishlist.weaponCategories )
+	{
+		RTKWishlistItemData data
+		data = RTKWishlistMenu_GetWeaponData( GetItemFlavorByGUID( guid ), false, null )
+		data.completePercentage = ""
+		data.name = ""
+		weaponData.append( data )
+	}
+
+	int remainingSlots = WISHLIST_REQUIRED_WEAPONCLASS_COUNT - wishlist.weaponCategories.len()
+	int adjustedWeaponCount = Wishlist_GetWishlistParametersForLocalPlayer().adjustedWeaponCategoryCount - weaponData.len()
+	for ( int i = 0; i < remainingSlots; i++ )
+	{
+		bool isSlotLocked = i >= adjustedWeaponCount
+		weaponData.append( RTKWishlistMenu_GetEmptyWishlistItemData( isSlotLocked ) )
+	}
+	return weaponData
+}
+
+int function RTKWishlistWidget_GetState()
+{
+	switch ( Wishlist_GetSelectionUIState( 0, null, "RTKWishlistWidget_GetState" ) )
+	{
+		case eWishlistFrontState.INACTIVE:
+		case eWishlistFrontState.INVALID:
+			return eWishlistWidgetState.INACTIVE
+
+		case eWishlistFrontState.ACTIVE:
+		case eWishlistFrontState.MAYBE_INVALID:
+			return eWishlistWidgetState.ACTIVE
+
+		case eWishlistFrontState.COMPLETED:
+			return eWishlistWidgetState.COMPLETED
+	}
+
+	return -1
+}
+
+void function RTKWishlistWidget_SetPackSelected( int packGUID, int quantity )
+{
+	if ( Wishlist_IsEnabled() )
+	{
+		rtk_struct modelStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, MODEL_PATH_NAME, "RTKWishlistWidgetModel" )
+		ItemFlavor packFlav = GetItemFlavorByGUID( packGUID )
+		if ( ItemFlavor_IsWishlistRelatedPack( packFlav ) )
+		{
+			RTKStruct_SetBool( modelStruct, "active", true )
+			RTKStruct_SetString( modelStruct, "bodyMessage", RTKWishlistWidget_GetStateBodyMessage() )
+			RTKStruct_SetBool( modelStruct, "isPackUpgradable", Wishlist_IsPackUpgradable( packFlav ) )
+		}
+		else
+		{
+			RTKStruct_SetBool( modelStruct, "active", true )
+			if ( quantity > 0 )
+				RTKStruct_SetString( modelStruct, "bodyMessage", "#WISHLIST_WIDGET_MESSAGE_NOT_AVAILABLE" )
+			else
+				RTKStruct_SetString( modelStruct, "bodyMessage", RTKWishlistWidget_GetStateBodyMessage() )
+		}
+	}
+}
+
+string function RTKWishlistWidget_GetStateBodyMessage()
+{
+	return RTKWishlistWidget_GetState() == eWishlistWidgetState.COMPLETED ? "#WISHLIST_WIDGET_MESSAGE_COMPLETED" : ""
+}
+
+
+
+bool function RTKMutator_IsWishlistInactiveWishlistWidget( int input )
+{
+	return input == eWishlistWidgetState.INACTIVE
+}
+
+bool function RTKMutator_IsWishlistActiveWishlistWidget( int input )
+{
+	return input == eWishlistWidgetState.ACTIVE
+}
+
+string function RTKMutator_GetStateLocStringWishlistWidget( int input )
+{
+	switch ( input )
+	{
+		case eWishlistWidgetState.INACTIVE:
+			return "#WISHLIST_WIDGET_STATE_INACTIVE"
+
+		case eWishlistWidgetState.ACTIVE:
+			return "#WISHLIST_WIDGET_STATE_ACTIVE"
+
+		case eWishlistWidgetState.COMPLETED:
+			return "#WISHLIST_WIDGET_STATE_COMPLETED"
+	}
+	return ""
+}
+
+vector function RTKMutator_GetStateStringColorWishlistWidget( int input )
+{
+
+	switch ( input )
+	{
+		case eWishlistWidgetState.INACTIVE:
+			return WISHLIST_WIDGET_INACTIVE_COLOR
+
+		case eWishlistWidgetState.ACTIVE:
+			return WISHLIST_WIDGET_ACTIVE_COLOR
+
+		case eWishlistWidgetState.COMPLETED:
+			return WISHLIST_WIDGET_COMPLETED_COLOR
+	}
+
+	return < 0, 0, 0 >
+}

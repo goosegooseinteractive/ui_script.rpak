@@ -1,0 +1,33 @@
+
+global function Survival_Power_Sword_PopulateAboutText
+global function Survival_Power_Sword_AppendAboutText
+
+
+array< featureTutorialTab > function Survival_Power_Sword_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+	string playlistUiRules = GetCurrentPlaylist_UIRules()
+	if ( playlistUiRules != GAMEMODE_POWER_SWORD )
+		return tabs
+
+	Survival_Power_Sword_AppendAboutText( tabs )
+	return tabs
+}
+
+void function Survival_Power_Sword_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = "#POWER_SWORD_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#POWER_SWORD_ABOUT_HEADER_1", "#POWER_SWORD_ABOUT_BODY_1", $"rui/about_images/power_sword/about_power_sword_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#POWER_SWORD_ABOUT_HEADER_2", "#POWER_SWORD_ABOUT_BODY_2", $"rui/about_images/power_sword/about_power_sword_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#POWER_SWORD_ABOUT_HEADER_3", "#POWER_SWORD_ABOUT_BODY_3", $"rui/about_images/power_sword/about_power_sword_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+

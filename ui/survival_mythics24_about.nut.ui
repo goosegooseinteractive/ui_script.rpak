@@ -1,0 +1,37 @@
+
+global function Survival_MythicS24_PopulateAboutText
+global function Survival_MythicS24_AppendAboutText
+
+array< featureTutorialTab > function Survival_MythicS24_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+
+	string playlistUiRules = GetCurrentPlaylist_UIRules()
+	if ( playlistUiRules != GAMEMODE_SURVIVAL_MYTHIC_S24 )
+		return tabs
+
+	Survival_MythicS24_AppendAboutText( tabs )
+
+	return tabs
+}
+
+void function Survival_MythicS24_AppendAboutText( array<featureTutorialTab> tabs )
+{
+	if( !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "airdrop_mythic_s24_enabled", false ) || !GetPlaylistVarBool( FeatureTutorialDialog_GetPlaylistName(), "show_airdrop_mythic_s24_about", true ) )
+		return
+
+	int aboutModalVersion = GetCurrentPlaylistVarInt( "gamemode_about_modal_version", 1 )
+
+	featureTutorialTab tab1
+	array< featureTutorialData > tab1Rules
+
+	tab1.tabName = "#MYTHIC_S24_ABOUT_TAB_NAME"
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MYTHIC_S24_HEADER_1", "#SURVIVAL_MYTHIC_S24_BODY_1", $"rui/about_images/ltm/about_mythic_r301_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MYTHIC_S24_HEADER_2", "#SURVIVAL_MYTHIC_S24_BODY_2", $"rui/about_images/ltm/about_mythic_r301_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#SURVIVAL_MYTHIC_S24_HEADER_3", "#SURVIVAL_MYTHIC_S24_BODY_3", $"rui/about_images/ltm/about_mythic_r301_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+}
+
+

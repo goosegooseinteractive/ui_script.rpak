@@ -1,0 +1,236 @@
+global function InitPerLegendpassMenu
+global function GetSelectedLegendPass
+global function OpenCharacterLegendPass
+global function OpenLegendPassPanel
+
+global function RTKLegendSelectorControllerPanel_OnInitialize
+global function RTKLegendSelectorControllerPanel_OnDestroy
+
+global struct RTKLegendSelectorControllerPanel_Properties
+{
+	int passType = -1
+	rtk_behavior viewLegendsButton
+	rtk_panel listGrid
+	rtk_behavior viewLegendsStoreButton
+}
+
+global struct RTKLegendPassButtonModel
+{
+	asset icon
+	string name
+	int xpCur
+	int xpPerLevel
+	int nextLevel
+	bool complete
+}
+
+global struct RTKLegendPassModelStruct
+{
+	array<RTKLegendPassButtonModel> passList
+	int numPassesPossible
+	bool enableViewLegendsStoreButton = false
+}
+
+struct
+{
+	array<ItemFlavor ornull> passes
+	ItemFlavor ornull selectedPass
+} file
+
+void function InitPerLegendpassMenu( var newMenuArg )
+{
+	var menu = newMenuArg
+	SetDialog( menu, false )
+	AddMenuFooterOption( menu, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK", RTKLegendpassSelector_HandleBackButton )
+	AddMenuFooterOption( menu, LEFT, BUTTON_Y, true, "#FOOTER_MORE_INFO", "#FOOTER_MORE_INFO_MOUSE", RTKLegendpassSelector_HandleMoreInfo )
+	AddMenuEventHandler( menu, eUIEvent.MENU_CLOSE, OnMenuClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_NAVIGATE_BACK, OnMenuClose )
+	AddMenuEventHandler( menu, eUIEvent.MENU_SHOW, OnMenuShow )
+	AddMenuFooterOption( menu, LEFT, BUTTON_A, false, "#A_BUTTON_INSPECT", "#A_BUTTON_INSPECT",
+		null,
+		bool function() {
+
+			if ( file.selectedPass == null )
+				return false
+
+			ItemFlavor pass = expect ItemFlavor( file.selectedPass )
+			return InspectItemTypePresentationSupported( pass ) || ItemFlavor_GetType( pass ) == eItemType.loadscreen
+		}
+	)
+}
+
+void function RTKLegendpassSelector_HandleBackButton( var button )
+{
+	OpenLegendPassPanel()
+}
+
+void function RTKLegendpassSelector_HandleMoreInfo( var button )
+{
+	OpenPromoLink( "legendpassinfo", "" )
+}
+
+void function OnMenuShow()
+{
+	UI_SetPresentationType( ePresentationType.LEGEND_PASS )
+
+	RTKBreadcrumbHeader_RemoveAllSteps()
+	RTKBreadcrumbStepModel step
+	step.title = "#LEGENDPASSES"
+	RTKBreadcrumbHeader_PushStep( step )
+	step.title = GetGlobalSettingsString( ItemFlavor_GetAsset( expect ItemFlavor( GetSelectedLegendPass() ) ), "aboutPurchaseTitle" )
+	RTKBreadcrumbHeader_PushStep( step )
+}
+
+void function OnMenuClose()
+{
+	if ( !IsFullyConnected() )
+		return
+
+	RTKBreadcrumbHeader_RemoveAllSteps()
+	OpenLegendPassPanel()
+}
+
+void function OpenLegendPassPanel()
+{
+	SetDialogFlowDisabledState( true )
+	CloseAllMenus()
+	AdvanceMenu( GetMenu( "LobbyMenu" ) )
+	JumpToSeasonTab( "RTKLegendpassPanel" )
+	SetDialogFlowDisabledState( false )
+}
+
+void function RTKLegendSelectorControllerPanel_OnInitialize ( rtk_behavior self )
+{
+	entity player = GetLocalClientPlayer()
+	int numPassesPossible = 0
+
+	file.passes.clear()
+
+	
+	rtk_struct menuModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, "legendPasses", "RTKLegendPassModelStruct" )
+	rtk_array passList = RTKStruct_GetArray( menuModel, "passList" )
+	RTKArray_Clear( passList )
+	foreach ( ItemFlavor legendPass in PlayerPass_GetAllPassesOfType( ePassType.LEGEND ) )
+	{
+		numPassesPossible++
+
+		if ( !PlayerPass_IsAssigned( player, legendPass ) )
+			continue
+
+		if ( IsPassComplete( legendPass, ePassType.LEGEND ) && PlayerPass_GetCompleteAcknowledged( player, legendPass ) )
+			continue
+
+		file.passes.push( legendPass )
+
+		
+		ItemFlavor character = expect ItemFlavor( ItemFlavor_GetParentFlavor( legendPass ) )
+
+		rtk_struct passListItem = RTKArray_PushNewStruct( passList )
+		RTKStruct_SetAssetPath( passListItem, "icon", ItemFlavor_GetIcon( character ) )
+		RTKStruct_SetString( passListItem, "name", Localize( ItemFlavor_GetShortName( legendPass ) ) )
+		RTKStruct_SetInt( passListItem, "xpCur", PlayerPass_GetPassLevel( player, legendPass ) + 1 ) 
+		RTKStruct_SetInt( passListItem, "xpPerLevel", PlayerPass_GetMaxLevelIndex( legendPass ) + 1 )
+		RTKStruct_SetInt( passListItem, "nextLevel", PLAYER_PASSES_XP_PER_LEVEL - PlayerPass_GetCurrentLevelProgress( player, legendPass ) )
+		RTKStruct_SetBool( passListItem, "complete", IsPassComplete( legendPass, ePassType.LEGEND ) )
+	}
+
+	RTKStruct_SetInt( menuModel, "numPassesPossible", numPassesPossible )
+	RTKLegendpassControllerPanel_SetUpViewLegendsStoreButton(self, menuModel)
+
+
+	
+	rtk_behavior ornull viewLegendsButton = self.PropGetBehavior( "viewLegendsButton" )
+	if (viewLegendsButton != null)
+	{
+		expect rtk_behavior(viewLegendsButton)
+		self.AutoSubscribe(viewLegendsButton, "onPressed", function(rtk_behavior button, int keycode, int prevState) : (self)
+		{
+			JumpToStoreSection( "#STORE_V2_SECTION_LEGENDPASS" )
+		})
+	}
+
+	rtk_behavior ornull viewLegendsStoreButton = self.PropGetBehavior( "viewLegendsStoreButton" )
+	if (viewLegendsStoreButton != null)
+	{
+		expect rtk_behavior(viewLegendsButton)
+		self.AutoSubscribe(viewLegendsStoreButton, "onPressed", function(rtk_behavior button, int keycode, int prevState) : (self)
+		{
+			JumpToStoreSection( "#STORE_V2_SECTION_LEGENDPASS" )
+		})
+	}
+
+
+	
+	rtk_panel ornull listGrid = self.PropGetPanel( "listGrid" )
+	if ( listGrid != null )
+	{
+		expect rtk_panel( listGrid )
+
+		self.AutoSubscribe( listGrid, "onChildAdded", function ( rtk_panel newChild, int newChildIndex ) : ( self ) {
+			array< rtk_behavior > gridItems = newChild.FindBehaviorsByTypeName( "Button" )
+			foreach( button in gridItems )
+			{
+				self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( newChildIndex ) {
+					if ( newChildIndex < file.passes.len() )
+						file.selectedPass = file.passes[ newChildIndex ]
+
+					OpenLegendpassPanel()
+				} )
+			}
+		} )
+	}
+}
+
+void function RTKLegendSelectorControllerPanel_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "legendPasses" )
+}
+
+void function OpenLegendpassPanel()
+{
+	var menu = GetMenu( "RTKPerLegendpassPanel" )
+	if ( GetActiveMenu() == menu )
+		return
+	AdvanceMenu( menu )
+}
+
+void function OpenCharacterLegendPass( SettingsAssetGUID characterGUID )
+{
+	if ( !IsValidItemFlavorGUID( characterGUID ) )
+		return
+
+	ItemFlavor character = GetItemFlavorByGUID( characterGUID )
+	Assert( ItemFlavor_GetType( character ) ==  eItemType.character )
+
+	foreach ( ItemFlavor legendPass in PlayerPass_GetAllPassesOfType( ePassType.LEGEND ) )
+	{
+		if ( !PlayerPass_IsAssigned( GetLocalClientPlayer(), legendPass ) )
+			continue
+
+		ItemFlavor parentFlavor = expect ItemFlavor( ItemFlavor_GetParentFlavor( legendPass) )
+		if ( character == parentFlavor )
+		{
+			file.selectedPass = legendPass
+			break
+		}
+	}
+
+	OpenLegendpassPanel()
+	UI_SetPresentationType( ePresentationType.BATTLE_PASS_3 )
+}
+
+ItemFlavor ornull function GetSelectedLegendPass()
+{
+	return file.selectedPass
+}
+
+void function RTKLegendpassControllerPanel_SetUpViewLegendsStoreButton( rtk_behavior self, rtk_struct legendPassModelStruct )
+{
+	entity player = GetLocalClientPlayer()
+	bool isOfferRestricted = GRX_IsOfferRestricted()
+	int numLegendPasses = PlayerPass_GetAssignedPassesOfType( player, ePassType.LEGEND ).len()
+
+	bool shouldShowButton = !isOfferRestricted && numLegendPasses > 0
+
+	RTKStruct_SetBool( legendPassModelStruct, "enableViewLegendsStoreButton", shouldShowButton )
+}

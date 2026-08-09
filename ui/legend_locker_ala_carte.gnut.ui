@@ -1,0 +1,149 @@
+global function GetTagIconStringFromItemFlavor
+global function GetEventShortNameFromTagIcon
+global function GetEventLongNameFromTagIcon
+global function GetSeasonNumberFromTagIcon
+global function IsBattlepassFromTagIcon
+global function IsEventFromTagIcon
+
+const asset TAG_ICON_EVENT_INFO_DATATABLE = $"datatable/legend_locker/tags.rpak"
+
+string function GetTagIconStringFromItemFlavor( ItemFlavor itemFlav )
+{
+	string tagIcon = ""
+
+	string assetPath = string( ItemFlavor_GetSourceIcon( itemFlav ) )
+
+	const string ruiEventsPath = "rui/events/"
+	const string itemSourceIconPath = "/item_source_icon"
+
+	if ( assetPath.find( ruiEventsPath ) > -1 )
+	{
+		
+		assetPath = assetPath.slice( ruiEventsPath.len() )
+
+		int endIndex = assetPath.find( itemSourceIconPath )
+
+		if ( endIndex > -1 )
+		{
+			
+			tagIcon = assetPath.slice( 0, endIndex )
+		}
+	}
+
+	return tagIcon
+}
+
+string function GetEventShortNameFromTagIcon( string tagIcon )
+{
+	string eventShortName = ""
+	var dataTable = GetDataTable( TAG_ICON_EVENT_INFO_DATATABLE )
+
+	int eventShortNameColumn = GetDataTableColumnByName( dataTable, "locNameShort" )
+	int tagIconColumn = GetDataTableColumnByName( dataTable, "tagIcon" )
+
+	if ( tagIconColumn < 0 || eventShortNameColumn < 0 )
+	{
+		return eventShortName
+	}
+
+	int rowIndex = GetDataTableRowMatchingStringValue( dataTable, tagIconColumn, tagIcon )
+
+	if ( rowIndex > -1 )
+	{
+		eventShortName = GetDataTableString( dataTable, rowIndex, eventShortNameColumn )
+	}
+
+	return Localize( eventShortName )
+}
+
+string function GetEventLongNameFromTagIcon( string tagIcon )
+{
+	string eventLongName = ""
+	var dataTable = GetDataTable( TAG_ICON_EVENT_INFO_DATATABLE )
+
+	int eventLongNameColumn = GetDataTableColumnByName( dataTable, "locNameLong" )
+	int tagIconColumn = GetDataTableColumnByName( dataTable, "tagIcon" )
+
+	if ( tagIconColumn < 0 || eventLongNameColumn < 0 )
+	{
+		return eventLongName
+	}
+
+	int rowIndex = GetDataTableRowMatchingStringValue( dataTable, tagIconColumn, tagIcon )
+
+	if ( rowIndex > -1 )
+	{
+		eventLongName = GetDataTableString( dataTable, rowIndex, eventLongNameColumn )
+	}
+
+	return Localize( eventLongName )
+}
+
+int function GetSeasonNumberFromTagIcon( string tagIcon )
+{
+	int seasonNumber = 0
+	var dataTable = GetDataTable( TAG_ICON_EVENT_INFO_DATATABLE )
+
+	int seasonNumberColumn = GetDataTableColumnByName( dataTable, "seasonNumber" )
+	int tagIconColumn = GetDataTableColumnByName( dataTable, "tagIcon" )
+
+	if ( tagIconColumn < 0 || seasonNumberColumn < 0 )
+	{
+		return seasonNumber
+	}
+
+	int rowIndex = GetDataTableRowMatchingStringValue( dataTable, tagIconColumn, tagIcon )
+
+	if ( rowIndex > -1 )
+	{
+		seasonNumber = GetDataTableInt( dataTable, rowIndex, seasonNumberColumn )
+	}
+
+	return seasonNumber
+}
+
+bool function IsBattlepassFromTagIcon( string tagIcon )
+{
+	bool isBattlepass = false
+	var dataTable = GetDataTable( TAG_ICON_EVENT_INFO_DATATABLE )
+
+	int isBpColumn = GetDataTableColumnByName( dataTable, "isBP" )
+	int tagIconColumn = GetDataTableColumnByName( dataTable, "tagIcon" )
+
+	if ( tagIconColumn < 0 || isBpColumn < 0 )
+	{
+		return isBattlepass
+	}
+
+	int rowIndex = GetDataTableRowMatchingStringValue( dataTable, tagIconColumn, tagIcon )
+
+	if ( rowIndex > -1 )
+	{
+		isBattlepass = GetDataTableBool( dataTable, rowIndex, isBpColumn )
+	}
+
+	return isBattlepass
+}
+
+bool function IsEventFromTagIcon( string tagIcon )
+{
+	bool isEvent = false
+	var dataTable = GetDataTable( TAG_ICON_EVENT_INFO_DATATABLE )
+
+	int isEventColumn = GetDataTableColumnByName( dataTable, "isEvent" )
+	int tagIconColumn = GetDataTableColumnByName( dataTable, "tagIcon" )
+
+	if ( tagIconColumn < 0 || isEventColumn < 0 )
+	{
+		return isEvent
+	}
+
+	int rowIndex = GetDataTableRowMatchingStringValue( dataTable, tagIconColumn, tagIcon )
+
+	if ( rowIndex > -1 )
+	{
+		isEvent = GetDataTableBool( dataTable, rowIndex, isEventColumn )
+	}
+
+	return isEvent
+}

@@ -1,0 +1,27 @@
+
+global function CasualTrios_PopulateAboutText
+
+
+array< featureTutorialTab > function CasualTrios_PopulateAboutText()
+{
+	array< featureTutorialTab > tabs
+	featureTutorialTab tab1
+	featureTutorialTab tab2
+	array< featureTutorialData > tab1Rules
+
+	
+	tab1.tabName = 	"#CASUAL_TRIOS_FEATURES_TABNAME"
+
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CASUAL_TRIOS_ABOUT_1_HEADER",	"#CASUAL_TRIOS_ABOUT_1_BODY",	$"rui/about_images/casual/about_casual_1" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CASUAL_TRIOS_ABOUT_2_HEADER",	"#CASUAL_TRIOS_ABOUT_2_BODY",	$"rui/about_images/casual/about_casual_2" ) )
+	tab1Rules.append( UI_FeatureTutorialDialog_BuildDetailsData( "#CASUAL_TRIOS_ABOUT_3_HEADER",	"#CASUAL_TRIOS_ABOUT_3_BODY",	$"rui/about_images/casual/about_casual_3" ) )
+
+	tab1.rules = tab1Rules
+	tabs.append( tab1 )
+
+	GameMode_AboutDialog_AppendDefaultGamemodeFeatureTabs( tabs )
+
+	return tabs
+}
+
+

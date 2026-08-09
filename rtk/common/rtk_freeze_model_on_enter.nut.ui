@@ -1,0 +1,36 @@
+global function RTKFreezeModelOnEnter_OnInitialize
+global function RTKFreezeModelOnEnter_OnDestroy
+
+global struct RTKFreezeModelOnEnter_Properties
+{
+}
+
+struct PrivateData
+{
+	int hoverEnterListenerHandle
+	int hoverLeaveListenerHandle
+}
+
+void function RTKFreezeModelOnEnter_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior input = RTKInput_GetInputBehaviorOnPanel( self.GetPanel() )
+	if ( input == null )
+		return
+
+	PrivateData p
+	self.Private( p )
+	p.hoverEnterListenerHandle = input.AddEventListener( "onHoverEnter", function( rtk_behavior input ) : () { RunClientScript( "DisableModelTurn" ) } )
+	p.hoverLeaveListenerHandle = input.AddEventListener( "onHoverLeave", function( rtk_behavior input ) : () { RunClientScript( "EnableModelTurn" ) } )
+}
+
+void function RTKFreezeModelOnEnter_OnDestroy( rtk_behavior self )
+{
+	rtk_behavior input = RTKInput_GetInputBehaviorOnPanel( self.GetPanel() )
+	if ( input == null )
+		return
+
+	PrivateData p
+	self.Private( p )
+	input.RemoveEventListener( "onHoverEnter", p.hoverEnterListenerHandle )
+	input.RemoveEventListener( "onHoverLeave", p.hoverLeaveListenerHandle )
+}

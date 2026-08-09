@@ -1,0 +1,510 @@
+
+global function NewPlayerMatchMaking_IsEnabled
+
+global function NewPlayerMatchMaking_IsPreInitializationPlayer
+global function NewPlayerMatchMaking_IsInMatchMakingFlow
+global function NewPlayerMatchMaking_GetMatchMakingStage
+
+
+
+global function NewPlayerMatchMaking_GetAssignedExperiment
+global function NewPlayerMatchMaking_SetMatchMakingStage
+
+
+
+
+
+
+
+
+
+global function NewPlayerMatchMaking_IsGameModeLocked
+global function NewPlayerMatchMaking_GetLobbyPlaylistRecommendation
+global function NewPlayerMatchMaking_GetLobbyMessage
+global function NewPlayerMatchMaking_DialogFlowCheck
+global function NewPlayerMatchMaking_DialogFlow
+
+global function NewPlayerMatchMaking_PartyMemberJoinedOrLeft
+
+
+const int NEW_PLAYER_MATCH_MAKING_REQUIRED_MATCHES = 5
+
+const string NEW_PLAYER_MATCH_MAKING_FLOW_CONVAR_KILLSWITCH = "new_player_match_making_enabled"
+
+global enum eNewPlayerMatchMakingStage
+{
+	NONE = 0,
+    HIDDEN_SINGLE_MATCH = 1,
+    HIDDEN_CONTINUOUS_MATCH = 2,
+    VISIBLE_CONTINUOUS_MATCH = 3,
+    OLD = 4,
+    COUNT = 5,
+}
+
+global enum eNewPlayerMatchMakingExperiment
+{
+    NONE = 0,
+    HIDDEN_SINGLE_MATCH = 1,
+    HIDDEN_CONTINUOUS_MATCH = 2,
+    VISIBLE_CONTINUOUS_MATCH = 3,
+}
+
+global enum eNewPlayerMatchMakingExperimentInitializationStage
+{
+    NONE = 0,
+    PRE_INITIALIZATION = 1,
+}
+
+struct
+{
+	bool treatmentCForceTiosSelection = true 
+} file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int function NewPlayerMatchMaking_GetMatchMakingStage( entity player )
+{
+#if UI_AUTOMATION
+		
+		if ( UIAutomation_IsAutomateQueueForPlaylists() )
+		{
+			return eNewPlayerMatchMakingStage.OLD
+		}
+#endif
+
+    if ( !NewPlayerMatchMaking_IsEnabled( player ) )
+    {
+        return eNewPlayerMatchMakingStage.NONE
+    }
+
+	if ( NewPlayerMatchMaking_IsPreInitializationPlayer( player ) )
+	{
+		return eNewPlayerMatchMakingStage.OLD 
+	}
+
+	return player.GetPersistentVarAsInt( "activeNewPlayerMatchMakingStage" )
+}
+
+
+
+void function NewPlayerMatchMaking_SetMatchMakingStage( entity player, int stage )
+{
+
+		if ( !IsFullyConnected() )
+			return
+
+		Remote_ServerCallFunction( "UICallback_NewPlayerMatchMaking_SetMatchMakingStage", stage )
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function NewPlayerMatchMaking_IsPreInitializationPlayer( entity player )
+{
+	return player.GetPersistentVar( "preNewPlayerMatchMakingInitPlayer" ) == eNewPlayerMatchMakingExperimentInitializationStage.PRE_INITIALIZATION
+}
+
+
+
+int function NewPlayerMatchMaking_GetAssignedExperiment( entity player )
+{
+	return player.GetPersistentVarAsInt( "newPlayerMatchMakingAssignedExperiment" )
+}
+
+
+
+bool function NewPlayerMatchMaking_IsInMatchMakingFlow( entity player )
+{
+	if ( !NewPlayerMatchMaking_IsEnabled( player ) )
+	{
+		return false
+	}
+
+	if ( FTUEFlow_IsInFTUEFlow( player ) )
+	{
+		return false 
+	}
+
+	if ( NewPlayerMatchMaking_IsPreInitializationPlayer( player ) )
+	{
+		return true
+	}
+
+	int flowStage = NewPlayerMatchMaking_GetMatchMakingStage( player )
+	return flowStage > eNewPlayerMatchMakingStage.NONE && flowStage < eNewPlayerMatchMakingStage.OLD
+}
+
+
+
+bool function NewPlayerMatchMaking_IsGameModeLocked()
+{
+	int stage = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+	switch ( stage )
+	{
+		case eNewPlayerMatchMakingStage.HIDDEN_SINGLE_MATCH:
+			return true
+
+		case eNewPlayerMatchMakingStage.HIDDEN_CONTINUOUS_MATCH:
+			return true
+
+		case eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH:
+			return false
+
+		default:
+			return false
+	}
+
+	unreachable
+}
+
+
+
+string function NewPlayerMatchMaking_GetLobbyPlaylistRecommendation()
+{
+	int stage = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+	switch ( stage )
+	{
+		case eNewPlayerMatchMakingStage.HIDDEN_SINGLE_MATCH:
+			table<string, string> playlists = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in playlists )
+			{
+				return playlists[ TRIOS_SLOT ]
+			}
+
+			return ""
+
+		case eNewPlayerMatchMakingStage.HIDDEN_CONTINUOUS_MATCH:
+			table<string, string> playlists = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in playlists )
+			{
+				return playlists[ TRIOS_SLOT ]
+			}
+
+			return ""
+
+		case eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH:
+			table<string, string> playlists = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in playlists )
+			{
+				return playlists[ TRIOS_SLOT ]
+			}
+			return ""
+
+		default:
+			return ""
+	}
+
+
+	unreachable
+}
+
+
+
+RTKFTUEMessageModel function NewPlayerMatchMaking_GetLobbyMessage()
+{
+	RTKFTUEMessageModel model
+
+	int stage = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+	switch ( stage )
+	{
+		case eNewPlayerMatchMakingStage.HIDDEN_SINGLE_MATCH:
+			model.title = "#NPMM_EXPERIMENT_LOBBY_RECOMMENDATION_TITLE_A"
+			model.description = "#NPMM_EXPERIMENT_LOBBY_RECOMMENDATION_DESCRIPTION_A"
+			break
+
+		case eNewPlayerMatchMakingStage.HIDDEN_CONTINUOUS_MATCH:
+			model.title = "#NPMM_EXPERIMENT_LOBBY_RECOMMENDATION_TITLE_A"
+			model.description = "#NPMM_EXPERIMENT_LOBBY_RECOMMENDATION_DESCRIPTION_A"
+			break
+
+		case eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH:
+			model.title = ""
+			model.description = ""
+			break
+
+		default:
+			model.title = ""
+			model.description = ""
+			break
+	}
+
+	return model
+}
+
+
+
+bool function NewPlayerMatchMaking_DialogFlowCheck( entity player )
+{
+	if ( NewPlayerMatchMaking_IsInMatchMakingFlow( player ) )
+	{
+		return true
+	}
+
+	if ( NewPlayerMatchMaking_IsConVarDisabled() && NewPlayerMatchMaking_GetMatchMakingStage( player ) != eNewPlayerMatchMakingStage.OLD )
+	{
+		NewPlayerMatchMaking_SetMatchMakingStage( player, eNewPlayerMatchMakingStage.OLD )
+		return false
+	}
+
+	return false
+}
+
+
+
+bool function NewPlayerMatchMaking_DialogFlow()
+{
+	int stage = NewPlayerMatchMaking_GetMatchMakingStage( GetLocalClientPlayer() )
+	switch ( stage )
+	{
+		case eNewPlayerMatchMakingStage.HIDDEN_SINGLE_MATCH:
+			table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in slotToPlaylistNameMap )
+			{
+				LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[TRIOS_SLOT] )
+				return true
+			}
+			break
+
+		case eNewPlayerMatchMakingStage.HIDDEN_CONTINUOUS_MATCH:
+			table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+			if ( TRIOS_SLOT in slotToPlaylistNameMap )
+			{
+				LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[TRIOS_SLOT] )
+				return true
+			}
+			break
+
+		case eNewPlayerMatchMakingStage.VISIBLE_CONTINUOUS_MATCH:
+			table< string, string > slotToPlaylistNameMap = GameModeSelect_GetPlaylists()
+
+			if ( file.treatmentCForceTiosSelection )
+			{
+				if ( TRIOS_SLOT in slotToPlaylistNameMap )
+				{
+					LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[TRIOS_SLOT] )
+					file.treatmentCForceTiosSelection = false
+					return true
+				}
+			}
+
+			if ( !GetPlaylistVarBool( LobbyPlaylist_GetSelectedPlaylist(), "new_player_match_making_exp_allowed", false ) )
+			{
+				if ( TRIOS_SLOT in slotToPlaylistNameMap )
+				{
+					LobbyPlaylist_SetSelectedPlaylist( slotToPlaylistNameMap[TRIOS_SLOT] )
+					return true
+				}
+			}
+			break
+
+		default:
+			break
+	}
+
+	return false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool function NewPlayerMatchMaking_IsEnabled( entity player )
+{
+	if ( NewPlayerMatchMaking_IsConVarDisabled() )
+	{
+		return false
+	}
+
+
+		if ( !IsFullyConnected() )
+			return true
+
+
+	return true
+}
+
+
+
+bool function NewPlayerMatchMaking_IsConVarDisabled()
+{
+	if ( !GetConVarBool( NEW_PLAYER_MATCH_MAKING_FLOW_CONVAR_KILLSWITCH ) || GetConVarBool( "orientation_matches_disabled" ) )
+	{
+		return true
+	}
+
+
+
+
+
+
+
+#if DEV
+		if ( GetConVarBool( "skip_training" ) )
+		{
+			return true
+		}
+#endif
+
+
+
+	return false
+}
+
+
+
+void function NewPlayerMatchMaking_PartyMemberJoinedOrLeft()
+{
+	NewPlayerMatchMaking_SetMatchMakingStage( GetLocalClientPlayer(), eNewPlayerMatchMakingStage.OLD )
+}
+

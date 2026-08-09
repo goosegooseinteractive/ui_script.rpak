@@ -1,0 +1,181 @@
+
+global function RTKRequeueSquadStatus_InitMetaData
+global function RTKRequeueSquadStatus_OnInitialize
+global function RTKRequeueSquadStatus_OnDestroy
+
+
+
+
+
+
+global struct RTKRequeueSquadStatus_Properties
+{
+	rtk_panel squadMembers
+}
+
+
+global struct RTKRequeueSquadMember
+{
+	string name
+	int platformID
+	vector color
+	bool isPartyLeader
+	bool isDisabled
+	bool hasOptIn
+	bool isBot
+}
+
+global struct RTKRequeueSquadStatusModel
+{
+	bool isRequeueWithSquadEnabled
+	bool showSquadMembers
+	bool showPartyMembers
+	bool showUpNext
+	array<RTKRequeueSquadMember> squad
+	array<RTKRequeueSquadMember> party
+	string mapModeText
+	string matchmakingText
+	string timerText
+}
+
+
+
+struct PrivateData
+{
+	string path = ""
+	rtk_struct squadModel
+}
+
+
+
+void function RTKRequeueSquadStatus_InitMetaData( string behaviorType, string structType )
+{
+	RegisterSignal( "RTKRequeueSquadStatusStop" )
+}
+
+
+
+void function RTKRequeueSquadStatus_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.path = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "requeue" )
+	self.GetPanel().SetBindingRootPath( p.path )
+
+	p.squadModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "requeue", "RTKRequeueSquadStatusModel" )
+
+	thread RTKRequeueSquadStatus_SetDataModel( self )
+}
+
+
+
+void function RTKRequeueSquadStatus_OnDestroy( rtk_behavior self )
+{
+	Signal( self, "RTKRequeueSquadStatusStop" )
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, "requeue" )
+}
+
+
+
+void function RTKRequeueSquadStatus_SetDataModel( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	EndSignal( self, "RTKRequeueSquadStatusStop" )
+
+	while( true )
+	{
+		if ( IsFullyConnected() && CanRunClientScript() )
+			RunClientScript( "UICallback_RequeueSquadStatus_UpdateSquadMembers", p.path )
+
+		WaitFrame()
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

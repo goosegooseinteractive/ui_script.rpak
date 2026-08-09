@@ -1,0 +1,447 @@
+global function InitRTKRankedRumbleLeaderboard
+global function RTKRankedRumbleLeaderboard_OnInitialize
+global function RTKRankedRumbleLeaderboard_OnDestroy
+global function RTKRankedRumble_SaveLeaderboardLastViewedTier
+
+enum eLeaderBoardPositionMovement
+{
+	NONE			= 0,
+	UP				= 1,
+	DOWN			= 2,
+	BLANK			= 3,
+}
+
+global struct RTKRankedRumbleLeaderboard_Properties
+{
+	rtk_behavior 	scrollToMeButtonBehavior
+	rtk_behavior 	rankingScrollViewBehavior
+	rtk_panel 		rankingScrollViewContentPanel
+
+	int currentTier = 1
+}
+
+global struct RTKRankedRumbleLeaderboardPlayerModel
+{
+	int    index
+	string placement
+	string displayName
+	string name
+	string hardware
+	string playerUID
+	string points
+
+	int    positionMovement = eLeaderBoardPositionMovement.NONE 
+}
+
+global struct RTKRankedRumbleLeaderboardPlayerTierModel
+{
+	int population
+	int tier
+	string tierButtonText
+	bool isCurrentTier
+	bool isLocalPlayerTier
+	rtk_behavior screenBehavior
+}
+
+global struct RTKRankedRumbleLeaderboardRewardTierModel
+{
+	array<RTKRankedRumbleRewardModel> rewards
+}
+
+global struct RTKRankedRumbleLeaderboardModel
+{
+	bool playerCanAccessRanked = true
+	bool rumbleHasStarted = true
+	bool rumbleHasEnoughPlayers = true
+	int  rumbleHardPickTime
+	int topMatchesCount = 0
+
+	string playerTierText = "-"
+	string playerPositionText = "-"
+	string playerTotalRPGainsText = "-"
+	string nextTierTargetText = ""
+
+	int currentTierIndex = 0 
+	array<RTKRankedRumbleLeaderboardPlayerTierModel> playerTiers
+	array<RTKRankedRumbleLeaderboardPlayerModel> currentTierPlayers
+	array<RTKRankedRumbleRewardModel> currentTierRewards
+
+	string rewardHeaderText
+	string rewardHeaderSubText
+
+	int totalLadderPopulation
+	int maxLadderPopulation = 100
+
+
+
+
+}
+
+struct
+{
+	var panel
+	bool saveLastViewedTier 
+	int lastViewedTier
+} file
+
+struct PrivateData
+{
+	int                                                   playerCurrentTier
+	int                                                   playerCurrentPosition
+	array< array<RTKRankedRumbleLeaderboardPlayerModel> > playersByTier
+	array< array<RTKRankedRumbleRewardModel> > rewardByTiers
+
+	void functionref( SettingsAssetGUID, int, array<CupLeaderboardEntry> ) onLeaderboardDataRetrievedCallback
+}
+
+const string RANKED_RUMBLE_LEADERBOARD = "rankedRumbleLeaderboardPanel"
+const int TIER_MAX = 5
+
+void function RTKRankedRumbleLeaderboard_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, RANKED_RUMBLE_LEADERBOARD, "RTKRankedRumbleLeaderboardModel" )
+	string pathToStruct = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, RANKED_RUMBLE_LEADERBOARD )
+
+	CupBakeryAssetData ornull cupData = Cups_GetCurrentMenuCup()
+	if ( cupData == null )
+		return
+
+	expect CupBakeryAssetData( cupData )
+
+	
+	p.onLeaderboardDataRetrievedCallback = void function( SettingsAssetGUID cupID, int start, array<CupLeaderboardEntry> entries ) : ( self ) {
+		RTKRankedRumbleLeaderboard_OnDataReceived( self, cupID, start, entries )
+	}
+	Cups_RegisterOnLeaderboardChangedCallback( p.onLeaderboardDataRetrievedCallback )
+
+	RTKStruct_SetBool( screenStruct, "playerCanAccessRanked", RankedEvent_DoesLocalPlayerHaveRankedAccess() )
+	RTKStruct_SetBool( screenStruct, "rumbleHasStarted", !( RankedEvent_GetRumbleRankedState() == eRankedRumbleState.COMING_SOON ) )
+
+	
+	Cups_RequireUpdateLeaderboard()
+	Cups_GetCupLeaderboardData( cupData.cupID, 1, 1 )
+
+	rtk_behavior scrollToMeButton = self.PropGetBehavior( "scrollToMeButtonBehavior" )
+	self.AutoSubscribe( scrollToMeButton, "OnPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		thread RTKRankedRumbleLeaderboard_OnScrollToMePressed( self )
+	} )
+
+	self.GetPanel().SetBindingRootPath( pathToStruct )
+	self.AddPropertyCallback( "currentTier", RTKRankedRumbleLeaderboard_OnCurrentViewTierUpdated )
+
+	if ( file.saveLastViewedTier )
+	{
+		self.PropSetInt( "currentTier", file.lastViewedTier )
+		file.saveLastViewedTier = false
+	}
+}
+
+void function RTKRankedRumbleLeaderboard_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( file.saveLastViewedTier )
+	{
+		file.lastViewedTier = self.PropGetInt( "currentTier" )
+	}
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, RANKED_RUMBLE_LEADERBOARD )
+	Cups_UnRegisterOnLeaderboardChangedCallback( p.onLeaderboardDataRetrievedCallback )
+}
+
+void function RTKRankedRumbleLeaderboard_OnDataReceived( rtk_behavior self, SettingsAssetGUID cupID, int start, array<CupLeaderboardEntry> entries )
+{
+	table< int, array<CupLeaderboardEntry> > leaderboardTable = RankedEvent_HandleLeaderboardData( cupID, entries )
+	RTKRankedRumbleLeaderboard_SetDataModelFromTable( self, cupID, leaderboardTable )
+}
+
+void function RTKRankedRumbleLeaderboard_SetDataModelFromTable( rtk_behavior self, SettingsAssetGUID cupID, table< int, array<CupLeaderboardEntry> > leaderboardTable )
+{
+	PrivateData p
+	self.Private( p )
+	p.playersByTier.clear()
+
+	RTKRankedRumbleLeaderboardModel leaderboardModel
+	string localUID = GetPlayerUID()
+	int nextTierLowestScore = INT_MIN
+	int placement = 1
+	bool isLeaderboardEmpty = true
+
+
+
+
+
+	for ( int tier = 1; tier <= TIER_MAX; tier++ )
+	{
+		RTKRankedRumbleLeaderboardPlayerTierModel tierModel
+		tierModel.tier = tier
+		tierModel.screenBehavior = self
+
+		array<RTKRankedRumbleLeaderboardPlayerModel> players
+
+		if ( tier == 1 )
+		{
+			tierModel.tierButtonText = "#RANKED_RUMBLE_LEADERBOARD_CHAMPS"
+		}
+		else if ( tier == TIER_MAX )
+		{
+			tierModel.tierButtonText = "#RANKED_RUMBLE_LEADERBOARD_NOT_PLACED"
+		}
+		else
+		{
+			tierModel.tierButtonText = Localize( "#RANKED_RUMBLE_LEADERBOARD_TIER_NUM", tier )
+		}
+
+		int tierIndex = tier - 1
+		if ( tierIndex in leaderboardTable )
+		{
+			foreach ( int index, squad in leaderboardTable[ tierIndex ] )
+			{
+				isLeaderboardEmpty = false
+				RTKRankedRumbleLeaderboardPlayerModel playerModel = RTKRankedRumble_GetLeaderboardPlayerModel( squad, index, placement, tier == TIER_MAX )
+				players.append( playerModel )
+
+				if ( localUID == squad.squadInfo[0].playerUID )
+				{
+					if ( tier != TIER_MAX )
+					{
+						leaderboardModel.playerTierText         = tier.tostring()
+						leaderboardModel.playerPositionText     = Localize( "#RANKED_RUMBLE_LEADERBOARD_PLAYER_PLACEMENT", placement )
+						leaderboardModel.playerTotalRPGainsText = Localize( "#RANKED_RUMBLE_LEADERBOARD_RP", squad.squadScore )
+						leaderboardModel.nextTierTargetText     = nextTierLowestScore > INT_MIN ? Localize( "#RANKED_RUMBLE_LEADERBOARD_TIER_NEXT", nextTierLowestScore ) : ""
+
+
+
+
+
+
+
+
+					}
+
+					tierModel.isLocalPlayerTier = true
+					p.playerCurrentTier = tier
+					p.playerCurrentPosition = index
+				}
+
+				if ( index == leaderboardTable[ tierIndex ].len() - 1 ) 
+				{
+					nextTierLowestScore = squad.squadScore
+				}
+
+				placement++
+			}
+
+			tierModel.population = leaderboardTable[ tierIndex ].len()
+			leaderboardModel.totalLadderPopulation += tierModel.population
+		}
+
+		
+		while ( players.len() < 10 )
+		{
+			players.append( RTKRankedRumble_GetLeaderboardEmptyPlayerModel( players.len() ) )
+		}
+
+		leaderboardModel.playerTiers.append( tierModel )
+		p.playersByTier.append( players )
+	}
+
+	p.rewardByTiers = RTKRankedRumble_GetRewardTiers( cupID )
+	while ( p.rewardByTiers.len() < p.playersByTier.len() )
+	{
+		p.rewardByTiers.append( [] ) 
+	}
+
+	CupBakeryAssetData ornull cupData = Cups_SafeGetCupBakeryAssetDataFromGUID( cupID )
+	if ( cupData == null )
+		return
+	expect CupBakeryAssetData( cupData )
+
+
+
+
+
+		leaderboardModel.playerCanAccessRanked  = RankedEvent_DoesLocalPlayerHaveRankedAccess()
+		leaderboardModel.rumbleHasStarted       = !( RankedEvent_GetRumbleRankedState() == eRankedRumbleState.COMING_SOON )
+
+	leaderboardModel.rumbleHasEnoughPlayers = !isLeaderboardEmpty
+	leaderboardModel.rumbleHardPickTime     = RankedEvent_GetLeaderboardHardPickTime( cupData )
+	leaderboardModel.topMatchesCount        = cupData.topMatchesCount
+
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, RANKED_RUMBLE_LEADERBOARD, "RTKRankedRumbleLeaderboardModel" )
+	RTKStruct_SetValue( screenStruct, leaderboardModel )
+
+	RTKRankedRumbleLeaderboard_OnCurrentViewTierUpdated( self )
+}
+
+void function RTKRankedRumbleLeaderboard_OnCurrentViewTierUpdated( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct screenStruct = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, RANKED_RUMBLE_LEADERBOARD, "RTKRankedRumbleLeaderboardModel" )
+	int currentTierIndex    = self.PropGetInt( "currentTier" ) - 1
+	int currentTierTruePopulation
+	RTKStruct_SetInt( screenStruct, "currentTierIndex", currentTierIndex )
+
+	rtk_array playerTiersArray = RTKStruct_GetArray( screenStruct, "playerTiers" )
+	for ( int i = 0; i < RTKArray_GetCount( playerTiersArray ); i++ )
+	{
+		
+		rtk_struct playerTierStruct = RTKArray_GetStruct( playerTiersArray, i )
+		RTKStruct_SetBool( playerTierStruct, "isCurrentTier", i == currentTierIndex )
+
+		if ( i == currentTierIndex )
+		{
+			currentTierTruePopulation = RTKStruct_GetInt( playerTierStruct, "population" )
+		}
+	}
+
+	if ( currentTierIndex < 0 || currentTierIndex >= p.playersByTier.len() || currentTierIndex >= p.rewardByTiers.len() )
+		return
+
+	
+	rtk_array currentTierPlayersArray = RTKStruct_GetArray( screenStruct, "currentTierPlayers" )
+	RTKArray_SetValue( currentTierPlayersArray, p.playersByTier[ currentTierIndex ] )
+
+	
+	rtk_array currentTierRewardsArray = RTKStruct_GetArray( screenStruct, "currentTierRewards" )
+	RTKArray_SetValue( currentTierRewardsArray, p.rewardByTiers[ currentTierIndex ] )
+
+	RTKStruct_SetString( screenStruct, "rewardHeaderText", RTKRankedRumble_GetTierRewardHeaderText( currentTierIndex + 1 ) )
+	RTKStruct_SetString( screenStruct, "rewardHeaderSubText", RTKRankedRumble_GetTierRewardHeaderSubText( currentTierIndex + 1, currentTierTruePopulation ) )
+}
+
+void function RTKRankedRumbleLeaderboard_OnScrollToMePressed( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	self.PropSetInt( "currentTier", p.playerCurrentTier )
+
+	
+	wait 0.1
+
+	rtk_behavior scrollView = self.PropGetBehavior( "rankingScrollViewBehavior" )
+	rtk_panel scrollViewContent = self.PropGetPanel( "rankingScrollViewContentPanel" )
+
+	if ( p.playerCurrentPosition >= scrollViewContent.GetChildCount() )
+		return
+
+	rtk_panel playerRow = scrollViewContent.GetChildByIndex( p.playerCurrentPosition )
+	RTKScrollView_ScrollToItem( scrollView, playerRow, true )
+}
+
+RTKRankedRumbleLeaderboardPlayerModel function RTKRankedRumble_GetLeaderboardPlayerModel( CupLeaderboardEntry entry, int index, int placement, bool hasNotPlaced )
+{
+	RTKRankedRumbleLeaderboardPlayerModel playerModel
+
+	
+	playerModel.name      	= entry.squadInfo[0].name
+	playerModel.hardware  	= entry.squadInfo[0].hardware
+	playerModel.playerUID 	= entry.squadInfo[0].playerUID
+
+	
+	playerModel.index     	= index
+	playerModel.points    	= hasNotPlaced ? "-" : entry.squadScore.tostring()
+	playerModel.displayName = playerModel.hardware != "" ? Localize( PlatformIDToIconString( GetHardwareFromName( playerModel.hardware ) ) ) + "  " + playerModel.name : playerModel.name
+	playerModel.placement 	= hasNotPlaced ? "-" : Localize( "#RANKED_RUMBLE_LEADERBOARD_PLAYER_PLACEMENT", placement )
+
+	if ( !hasNotPlaced && placement < entry.lastPos + 1 )
+	{
+		playerModel.positionMovement = eLeaderBoardPositionMovement.UP
+	}
+	else if ( !hasNotPlaced && placement > entry.lastPos + 1 )
+	{
+		playerModel.positionMovement = eLeaderBoardPositionMovement.DOWN
+	}
+
+	return playerModel
+}
+
+
+RTKRankedRumbleLeaderboardPlayerModel function RTKRankedRumble_GetLeaderboardEmptyPlayerModel( int index )
+{
+	RTKRankedRumbleLeaderboardPlayerModel playerModel
+	playerModel.index = index
+	playerModel.positionMovement = eLeaderBoardPositionMovement.BLANK
+	return playerModel
+}
+
+array< array<RTKRankedRumbleRewardModel> > function RTKRankedRumble_GetRewardTiers( int cupID )
+{
+	array< array<RTKRankedRumbleRewardModel> > rewardTiersModel
+
+	CupBakeryAssetData ornull cupData = Cups_SafeGetCupBakeryAssetDataFromGUID( cupID )
+	if ( cupData == null )
+		return rewardTiersModel
+
+	expect CupBakeryAssetData( cupData )
+	foreach ( tierData in cupData.tiers )
+	{
+		array<RTKRankedRumbleRewardModel> rewardTierModel
+
+		foreach ( reward in tierData.rewardData )
+		{
+			ItemFlavor rewardFlav = GetItemFlavorByAsset( reward.reward )
+			RTKRankedRumbleRewardModel rewardModel
+			rewardModel.rewardFlavGUID = ItemFlavor_GetGUID( rewardFlav )
+			rewardModel.rewardQuality = maxint( ItemFlavor_GetQuality( rewardFlav ), 0)
+			rewardModel.rewardAsset = CustomizeMenu_GetRewardButtonImage( rewardFlav )
+			if ( ItemFlavor_GetType( rewardFlav ) == eItemType.voucher && Voucher_GetEffectBattlepassStars( rewardFlav ) > 0 )
+				rewardModel.rewardAmount = reward.quantity * Voucher_GetEffectBattlepassStars( rewardFlav )
+			else
+				rewardModel.rewardAmount = reward.quantity
+
+			rewardTierModel.append( rewardModel )
+		}
+
+		rewardTiersModel.append( rewardTierModel )
+	}
+
+	return rewardTiersModel
+}
+
+string function RTKRankedRumble_GetTierRewardHeaderText( int tier )
+{
+	return "#RANKED_RUMBLE_LEADERBOARD_REWARD_HEADER_" + tier.tostring()
+}
+
+string function RTKRankedRumble_GetTierRewardHeaderSubText( int tier, int tierParticipants )
+{
+	string subText = ""
+
+	switch ( tier )
+	{
+		case 1:
+			subText = "#RANKED_RUMBLE_LEADERBOARD_REWARD_SUBHEADER_1"
+			break
+		case TIER_MAX:
+			if ( tierParticipants == 1 )
+			{
+				subText = Localize( "#RANKED_RUMBLE_LEADERBOARD_REWARD_SUBHEADER_5_ALT" )
+			}
+			else
+			{
+				subText = Localize( "#RANKED_RUMBLE_LEADERBOARD_REWARD_SUBHEADER_5", tierParticipants )
+			}
+			break
+	}
+
+	return subText
+}
+
+void function RTKRankedRumble_SaveLeaderboardLastViewedTier()
+{
+	file.saveLastViewedTier = true
+}
+
+
+void function InitRTKRankedRumbleLeaderboard( var panel )
+{
+	file.panel = panel
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+}

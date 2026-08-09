@@ -1,0 +1,147 @@
+global function InitCharacterAnimationsPanel
+global function AnimationsPanel_CreateTabs
+global function AnimationsPanel_DestroyTabs
+
+struct
+{
+	var panel
+	int activeSectionIndex = 0
+
+	TabDef& executionsTabDef
+
+	ItemFlavor ornull lastNewnessCharacter
+	ItemFlavor& currentTopLevelCustomizeContext
+
+	array< Newness_Query > newnessQueries
+} file
+
+void function InitCharacterAnimationsPanel( var panel )
+{
+	file.panel = panel
+
+	SetPanelTabTitle( panel, "#ANIMATIONS" )
+
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, AnimationsPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, AnimationsPanel_OnHide )
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, AnimationsPanel_OnCustomizeContextChanged )
+}
+
+void function AnimationsPanel_CreateTabs()
+{
+	file.executionsTabDef = AddTab( file.panel, Hud_GetChild( file.panel, "RTKIntrosPanel" ), "#INTROS" )
+	SetTabBaseWidth( file.executionsTabDef, 210 )
+
+	file.executionsTabDef = AddTab( file.panel, Hud_GetChild( file.panel, "RTKExecutionsPanel" ), "#FINISHER" )
+	SetTabBaseWidth( file.executionsTabDef, 210 )
+
+	TabData tabData = GetTabDataForPanel( file.panel )
+	tabData.centerTabs = true
+	SetTabBackground( tabData, Hud_GetChild( file.panel, "TabsBackground" ), eTabBackground.STANDARD )
+	SetTabDefsToSeasonal( tabData )
+	UpdateMenuTabs()
+}
+
+void function AnimationsPanel_DestroyTabs()
+{
+	ClearTabs( file.panel )
+}
+
+void function AnimationsPanel_OnShow( var panel )
+{
+	file.activeSectionIndex = 0
+
+	CharacterAnimationsPanel_Update()
+
+	AddCallback_OnTopLevelCustomizeContextChanged( panel, AnimationsPanel_CustomizeContextChanged )
+
+	file.currentTopLevelCustomizeContext = GetTopLevelCustomizeContext()
+
+	TabData tabData = GetTabDataForPanel( file.panel )
+
+	if ( GetLastMenuNavDirection() == MENU_NAV_FORWARD )
+	{
+		ActivateTab( tabData, 0 )
+		thread AnimateInSmallTabBar( tabData )
+	}
+}
+
+
+void function AnimationsPanel_OnHide( var panel )
+{
+	ClearNewnessCallbacks()
+	TabData tabData = GetTabDataForPanel( panel )
+	HideVisibleTabBodies( tabData )
+
+	RunClientScript( "ClearBattlePassItem" )
+
+	RemoveCallback_OnTopLevelCustomizeContextChanged( panel, AnimationsPanel_CustomizeContextChanged )
+}
+
+void function AnimationsPanel_CustomizeContextChanged( var panel )
+{
+	file.currentTopLevelCustomizeContext = GetTopLevelCustomizeContext()
+}
+
+void function AnimationsPanel_OnCustomizeContextChanged( var panel )
+{
+	if ( !IsPanelActive( file.panel ) )
+		return
+
+	CharacterAnimationsPanel_Update()
+}
+
+
+void function CharacterAnimationsPanel_Update()
+{
+	UpdateNewnessCallbacks()
+}
+
+
+void function UpdateNewnessCallbacks()
+{
+	if ( !IsTopLevelCustomizeContextValid() )
+		return
+
+	ClearNewnessCallbacks()
+
+	ItemFlavor character = GetTopLevelCustomizeContext()
+
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.character_select]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "RTKIntrosPanel" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.newnessQueries.append( nq )
+	}
+	{
+		Newness_Query nq
+		nq.itemFlavor    = character
+		nq.itemTypeList  = [eItemType.character_execution]
+		nq.uiCategory    = eItemTypeUICategory.CHARACTER
+		nq.cb            = OnNewnessQueryChangedUpdatePanelTab
+		nq.panelOrButton = GetPanel( "RTKExecutionsPanel" )
+		Newness_AddCallbackAndCallNow_OnQueryUpdated( nq )
+		file.newnessQueries.append( nq )
+	}
+
+	file.lastNewnessCharacter = character
+}
+
+
+void function ClearNewnessCallbacks()
+{
+	if ( file.lastNewnessCharacter == null )
+		return
+
+	ItemFlavor character = expect ItemFlavor( file.lastNewnessCharacter )
+
+	foreach ( Newness_Query nq in file.newnessQueries )
+		Newness_RemoveCallback_OnQueryUpdated( nq )
+
+	file.newnessQueries.clear()
+	file.lastNewnessCharacter = null
+}

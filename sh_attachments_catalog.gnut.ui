@@ -1,0 +1,566 @@
+global function Sh_AttachmentsCatalog_Init
+global function AttachmentsCatalog_RebuildCache
+
+
+global function AttachmentsCatalog_GetWeaponAttachmentCatalogByRef
+global function AttachmentsCatalog_GetWeaponAttachmentCategoryByRef
+global function AttachmentsCatalog_GetWeaponAttachmentCategoriesByRef
+
+global function AttachmentsCatalog_GetWeaponAttachmentCatalogByItemFlavor
+global function AttachmentsCatalog_GetWeaponAttachmentCategoryByItemFlavor
+global function AttachmentsCatalog_GetWeaponAttachmentCategoriesByItemFlavor
+
+#if DEV
+global function DEV_AttachmentsCatalog_PrintWeaponAttachmentCatalog
+global function DEV_AttachmentsCatalog_PrintAttachmentsForWeaponByRef
+global function DEV_AttachmentsCatalog_PrintAttachmentsForCategoryByWeaponRef
+const string ATTACHMENTS_CATALOG_DEBUG_PREFIX = "AttachmentsCatalog Debug: "
+#endif
+
+const bool DEBUG_ATTACHMENTS_CATALOG = false
+
+
+const asset ARMORY_WEAPON_ATTACHMENT_MATRIX_DATATABLE = $"datatable/weapon_attachment_matrix.rpak"
+const asset SURVIVAL_LOOT_DATATABLE               = $"datatable/survival_loot.rpak"
+
+struct LootAvailabilityState
+{
+	bool isAttachment = false
+	bool isDisabled = true
+}
+
+struct
+{
+	table< string, table< string, array<string> > >  playlistAwareWeaponAttachmentCatalog = {} 
+	table< string, array<string> >                 playlistAwareWeaponAttachmentCategories = {} 
+
+	array<string> cachedVisiblePlaylists = [] 
+}
+file
+
+
+
+void function Sh_AttachmentsCatalog_Init()
+{
+	printf( "%s - Initializing AttachmentsCatalog System...", FUNC_NAME() )
+	AttachmentsCatalog_RebuildCache()
+}
+
+void function AttachmentsCatalog_RebuildCache()
+{
+	Assert( IsItemFlavorRegistrationFinished() )
+	printf( "%s - Rebuilding playlist-aware weapon attachment catalog...", FUNC_NAME() )
+
+	file.playlistAwareWeaponAttachmentCatalog.clear()
+	file.playlistAwareWeaponAttachmentCategories.clear()
+
+	array<string> visiblePlaylists = AttachmentsCatalog_GetAccessiblePlaylistNames_Internal()
+	file.cachedVisiblePlaylists = clone visiblePlaylists
+
+	if ( visiblePlaylists.len() == 0 )
+		return
+
+	table<string, int> matrixColumnsByWeaponRef = {}
+	array<string> weaponRefs = []
+
+	var attachmentMatrix = GetDataTable( ARMORY_WEAPON_ATTACHMENT_MATRIX_DATATABLE )
+
+	AttachmentsCatalog_BuildWeaponMatrixColumnCache_Internal( attachmentMatrix, matrixColumnsByWeaponRef, weaponRefs )
+	AttachmentsCatalog_CacheMatrixIntoCatalog_Internal( attachmentMatrix, matrixColumnsByWeaponRef, weaponRefs, file.playlistAwareWeaponAttachmentCatalog, file.playlistAwareWeaponAttachmentCategories )
+
+	foreach ( string playlistName in visiblePlaylists )
+	{
+		asset ornull overrideTableAsset = SURVIVAL_Loot_GetAttachmentMatrixOverrideTableAssetForPlaylist( playlistName )
+		if ( overrideTableAsset == null )
+			continue
+
+		expect asset( overrideTableAsset )
+		var dataTable = GetDataTable( overrideTableAsset )
+		AttachmentsCatalog_CacheMatrixIntoCatalog_Internal( dataTable, matrixColumnsByWeaponRef, weaponRefs, file.playlistAwareWeaponAttachmentCatalog, file.playlistAwareWeaponAttachmentCategories )
+	}
+
+	table<string, bool> enabledAttachmentRefSet = AttachmentsCatalog_GetEnabledAttachmentRefsAcrossVisiblePlaylists_Internal( visiblePlaylists )
+	AttachmentsCatalog_FilterCatalogByEnabledAttachmentRefs_Internal( file.playlistAwareWeaponAttachmentCatalog, file.playlistAwareWeaponAttachmentCategories, enabledAttachmentRefSet )
+}
+
+
+
+table< string, array<string> > function AttachmentsCatalog_GetWeaponAttachmentCatalogByRef( string weaponRef )
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	if ( weaponRef == "" || !(weaponRef in file.playlistAwareWeaponAttachmentCatalog) )
+		return {}
+
+	return file.playlistAwareWeaponAttachmentCatalog[weaponRef]
+}
+
+array<string> function AttachmentsCatalog_GetWeaponAttachmentCategoryByRef( string weaponRef, string category )
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	if ( weaponRef == "" || !(weaponRef in file.playlistAwareWeaponAttachmentCatalog) )
+		return []
+
+	table< string, array<string> > catalogEntry = file.playlistAwareWeaponAttachmentCatalog[weaponRef]
+	if ( !(category in catalogEntry) )
+		return []
+
+	return catalogEntry[category]
+}
+
+array<string> function AttachmentsCatalog_GetWeaponAttachmentCategoriesByRef( string weaponRef )
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	if ( weaponRef == "" || !(weaponRef in file.playlistAwareWeaponAttachmentCatalog) )
+		return []
+
+	return file.playlistAwareWeaponAttachmentCategories[weaponRef]
+}
+
+
+table<string, array<string> > function AttachmentsCatalog_GetWeaponAttachmentCatalogByItemFlavor( ItemFlavor weapon )
+{
+	string weaponRef = AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( weapon )
+	return AttachmentsCatalog_GetWeaponAttachmentCatalogByRef( weaponRef )
+}
+
+array<string> function AttachmentsCatalog_GetWeaponAttachmentCategoryByItemFlavor( ItemFlavor weapon, string category )
+{
+	string weaponRef = AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( weapon )
+	return AttachmentsCatalog_GetWeaponAttachmentCategoryByRef( weaponRef, category )
+}
+
+array<string> function AttachmentsCatalog_GetWeaponAttachmentCategoriesByItemFlavor( ItemFlavor weapon )
+{
+	string weaponRef = AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( weapon )
+	return AttachmentsCatalog_GetWeaponAttachmentCategoriesByRef( weaponRef )
+}
+
+
+void function AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+{
+	array<string> visiblePlaylists = AttachmentsCatalog_GetAccessiblePlaylistNames_Internal()
+	if ( AreStringArraysEqual( visiblePlaylists, file.cachedVisiblePlaylists ) )
+		return
+
+	AttachmentsCatalog_RebuildCache()
+}
+
+void function AttachmentsCatalog_BuildWeaponMatrixColumnCache_Internal( var attachmentMatrix, table<string, int> matrixColumnsByWeaponRef, array<string> weaponRefs )
+{
+	array<ItemFlavor> allWeapons = GetAllWeaponItemFlavors( false )
+	if ( allWeapons.len() == 0 )
+	{
+		Warning( "%s - No weapon flavors found to process", FUNC_NAME() )
+		return
+	}
+
+	foreach ( ItemFlavor weaponFlavor in allWeapons )
+	{
+#if DEBUG_ATTACHMENTS_CATALOG
+			printf( "%s - Processing weapon flavor for attachment catalog: %s", FUNC_NAME(), WeaponItemFlavor_GetClassname( weaponFlavor ) )
+#endif
+
+		string weaponRef = AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( weaponFlavor )
+		string baseWeaponRef = WeaponItemFlavor_GetClassname( weaponFlavor )
+		if ( weaponRef == "" )
+		{
+			Warning( "%s - Skipping weapon flavor with empty ref: %s", FUNC_NAME(), WeaponItemFlavor_GetClassname( weaponFlavor ) )
+			continue
+		}
+
+		if ( weaponRefs.contains( weaponRef ) )
+		{
+			Warning( "%s - Duplicate weapon ref detected: %s (flavor: %s)", FUNC_NAME(), weaponRef, WeaponItemFlavor_GetClassname( weaponFlavor ) )
+			continue
+		}
+
+		weaponRefs.append( weaponRef )
+		matrixColumnsByWeaponRef[weaponRef] <- AttachmentsCatalog_GetAttachmentMatrixColumn_Internal( attachmentMatrix, weaponRef, baseWeaponRef )
+	}
+}
+
+void function AttachmentsCatalog_CacheMatrixIntoCatalog_Internal(
+	var attachmentMatrix,
+	table<string, int> matrixColumnsByWeaponRef,
+	array<string> weaponRefs,
+	table<string, table<string, array<string> > > catalogTable,
+	table<string, array<string> > categoriesTable
+)
+{
+	int rowCount = GetDataTableRowCount( attachmentMatrix )
+	int attachmentNameColumn = GetDataTableColumnByName( attachmentMatrix, "attachmentName" )
+	int attachmentPointColumn = GetDataTableColumnByName( attachmentMatrix, "attachmentPoint" )
+
+	for ( int row = 0; row < rowCount; row++ )
+	{
+		string attachmentRef = GetDataTableString( attachmentMatrix, row, attachmentNameColumn )
+
+		if ( attachmentRef == "" )
+			continue
+
+		array<string> attachPoints = split( GetDataTableString( attachmentMatrix, row, attachmentPointColumn ), WHITESPACE_CHARACTERS )
+		if ( attachPoints.len() == 0 )
+			continue
+
+		foreach ( string weaponRef in weaponRefs )
+		{
+			if ( !(weaponRef in matrixColumnsByWeaponRef) )
+				continue
+
+			int weaponColumn = matrixColumnsByWeaponRef[weaponRef]
+			if ( weaponColumn == -1 )
+				continue
+
+			if ( !GetDataTableBool( attachmentMatrix, row, weaponColumn ) )
+				continue
+
+			foreach ( string attachPoint in attachPoints )
+			{
+				string category = AttachmentsCatalog_GetCategoryForAttachPoint_Internal( attachPoint )
+				if ( category == "" )
+				{
+					Warning( "%s - Could not determine category for attach point: %s (attachment: %s)", FUNC_NAME(), attachPoint, attachmentRef )
+					continue
+				}
+
+				AttachmentsCatalog_CacheAttachmentEntry_Internal( catalogTable, categoriesTable, weaponRef, category, attachmentRef )
+			}
+		}
+	}
+}
+
+void function AttachmentsCatalog_FilterCatalogByEnabledAttachmentRefs_Internal(
+	table<string, table< string, array<string> > > catalogTable,
+	table<string, array<string> > categoriesTable,
+	table<string, bool> enabledAttachmentRefSet
+)
+{
+	
+
+
+
+	table<string, table< string, array<string> > > filteredCatalog = {}
+	table<string, array<string> > filteredCategories = {}
+
+	foreach ( string weaponRef, table< string, array<string> > categoryTable in catalogTable )
+	{
+		foreach ( string category, array<string> attachmentRefs in categoryTable )
+		{
+			foreach ( string attachmentRef in attachmentRefs )
+			{
+				if ( !(attachmentRef in enabledAttachmentRefSet) )
+					continue
+
+				AttachmentsCatalog_CacheAttachmentEntry_Internal( filteredCatalog, filteredCategories, weaponRef, category, attachmentRef )
+			}
+		}
+	}
+
+	catalogTable.clear()
+	categoriesTable.clear()
+
+	foreach ( string weaponRef, table< string, array<string> > categoryTable in filteredCatalog )
+	{
+		catalogTable[weaponRef] <- categoryTable
+	}
+
+	foreach ( string weaponRef, array<string> categories in filteredCategories )
+	{
+		categoriesTable[weaponRef] <- categories
+	}
+}
+
+table<string, bool> function AttachmentsCatalog_GetEnabledAttachmentRefsAcrossVisiblePlaylists_Internal( array<string> visiblePlaylists )
+{
+	table<string, bool> enabledAttachmentRefSet = {}
+
+	foreach ( string playlistName in visiblePlaylists )
+	{
+		table<string, bool> playlistAttachmentRefSet = AttachmentsCatalog_GetEnabledAttachmentRefsForPlaylist_Internal( playlistName )
+		foreach ( string attachmentRef, bool _ in playlistAttachmentRefSet )
+		{
+			enabledAttachmentRefSet[attachmentRef] <- true
+		}
+	}
+
+	return enabledAttachmentRefSet
+}
+
+table<string, bool> function AttachmentsCatalog_GetEnabledAttachmentRefsForPlaylist_Internal( string playlistName )
+{
+	table<string, LootAvailabilityState> attachmentStateByRef = {}
+	table<string, bool> disabledRefSet = {}
+	foreach ( string ref in SURVIVAL_Loot_GetDisabledLootRefsForPlaylist( playlistName ) )
+	{
+		if ( ref == "" )
+			continue
+
+		disabledRefSet[ref] <- true
+	}
+
+	
+	var baseLootTable = GetDataTable( SURVIVAL_LOOT_DATATABLE )
+	AttachmentsCatalog_ProcessLootAvailabilityTableForPlaylist_Internal( playlistName, baseLootTable, attachmentStateByRef )
+
+
+	
+	array<string> overrideTableIDs = GetTrimmedSplitLoweredString( SURVIVAL_Loot_GetLootOverrideTableStringForPlaylist( playlistName ), " " )
+	foreach ( string entry in overrideTableIDs )
+	{
+		asset ornull overrideTableAsset = SURVIVAL_Loot_GetLootOverrideTableAsset( entry )
+		if ( overrideTableAsset == null )
+			continue
+
+		expect asset( overrideTableAsset )
+		var overrideTable = GetDataTable( overrideTableAsset )
+
+		AttachmentsCatalog_ProcessLootAvailabilityTableForPlaylist_Internal( playlistName, overrideTable, attachmentStateByRef )
+	}
+
+	table<string, bool> enabledAttachmentRefSet = {}
+	foreach ( string ref, LootAvailabilityState state in attachmentStateByRef )
+	{
+		if ( !state.isAttachment )
+			continue
+
+		if ( state.isDisabled )
+			continue
+
+		if ( ref in disabledRefSet )
+			continue
+
+		enabledAttachmentRefSet[ref] <- true
+	}
+
+	return enabledAttachmentRefSet
+}
+
+void function AttachmentsCatalog_ProcessLootAvailabilityTableForPlaylist_Internal( string playlistName, var dt, table<string, LootAvailabilityState> attachmentStateByRef )
+{
+	int rowCount = GetDataTableRowCount( dt )
+	int refColumn = GetDataTableColumnByName( dt, "ref" )
+
+	for ( int row = 0; row < rowCount; row++ )
+	{
+		string ref = GetDataTableString( dt, row, refColumn )
+		if ( ref == "" )
+			continue
+
+		LootAvailabilityState state
+		state.isAttachment = SURVIVAL_Loot_GetPlaylistLootTableString( playlistName, ref, dt, row, "type" ) == "attachment"
+		state.isDisabled = SURVIVAL_Loot_GetPlaylistLootTableBool( playlistName, ref, dt, row, "isDisabled" )
+
+		attachmentStateByRef[ref] <- state
+	}
+}
+
+array<string> function AttachmentsCatalog_GetAccessiblePlaylistNames_Internal()
+{
+	array<string> visiblePlaylists = GetVisiblePlaylistNames()
+	array<string> result = []
+
+	foreach ( string playlistName in visiblePlaylists )
+	{
+		if ( playlistName == "" || result.contains( playlistName ) )
+			continue
+
+		if ( !AttachmentsCatalog_IsCoreBRPlaylist_Internal( playlistName ) )
+			continue
+
+		result.append( playlistName )
+	}
+
+	return result
+}
+
+bool function AttachmentsCatalog_IsCoreBRPlaylist_Internal( string playlistName )
+{
+	
+	
+	
+
+	if ( playlistName == "" )
+		return false
+
+	if ( GetPlaylistVarBool( playlistName, "is_limited_mode", false ) )
+		return false
+
+
+		if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_UNHINGED ) )
+			return false
+
+
+	if ( GameModeVariant_IsActiveForPlaylist( playlistName, eGameModeVariants.SURVIVAL_RANKED ) )
+		return true
+
+	string ornull scheduleName = GetScheduleFromPlaylist( playlistName )
+	if ( scheduleName == null )
+		return false
+
+	string schedule = expect string( scheduleName )
+	return schedule == "regular_0" || schedule == "regular_1" || schedule == "regular_2" || schedule == "regular_3"
+}
+
+void function AttachmentsCatalog_CacheAttachmentEntry_Internal(
+	table<string, table< string, array<string> > > catalogTable,
+	table<string, array<string> > categoriesTable,
+	string weaponRef,
+	string category,
+	string attachmentRef
+)
+{
+	
+	if ( !(weaponRef in catalogTable) )
+	{
+		catalogTable[weaponRef] <- {}
+	}
+
+	if ( !(weaponRef in categoriesTable) )
+	{
+		categoriesTable[weaponRef] <- []
+	}
+
+	if ( !(category in catalogTable[weaponRef]) )
+	{
+		catalogTable[weaponRef][category] <- []
+		categoriesTable[weaponRef].append( category )
+	}
+
+	
+	foreach ( string existingAttachmentRef in catalogTable[weaponRef][category] )
+	{
+		if ( existingAttachmentRef == attachmentRef )
+			return
+	}
+
+	catalogTable[weaponRef][category].append( attachmentRef )
+}
+
+string function AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( ItemFlavor weapon )
+{
+	if ( ItemFlavor_GetType( weapon ) != eItemType.loot_main_weapon )
+		return ""
+
+
+		if ( WeaponItemFlavor_HasTakeover( weapon ) )
+		{
+			string takeoverClassname = WeaponItemFlavor_GetTakeoverClassname( weapon )
+			if ( takeoverClassname != "" )
+				return takeoverClassname
+		}
+
+
+	return WeaponItemFlavor_GetClassname( weapon )
+}
+
+int function AttachmentsCatalog_GetAttachmentMatrixColumn_Internal( var attachmentMatrix, string weaponRef, string baseWeaponRef )
+{
+	int weaponColumn = GetDataTableColumnByName( attachmentMatrix, weaponRef )
+	if ( weaponColumn != -1 )
+		return weaponColumn
+
+	
+	if ( baseWeaponRef != "" )
+		return GetDataTableColumnByName( attachmentMatrix, baseWeaponRef )
+
+	return -1
+}
+
+
+string function AttachmentsCatalog_GetCategoryForAttachPoint_Internal( string attachPoint )
+{
+	switch ( attachPoint )
+	{
+		case "hopupMulti_a":
+		case "hopupMulti_b":
+			return "hopup"
+	}
+
+	return attachPoint
+}
+
+
+
+#if DEV
+void function DEV_AttachmentsCatalog_PrintWeaponAttachmentCatalog()
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	array<ItemFlavor> allWeapons = GetAllWeaponItemFlavors( false )
+
+	printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "===== AttachmentsCatalog Weapon Attachment Catalog =====" )
+	printf( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "Total weapon flavors: %i", allWeapons.len() )
+	printf( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "Visible playlists: %i", file.cachedVisiblePlaylists.len() )
+	foreach ( string playlistName in file.cachedVisiblePlaylists )
+	{
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  Playlist:", playlistName )
+	}
+
+	foreach ( ItemFlavor weaponFlavor in allWeapons )
+	{
+		string weaponRef = AttachmentsCatalog_GetWeaponRefByItemFlavor_Internal( weaponFlavor )
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "Weapon:", WeaponItemFlavor_GetClassname( weaponFlavor ), "Resolved:", weaponRef )
+
+		array<string> categories = AttachmentsCatalog_GetWeaponAttachmentCategoriesByItemFlavor( weaponFlavor )
+		if ( categories.len() == 0 )
+		{
+			printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  <no cached attachment categories>" )
+			continue
+		}
+
+		foreach ( string category in categories )
+		{
+			printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  Category:", category )
+			foreach ( string attachmentRef in AttachmentsCatalog_GetWeaponAttachmentCategoryByItemFlavor( weaponFlavor, category ) )
+			{
+				printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "    Attachment:", attachmentRef )
+			}
+		}
+	}
+}
+
+void function DEV_AttachmentsCatalog_PrintAttachmentsForWeaponByRef( string weaponRef )
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "Attachments for weapon ref:", weaponRef )
+
+	array<string> categories = AttachmentsCatalog_GetWeaponAttachmentCategoriesByRef( weaponRef )
+	if ( categories.len() == 0 )
+	{
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  <no cached attachment categories>" )
+		return
+	}
+
+	foreach ( string category in categories )
+	{
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  Category:", category )
+		foreach ( string attachmentRef in AttachmentsCatalog_GetWeaponAttachmentCategoryByRef( weaponRef, category ) )
+		{
+			printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "    Attachment:", attachmentRef )
+		}
+	}
+}
+
+void function DEV_AttachmentsCatalog_PrintAttachmentsForCategoryByWeaponRef( string weaponRef, string category )
+{
+	AttachmentsCatalog_RefreshPlaylistAwareCacheIfNeeded_Internal()
+
+	printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "Attachments for weapon ref:", weaponRef, "category:", category )
+
+	array<string> attachments = AttachmentsCatalog_GetWeaponAttachmentCategoryByRef( weaponRef, category )
+	if ( attachments.len() == 0 )
+	{
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "  <no cached attachments for category>" )
+		return
+	}
+
+	foreach ( string attachmentRef in attachments )
+	{
+		printt( ATTACHMENTS_CATALOG_DEBUG_PREFIX + "    Attachment:", attachmentRef )
+	}
+}
+#endif

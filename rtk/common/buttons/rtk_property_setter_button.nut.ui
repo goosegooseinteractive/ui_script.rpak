@@ -1,0 +1,87 @@
+global function RTKPropertySetterButton_OnInitialize
+
+global struct RTKPropertySetterButton_Properties
+{
+	rtk_behavior 	buttonBehavior
+	rtk_behavior 	targetBehavior
+	string 			propertyName
+	int 			propertyType
+
+	bool 			propertyValueBool
+	int 			propertyValueInt
+	float 			propertyValueFloat
+	vector 			propertyValueFloat3
+	string 			propertyValueString
+	asset 			propertyValueAsset
+
+	
+	
+	rtk_panel 		propertyValuePanel
+	rtk_behavior 	propertyValueBehavior
+}
+
+enum eBehaviorPropertyType
+{
+	BOOL 		= 0,
+	INT 		= 1,
+	FLOAT 		= 2,
+	FLOAT3 		= 3,
+	STRING 		= 4,
+	ASSET 		= 5,
+	
+	
+	PANEL 		= 8,
+	BEHAVIOR 	= 9,
+}
+
+void function RTKPropertySetterButton_OnInitialize( rtk_behavior self )
+{
+	rtk_behavior buttonBehavior = self.PropGetBehavior( "buttonBehavior" )
+	self.AutoSubscribe( buttonBehavior, "OnPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) { RTKPropertySetterButton_OnClick( self ) } )
+}
+
+void function RTKPropertySetterButton_OnClick( rtk_behavior self )
+{
+	rtk_behavior targetBehavior = self.PropGetBehavior( "targetBehavior" )
+	if ( targetBehavior == null )
+		return
+
+	string propertyName = self.PropGetString( "propertyName" )
+	if ( !RTKStruct_HasProperty( targetBehavior.GetProperties(), propertyName ) )
+		return
+
+	int propertyType = self.PropGetInt( "propertyType" )
+	switch ( propertyType )
+	{
+		case eBehaviorPropertyType.BOOL:
+			targetBehavior.PropSetBool( propertyName, self.PropGetBool( "propertyValueBool" ) )
+			break
+		case eBehaviorPropertyType.INT:
+			targetBehavior.PropSetInt( propertyName, self.PropGetInt( "propertyValueInt" ) )
+			break
+		case eBehaviorPropertyType.FLOAT:
+			targetBehavior.PropSetFloat( propertyName, self.PropGetFloat( "propertyValueFloat" ) )
+			break
+		case eBehaviorPropertyType.FLOAT3:
+			targetBehavior.PropSetFloat3( propertyName, self.PropGetFloat3( "propertyValueFloat3" ) )
+			break
+		case eBehaviorPropertyType.STRING:
+			targetBehavior.PropSetString( propertyName, self.PropGetString( "propertyValueString" ) )
+			break
+		case eBehaviorPropertyType.ASSET:
+			targetBehavior.PropSetAssetPath( propertyName, self.PropGetAssetPath( "propertyValueAsset" ) )
+			break
+		
+		
+		
+		
+		
+		
+		case eBehaviorPropertyType.PANEL:
+			targetBehavior.PropSetPanel( propertyName, self.PropGetPanel( "propertyValuePanel" ) )
+			break
+		case eBehaviorPropertyType.BEHAVIOR:
+			targetBehavior.PropSetBehavior( propertyName, self.PropGetBehavior( "propertyValueBehavior" ) )
+			break
+	}
+}

@@ -1,0 +1,473 @@
+global function RTKInbox_OnInitialize
+global function RTKInbox_OnDestroy
+global function RTKMutator_InboxMessageAreaHeight
+global function RTKMutator_ShowInboxDivider
+global function RTKMutator_PreviewAreaHeaderText
+
+global struct RTKInbox_Properties
+{
+	rtk_behavior messages
+	rtk_behavior items
+	rtk_behavior previewGiftButton
+	int previewIndex
+}
+
+global struct RTKInboxMessageItemModel
+{
+	int guid
+	int quality
+	int quantity
+	asset icon
+	bool isOwned
+}
+
+global struct RTKInboxMessageModel
+{
+	int trackingID
+	string title
+	string message
+	string date
+	int daysRemaining
+	int type
+	asset icon
+	array<RTKInboxMessageItemModel> items
+
+	string deeplink
+	string deeplinkType
+	string deeplinkText
+
+	bool isUrgent
+	bool isRead
+	bool isSelected
+}
+
+global struct RTKInboxScreenModel
+{
+	array<RTKInboxMessageModel> messages
+	RTKInboxMessageModel& preview
+	int unreadMessages
+	bool isEmpty
+	bool isFull
+}
+
+struct PrivateData
+{
+	string modelPath = ""
+	rtk_struct screenModel = null
+	int previewIndex = 0
+	int focusIndex = -1
+}
+
+const string INBOX_PANEL = "InboxPanel"
+
+void function RTKInbox_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	p.modelPath = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, "inbox" )
+	p.screenModel = RTKDataModelType_CreateStruct( RTK_MODELTYPE_MENUS, "inbox", "RTKInboxScreenModel" )
+	self.GetPanel().SetBindingRootPath( p.modelPath )
+
+	RTKInbox_SetDataModel()
+
+	RTKStruct_AddPropertyListener( self.GetProperties(), "previewIndex", void function ( rtk_struct properties, string propName, int propType, var propValue ) : ( self ) {
+		RTKInbox_SetPreview( self )
+	} )
+
+	RTKInbox_SetPreview( self )
+	RTKInbox_SetMessageButtons( self )
+	RTKInbox_SetGiftButtons( self )
+	RTKInbox_SetPreviewGiftButtons( self )
+
+	RTKPlayInboxButton_SetHasOpenedInboxScreen()
+
+	AddCallback_OnInboxMessageUpdated( RTKInbox_OnMessageUpdated )
+	AddCallback_OnInboxMessageReceived( RTKInbox_OnMessageUpdated )
+
+	var panel = GetPanel( INBOX_PANEL )
+	ClearPanelFooterOptions( panel )
+	AddPanelFooterOption( panel, LEFT, BUTTON_BACK, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK", RTKInbox_NavigateBack )
+	AddPanelFooterOption( panel, LEFT, BUTTON_Y, true, "#BUTTON_MARK_ALL_AS_READ_GAMEPAD", "#BUTTON_MARK_ALL_AS_READ_MOUSE", RTKInbox_MarkAllItemsAsRead, bool function () : ( self ) { return RTKInbox_CanMarkAllItemsAsRead( self ) } )
+	AddPanelFooterOption( panel, LEFT, BUTTON_X, false, "#X_BUTTON_DELETE", "#X_BUTTON_DELETE", null, bool function () : ( self ) { return RTKInbox_CanDeleteItem( self ) } )
+}
+
+void function RTKInbox_OnDestroy( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, p.modelPath )
+
+	var panel = GetPanel( INBOX_PANEL )
+	ClearPanelFooterOptions( panel )
+
+	UpdateInboxPersistence()
+
+	RemoveCallback_OnInboxMessageUpdated( RTKInbox_OnMessageUpdated )
+	RemoveCallback_OnInboxMessageReceived( RTKInbox_OnMessageUpdated )
+}
+
+int function RTKInbox_GetRemainingDaysOfMessage( int timestamp )
+{
+	int expiredDay = SecondsToDHMS(timestamp + ( 30 * SECONDS_PER_DAY )).days
+	int today = SecondsToDHMS( GetUnixTimestamp() ).days
+
+	return expiredDay - today
+
+}
+
+array<RTKInboxMessageItemModel> function RTKInbox_GetInboxMessageItemModel( array<int> itemIndices, array<int> quantities )
+{
+	array<RTKInboxMessageItemModel> content = []
+	foreach ( int index, int itemIndex in itemIndices )
+	{
+		if ( !IsValidItemFlavorGRXIndex( itemIndex ) )
+			continue
+
+		ItemFlavor itemFlav = GetItemFlavorByGRXIndex( itemIndex )
+
+		RTKInboxMessageItemModel messageItemModel
+		messageItemModel.guid = itemFlav.guid
+		messageItemModel.icon = CustomizeMenu_GetGenericRewardButtonImage( itemFlav )
+		messageItemModel.quality = ItemFlavor_GetQuality( itemFlav )
+		messageItemModel.quantity = quantities[ index ]
+		content.append( messageItemModel )
+	}
+
+	return content
+}
+
+asset function RTKInbox_GetMessageTypeIcon( GRXInboxMessage message )
+{
+	
+	
+	
+	if ( message.container.itemIndices.len() > 0 )
+		return $"ui_image/rui/menu/lobby/inbox_item_icon.rpak"
+	else if ( message.isUrgent )
+		return $"ui_image/rui/menu/lobby/inbox_urgent_icon.rpak"
+
+	return $""
+}
+
+RTKInboxMessageModel function RTKInbox_GetInboxMessageData( GRXInboxMessage inboxMessage )
+{
+	RTKInboxMessageModel messageModel
+	messageModel.trackingID = inboxMessage.trackingId
+	messageModel.type = inboxMessage.type
+	messageModel.isUrgent = inboxMessage.isUrgent
+	messageModel.icon = RTKInbox_GetMessageTypeIcon( inboxMessage )
+	messageModel.title = inboxMessage.headerText
+	messageModel.message = Localize( inboxMessage.messageText )
+	messageModel.isRead = inboxMessage.hasRead
+	messageModel.date = GetHumanReadableDateLocalizedString( inboxMessage.timestamp, GetUTCOffsetHours(), true, true )
+	messageModel.daysRemaining = RTKInbox_GetRemainingDaysOfMessage( inboxMessage.timestamp )
+	messageModel.deeplink = inboxMessage.deeplink
+	messageModel.deeplinkType = inboxMessage.deeplinkType
+	messageModel.deeplinkText = ViewButtonTextFromLinkType( inboxMessage.deeplink )
+	messageModel.items = RTKInbox_GetInboxMessageItemModel( inboxMessage.container.itemIndices, inboxMessage.container.itemCounts )
+	messageModel.items.sort( int function( RTKInboxMessageItemModel a, RTKInboxMessageItemModel b ) {
+		if ( a.quality < b.quality )
+			return 1
+		else if ( a.quality > b.quality )
+			return -1
+
+		return 0
+	} )
+
+	return messageModel
+}
+
+void function RTKInbox_SetDataModel()
+{
+	rtk_struct ornull screenModel = RTKDataModelType_GetStruct( RTK_MODELTYPE_MENUS, "inbox" )
+
+	if ( screenModel == null )
+		return
+
+	expect rtk_struct( screenModel )
+
+	rtk_array messages = RTKStruct_GetArray( screenModel, "messages" )
+	RTKArray_Clear( messages )
+
+	array<GRXInboxMessage> inboxMessages = GetInboxMessages()
+	int unreadMessagesCount = 0
+	foreach ( GRXInboxMessage inboxMessage in inboxMessages )
+	{
+		rtk_struct messageStruct = RTKArray_PushNewStruct( messages )
+		RTKInboxMessageModel inboxMessageModel = RTKInbox_GetInboxMessageData( inboxMessage )
+
+		if ( inboxMessageModel.isRead == false )
+			unreadMessagesCount++
+
+		RTKStruct_SetValue( messageStruct, inboxMessageModel )
+
+	}
+
+	RTKStruct_SetBool( screenModel, "isFull", inboxMessages.len() >= INBOX_MAX_MESSAGE_COUNT )
+	RTKStruct_SetBool( screenModel, "isEmpty", inboxMessages.len() == 0 )
+	RTKStruct_SetInt( screenModel, "unreadMessages", unreadMessagesCount )
+}
+
+void function RTKInbox_SetMessageButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull messages = self.PropGetBehavior( "messages" )
+	if ( messages == null )
+		return
+
+	expect rtk_behavior( messages )
+
+	self.AutoSubscribe( messages, "onUpdatedList", function () : ( self, p, messages ) {
+		array<rtk_panel> listItems = messages.GetPanel().GetChildren()
+
+		self.PropSetInt( "previewIndex", ClampInt( p.previewIndex, 0, listItems.len() - 1 ) )
+
+		foreach( int index, item in listItems )
+		{
+			rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+
+			self.ClearAutoSubscribe( button, "onPressed" )
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, p, index ) {
+				p.previewIndex = index
+				self.PropSetInt( "previewIndex", p.previewIndex )
+				switch ( keycode )
+				{
+					case MOUSE_RIGHT:
+					case BUTTON_X:
+						RTKInbox_DeleteItem( self, index )
+						break
+				}
+
+				RTKInbox_SetPreview( self )
+			})
+
+			self.ClearAutoSubscribe( button, "onHighlightedOrFocused" )
+			self.AutoSubscribe( button, "onHighlightedOrFocused", function( rtk_behavior button, int prevState ) : ( self, p, index )
+			{
+				p.focusIndex = index
+			})
+
+			self.ClearAutoSubscribe( button, "onIdle" )
+			self.AutoSubscribe( button, "onIdle", function( rtk_behavior button, int prevState ) : ( self, p )
+			{
+				p.focusIndex = -1
+			})
+		}
+	})
+}
+
+void function RTKInbox_SetGiftButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull items = self.PropGetBehavior( "items" )
+	if ( items == null )
+		return
+
+	expect rtk_behavior( items )
+
+	self.AutoSubscribe( items, "onUpdatedList", function () : ( self, p, items ) {
+		array<rtk_panel> listItems = items.GetPanel().GetChildren()
+
+		foreach( int index, item in listItems )
+		{
+			rtk_behavior button = item.FindBehaviorByTypeName( "Button" )
+			self.ClearAutoSubscribe( button, "onPressed" )
+			self.AutoSubscribe( button, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, p, index ) {
+				RTKInbox_PreviewItems( self )
+			})
+		}
+	})
+}
+
+void function RTKInbox_SetPreviewGiftButtons( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_behavior ornull previewGiftButton = self.PropGetBehavior( "previewGiftButton" )
+	if ( previewGiftButton == null )
+		return
+
+	expect rtk_behavior( previewGiftButton )
+	self.AutoSubscribe( previewGiftButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, p ) {
+		RTKInbox_PreviewItems( self )
+	})
+}
+
+void function RTKInbox_SetPreview( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_array messages = RTKStruct_GetArray( p.screenModel, "messages" )
+
+	int messagesCount = RTKArray_GetCount( messages )
+	if ( messagesCount <= 0 || p.previewIndex >= messagesCount )
+		return
+
+	RTKInbox_MarkItemAsRead( self, p.previewIndex )
+
+	
+	for ( int i = 0; i < messagesCount; i++ )
+	{
+		rtk_struct messageItem = RTKArray_GetStruct( messages, i )
+		RTKStruct_SetBool( messageItem, "isSelected", i == p.previewIndex )
+	}
+
+	
+	rtk_struct previewIndex = RTKArray_GetStruct( messages, p.previewIndex )
+	RTKStruct_SetStruct( p.screenModel, "preview", previewIndex )
+}
+
+void function RTKInbox_PreviewItems( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_array messages = RTKStruct_GetArray( p.screenModel, "messages" )
+	rtk_array items = RTKStruct_GetArray( RTKArray_GetStruct( messages, p.previewIndex ), "items" )
+
+	array<RewardItemFlavor> rewards = []
+	for ( int i = 0; i < RTKArray_GetCount( items ); i++)
+	{
+		rtk_struct item = RTKArray_GetStruct( items, i )
+		int guid = RTKStruct_GetInt( item, "guid" )
+		int quantity = RTKStruct_GetInt( item, "quantity" )
+
+		if ( !IsValidItemFlavorGUID( guid ) )
+			continue
+
+		RewardItemFlavor reward
+		reward.reward = GetItemFlavorByGUID( guid )
+		reward.quantity = quantity
+
+		rewards.append( reward )
+	}
+
+	CloseActiveMenu()
+	OpenRewardSummaryMenu( rewards, void function() : () {
+		CloseActiveMenu()
+		AdvanceMenu( GetMenu( "PromoDialogUM" ) )
+		ReturnToInbox()
+	} )
+}
+
+bool function RTKInbox_CanDeleteItem( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	return p.focusIndex != -1
+}
+
+void function RTKInbox_DeleteItem( rtk_behavior self, int index )
+{
+	PrivateData p
+	self.Private( p )
+
+	if ( index != p.focusIndex )
+		return
+
+	rtk_array messages = RTKStruct_GetArray( p.screenModel, "messages" )
+	rtk_struct message = RTKArray_GetStruct( messages, index )
+	int messagesCount = RTKArray_GetCount( messages )
+
+	ConfirmDialogData dialogData
+	dialogData.headerText = "#INBOX_DELETE_MESSAGE_TITLE"
+	dialogData.yesText = ["#A_BUTTON_DELETE", "#DELETE"]
+	dialogData.messageText = Localize( "#INBOX_DELETE_MESSAGE_DESC", RTKStruct_GetString( message, "title" ) )
+	dialogData.resultCallback = void function( int dialogResult ) : ( self, p, message, messagesCount ) {
+		if ( dialogResult == eDialogResult.YES )
+		{
+		    GRXInboxMessage ornull grxInboxMessage = GetInboxMessageFromTrackingID( RTKStruct_GetInt( message, "trackingID" ) )
+
+			if ( grxInboxMessage != null )
+			{
+				p.previewIndex = ClampInt(p.previewIndex - 1, 0, messagesCount - 1 )
+				expect GRXInboxMessage( grxInboxMessage )
+				RemoveInboxMessage( grxInboxMessage )
+			}
+		}
+	}
+
+	OpenConfirmDialogFromData( dialogData )
+}
+
+void function RTKInbox_MarkItemAsRead( rtk_behavior self, int index )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_array messages = RTKStruct_GetArray( p.screenModel, "messages" )
+	rtk_struct message = RTKArray_GetStruct( messages, index )
+
+	if ( RTKStruct_GetBool( message, "isRead" ) == true )
+		return
+
+	GRXInboxMessage ornull grxInboxMessage = GetInboxMessageFromTrackingID( RTKStruct_GetInt( message, "trackingID" ) )
+
+	if ( grxInboxMessage != null )
+	{
+		expect GRXInboxMessage( grxInboxMessage )
+		MarkInboxMessageAsRead( grxInboxMessage )
+	}
+}
+
+bool function RTKInbox_CanMarkAllItemsAsRead( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_array messages = RTKStruct_GetArray( p.screenModel, "messages" )
+	for ( int i = 0; i < RTKArray_GetCount( messages ); i++ )
+	{
+		rtk_struct message = RTKArray_GetStruct( messages, i )
+		if ( RTKStruct_GetBool( message, "isRead" ) == false )
+			return true
+	}
+
+	return false
+}
+
+void function RTKInbox_MarkAllItemsAsRead( var unused )
+{
+	MarkInboxAllMessagesAsRead()
+}
+
+void function RTKInbox_OnMessageUpdated()
+{
+	RTKInbox_SetDataModel()
+	UpdateInboxTab()
+}
+
+void function RTKInbox_NavigateBack( var unused )
+{
+	UICodeCallback_NavigateBack()
+}
+
+int function RTKMutator_InboxMessageAreaHeight( int itemsCount, string deeplink )
+{
+	if ( itemsCount == 0 )
+		return deeplink.len() == 0 ? 420 : 340
+
+	if ( deeplink.len() == 0 )
+		return 286
+
+	return 224
+}
+
+bool function RTKMutator_ShowInboxDivider( int itemsCount, string deeplink )
+{
+	return itemsCount > 0 || deeplink.len() > 0
+}
+
+string function RTKMutator_PreviewAreaHeaderText( int daysRemaining )
+{
+	return Localize( daysRemaining > 1 ? "#INBOX_EXPIRES_N_DAYS_PLURAL" : "#INBOX_EXPIRES_N_DAYS", daysRemaining )
+}

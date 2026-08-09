@@ -1,0 +1,1275 @@
+global function InitRTKWeaponPlaygroundPanel
+
+global function RTKWeaponPlayground_OnInitialize
+global function RTKWeaponPlayground_OnDestroy
+
+
+global struct RTKWeaponPlayground_Properties
+{
+	rtk_panel weaponAttachmentPanel
+	rtk_behavior resetButton
+
+	rtk_panel akimboSelectionList
+	rtk_behavior akimboContainerButton
+	rtk_behavior akimboEmptyButton
+	rtk_behavior akimboOnButton
+
+	rtk_panel energizedSelectionList
+	rtk_behavior energizedContainerButton
+	rtk_behavior energizedOffButton
+	rtk_behavior energizedOnButton
+}
+
+global struct RTKWeaponPlaygroundAttachmentData
+{
+	string name
+	string description
+	string subTitle
+	string actionText
+
+	asset icon
+	asset contextIcon
+
+	int tier 
+	int buttonTier 
+
+	string ref
+}
+
+global struct RTKWeaponPlaygroundStatTooltip
+{
+	string name
+	string description
+}
+
+global struct RTKWeaponPlaygroundMainStatData
+{
+	string name
+	string description
+	float previousVal
+	float value
+
+	bool isHighlighted
+	bool showDecimal
+
+	RTKWeaponPlaygroundStatTooltip& tooltip
+}
+
+global struct RTKWeaponPlaygroundSecondaryStatData
+{
+	string name
+	string unitShortLocKey
+
+	float previousVal
+	float linearPreviousVal
+
+	float newVal
+	float linearNewVal
+	bool showDecimal
+
+	bool isNegative
+
+	RTKWeaponPlaygroundStatTooltip& tooltip
+}
+
+global struct RTKWeaponPlaygroundExtraStatData
+{
+	string name
+	bool isStatImproved
+}
+
+global struct RTKWeaponPlaygroundAmmoTypeData
+{
+	string name
+	string description
+
+	int ammoType
+	int secondaryAmmoType
+	bool isCrateWeapon
+}
+
+global struct RTKWeaponPlaygroundAttachmentCategoryData
+{
+	array< RTKWeaponPlaygroundAttachmentData > attachments
+	RTKWeaponPlaygroundAttachmentData& activeAttachment
+	RTKWeaponPlaygroundAttachmentData& equippedAttachment
+
+	string ref
+}
+
+global struct RTKWeaponPlaygroundFireModeData
+{
+	string fireModes
+	bool hasToggleableFireMode
+}
+
+global struct RTKWeaponPlaygroundAkimboButtonData
+{
+	string name
+	string subTitle
+	string description
+
+	asset icon
+}
+
+global struct RTKWeaponPlaygroundAkimboData
+{
+	bool hasAkimbo
+
+	RTKWeaponPlaygroundAkimboButtonData& akimboOn
+	RTKWeaponPlaygroundAkimboButtonData& akimboOff
+	RTKWeaponPlaygroundAkimboButtonData& activeData
+}
+
+global struct RTKWeaponPlaygroundEnergizedButtonData
+{
+	string name
+	string subTitle
+	string description
+
+	asset icon
+}
+
+global struct RTKWeaponPlaygroundEnergizedData
+{
+	bool hasEnergized
+	bool isEnergizedActive
+	bool hasSelection = true 
+
+	RTKWeaponPlaygroundEnergizedButtonData& energizedOn
+	RTKWeaponPlaygroundEnergizedButtonData& energizedOff
+	RTKWeaponPlaygroundEnergizedButtonData& activeData
+}
+
+global struct RTKWeaponPlaygroundData
+{
+	string weaponName
+	array<string> tags
+	int optimalRange
+
+	RTKWeaponPlaygroundFireModeData& fireModeData
+	RTKWeaponPlaygroundAmmoTypeData& ammoTypeData
+
+	array< RTKWeaponPlaygroundAttachmentCategoryData > attachmentCategories
+	RTKWeaponPlaygroundAkimboData& akimboData
+	RTKWeaponPlaygroundEnergizedData& energizedData
+	
+	array< RTKWeaponPlaygroundMainStatData > mainStatsData
+	array< RTKWeaponPlaygroundSecondaryStatData > secondaryStatsData
+
+	array< RTKWeaponPlaygroundExtraStatData > extraStatsData
+}
+
+struct PrivateData
+{
+	ItemFlavor& activeWeapon
+	ItemFlavor& activeWeaponSkin
+
+	table< string, array<string> > attachmentCatalogWeaponEntry
+
+	bool isAkimboModActive
+	bool isEnergizedModActive
+}
+
+
+const string WEAPON_PLAYGROUND_PANEL = "WeaponPlaygroundPanel"
+const string WEAPON_PLAYGROUND_ROOT_PATH = "weaponPlayground"
+
+const int MAX_NUMBER_OF_TAGS = 3
+const string WEAPON_TAG_KEY_BASE = "weapon_tag_"
+const string CORRUPTED_ATTACHMENT_REF_SUBSTRING = "corrupted_"
+
+const array<string> MAIN_DISPLAY_STATS = [ "damage_near_value", "damage_headshot", "ammo_clip_size", "fire_rate" ]
+const array<string> SECONDARY_DISPLAY_STATS = [ "reloadempty_time", "stat_accuracy", "stat_hipfire", "stat_handling" ]
+
+const array<string> DECIMAL_SHOWING_STATS = [ "fire_rate", "reloadempty_time" ]
+const array<string> HIGHLIGHTED_STATS = [ "damage_headshot" ]
+
+const string AKIMBO_ACTIVE_MOD = "akimbo_active"
+const string ENERGIZED_ACTIVE_MOD = "energized"
+
+const string ATTACHMENT_POINT_SIGHT_REF = "sight"
+const string ATTACHMENT_POINT_HOPUP_REF = "hopup"
+
+const array<string> WEAPON_ATTACHMENT_CATEGORIES = ["barrel", "mag", "sight", "grip", "hopup"]
+
+
+void function InitRTKWeaponPlaygroundPanel( var panel )
+{
+	AddPanelEventHandler( panel, eUIEvent.PANEL_SHOW, WeaponPlaygroundPanel_OnShow )
+	AddPanelEventHandler( panel, eUIEvent.PANEL_HIDE, WeaponPlaygroundPanel_OnHide )
+}
+
+void function WeaponPlaygroundPanel_OnShow( var panel )
+{
+	var parentMenu = Hud_GetParent( panel )
+
+	Hud_SetVisible( Hud_GetChild( parentMenu, "WeaponMasteryPanelModelRotateMouseCapture" ), true )
+}
+
+
+void function WeaponPlaygroundPanel_OnHide( var panel )
+{
+	var parentMenu = Hud_GetParent( panel )
+	Hud_SetVisible( Hud_GetChild( parentMenu, "WeaponMasteryPanelModelRotateMouseCapture" ), false )
+
+	ClearPanelFooterOptions( panel )
+}
+
+
+void function RTKWeaponPlayground_OnInitialize( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	UI_SetPresentationType( ePresentationType.WEAPON_OVERVIEW ) 
+
+	ItemFlavor ornull weaponOrNull = CategoryWeaponPanel_GetActiveWeapon()
+	if ( weaponOrNull == null )
+		return
+
+	p.activeWeapon = expect ItemFlavor( weaponOrNull )
+
+	ItemFlavor ornull weaponSkinOrNull
+	if ( LoadoutSlot_IsReady( LocalClientEHI(), Loadout_WeaponSkin( p.activeWeapon ) ) )
+	{
+		weaponSkinOrNull = LoadoutSlot_GetItemFlavor( LocalClientEHI(), Loadout_WeaponSkin( p.activeWeapon ) )
+	}
+
+	if ( weaponSkinOrNull == null )
+		return
+
+	p.activeWeaponSkin = expect ItemFlavor( weaponSkinOrNull )
+	p.attachmentCatalogWeaponEntry = AttachmentsCatalog_GetWeaponAttachmentCatalogByItemFlavor( p.activeWeapon )
+
+	RTKWeaponPlayground_FilterAttachmentEntries( p.attachmentCatalogWeaponEntry )
+	RTKWeaponPlayground_SortAttachmentsEntries( p.attachmentCatalogWeaponEntry )
+
+	string pathToModel = RTKDataModelType_GetDataPath( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH )
+	self.GetPanel().SetBindingRootPath( pathToModel )
+
+	
+	RTKWeaponPlayground_UpdateWeaponInfoData( self )
+
+	
+	RTKWeaponPlayground_SetResetButton( self )
+	RTKWeaponPlayground_SetAttachmentButtons( self )
+	RTKWeaponPlayground_SetAkimboButtons( self )
+	RTKWeaponPlayground_SetEnergizedButtons( self )
+	RTKWeaponPlayground_SetFooterOptions( self )
+
+	
+	RTKWeaponPlayground_InitActiveAttachments()
+
+	RTKWeaponPlayground_UpdateStats( self )
+	RTKWeaponPlayground_UpdateWeaponPreview( self, 1 )
+}
+
+void function RTKWeaponPlayground_OnDestroy( rtk_behavior self )
+{
+	RTKDataModelType_DestroyStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH )
+	RunClientScript( "UIToClient_OverviewWeaponStopReactiveEffect" )
+}
+
+
+void function RTKWeaponPlayground_SetFooterOptions( rtk_behavior self )
+{
+	var panel = Hud_GetChild( CategoryWeaponPanel_GetActivePanel(), WEAPON_PLAYGROUND_PANEL )
+
+	AddPanelFooterOption( panel, LEFT, BUTTON_B, true, "#B_BUTTON_BACK", "#B_BUTTON_BACK" )
+	AddPanelFooterOption( panel, LEFT, -1, true, "#BACKGROUND_FOOTER_BUTTON", "#BACKGROUND_FOOTER_BUTTON",
+	 void function( var panel ) : ( self ) {
+	 	RTKWeaponPlayground_OnMoreInfoClicked( self ) 
+	}, bool function() : ( self ) {
+		 return RTKWeaponPlayground_ShouldShowLoreButton( self ) 
+		} )
+
+	UpdateFooterOptions()
+}
+
+bool function RTKWeaponPlayground_ShouldShowLoreButton( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	asset ornull lore = Loadout_GetLore( p.activeWeapon )
+	if ( lore == null )
+		return false
+
+	expect asset( lore )
+	array< LoreBioModel > weaponBio = Lore_GetBio( lore )
+
+	return weaponBio.len() > 0
+}
+
+void function RTKWeaponPlayground_OnMoreInfoClicked( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+
+	asset ornull lore = Loadout_GetLore( p.activeWeapon )
+	if ( lore == null )
+		return
+
+	expect asset( lore )
+	array<LoreBioModel> weaponBio = Lore_GetBio( lore )
+
+	if ( weaponBio.len() <= 0 )
+		return
+
+	ConfirmDialogData dialogData
+	dialogData.headerText = "#WEAPON_PLAYGROUND_LORE_DIALOG_HEADER"
+	dialogData.messageText = Localize( weaponBio[0].line )
+	dialogData.contentHeight = 650 
+	OpenOKDialogFromData( dialogData )
+}
+
+
+void function RTKWeaponPlayground_SetResetButton( rtk_behavior self )
+{
+	rtk_behavior resetButton = self.PropGetBehavior( "resetButton" )
+
+	self.AutoSubscribe( resetButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self ) {
+		RTKWeaponPlayground_InitActiveAttachments()
+
+		RTKWeaponPlayground_SetAkimboState( self, false )
+		RTKWeaponPlayground_ToggleAkimboSelector( self, false )
+
+		RTKWeaponPlayground_SetEnergizedState( self, false )
+		RTKWeaponPlayground_ToggleEnergizedSelector( self, false )
+		RTKWeaponPlayground_ToggleAllCategoryAttachmentSelectors( self, false, [] )
+
+		RTKWeaponPlayground_UpdateStats( self )
+	} )
+}
+
+void function RTKWeaponPlayground_SetAttachmentButtons( rtk_behavior self )
+{
+	rtk_panel attachmentPanel = self.PropGetPanel( "weaponAttachmentPanel" )
+
+	self.AutoSubscribe( attachmentPanel, "onChildAdded", function ( rtk_panel newCategoryPanel, int newCategoryIndex ) : ( self ) {
+
+		
+		rtk_panel categoryButtonPanel = newCategoryPanel.FindChildByName( "CategoryButton" )
+		rtk_behavior categoryButton = categoryButtonPanel.FindBehaviorByTypeName( "Button" )
+
+		rtk_panel attachmentListScrollPanel = newCategoryPanel.FindChildByName( "AttachmentScrollList" )
+
+		self.AutoSubscribe( categoryButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newCategoryIndex, newCategoryPanel, attachmentListScrollPanel ) {
+			RTKWeaponPlayground_ToggleAllCategoryAttachmentSelectors( self, false, [ newCategoryPanel ] )
+
+			bool isOpen = attachmentListScrollPanel.IsVisible()
+			attachmentListScrollPanel.SetActiveAndVisible( !isOpen )
+			EmitUISound( "ui_menu_accept" )
+		} )
+
+		rtk_panel attachmentListPanel = attachmentListScrollPanel.FindChildByName( "View" ).FindChildByName( "Content" ).FindChildByName( "AttachmentList" )
+
+		self.AutoSubscribe( attachmentListPanel, "onChildAdded", function ( rtk_panel newAttachmentPanel, int newAttachmentIndex ) : ( self, newCategoryIndex, attachmentListScrollPanel ) {
+
+			rtk_behavior attachmentButton = newAttachmentPanel.FindBehaviorByTypeName( "Button" )
+
+			self.AutoSubscribe( attachmentButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, newAttachmentIndex, newCategoryIndex, attachmentListScrollPanel ) {
+				rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+				rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+				rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, newCategoryIndex )
+				rtk_array attachments = RTKStruct_GetArray( categoryData, "attachments" )
+
+				rtk_struct newActiveAttachment = RTKArray_GetStruct( attachments, newAttachmentIndex )
+				rtk_struct previousActiveAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+
+				string newAttachmentRef = RTKStruct_GetString( newActiveAttachment, "ref" )
+				string previousAttachmentRef = RTKStruct_GetString( previousActiveAttachment, "ref" )
+
+				if ( keycode == MOUSE_LEFT || keycode == BUTTON_A ) 
+				{
+					if ( !RTKWeaponPlayground_CanEquipAttachment( newAttachmentRef, previousAttachmentRef ) )
+					{
+						EmitUISound( "menu_deny" )
+						return
+					}
+
+					RTKWeaponPlayground_OnAttachmentButtonClick( self, newAttachmentIndex, newCategoryIndex )
+				}
+				else if ( keycode == MOUSE_RIGHT || keycode == BUTTON_X ) 
+				{
+					RTKWeaponPlayground_OnAttachmentButtonClick( self, newAttachmentIndex, newCategoryIndex )
+				}
+			} )
+
+			self.AutoSubscribe( attachmentButton, "onHighlighted", function( rtk_behavior button, int prevState ) : ( self, newAttachmentIndex, newCategoryIndex ) {
+				RTKWeaponPlayground_UpdateWeaponAttachmentSelection( self, newCategoryIndex, newAttachmentIndex )
+				RTKWeaponPlayground_UpdateStats( self )
+			} )
+
+			
+			self.AutoSubscribe( attachmentButton, "onIdle", function( rtk_behavior button, int prevState ) : ( self, newCategoryIndex ) {
+				rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+
+				rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+				rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, newCategoryIndex )
+				rtk_struct previousActiveAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+				RTKStruct_SetStruct( categoryData, "activeAttachment", previousActiveAttachment )
+
+				RTKWeaponPlayground_UpdateStats( self )
+			} )
+
+		} )
+	} ) 
+}
+
+void function RTKWeaponPlayground_SetAkimboButtons( rtk_behavior self )
+{
+	
+	rtk_behavior akimboContainerButton = self.PropGetBehavior( "akimboContainerButton" )
+	rtk_behavior akimboEmptyButton = self.PropGetBehavior( "akimboEmptyButton" )
+	rtk_behavior akimboOnButton = self.PropGetBehavior( "akimboOnButton" )
+	rtk_panel akimboSelectionList = self.PropGetPanel( "akimboSelectionList" )
+
+	self.AutoSubscribe( akimboContainerButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, akimboSelectionList ) {
+		akimboSelectionList.SetActiveAndVisible( !akimboSelectionList.IsVisible() )
+	} )
+
+	self.AutoSubscribe( akimboEmptyButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, akimboSelectionList ) {
+		RTKWeaponPlayground_SetAkimboState( self, false )
+		akimboSelectionList.SetActiveAndVisible( false )
+		RTKWeaponPlayground_UpdateStats( self )
+	} )
+
+	self.AutoSubscribe( akimboOnButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, akimboSelectionList ) {
+		RTKWeaponPlayground_SetAkimboState( self, true )
+		akimboSelectionList.SetActiveAndVisible( false )
+		RTKWeaponPlayground_UpdateStats( self )
+	} )
+}
+
+void function RTKWeaponPlayground_ToggleAkimboSelector( rtk_behavior self, bool setOpen )
+{
+	rtk_panel akimboSelectionList = self.PropGetPanel( "akimboSelectionList" )
+	akimboSelectionList.SetActiveAndVisible( setOpen )
+}
+
+void function RTKWeaponPlayground_SetEnergizedButtons( rtk_behavior self )
+{
+	rtk_behavior energizedContainerButton = self.PropGetBehavior( "energizedContainerButton" )
+	rtk_behavior energizedOffButton = self.PropGetBehavior( "energizedOffButton" )
+	rtk_behavior energizedOnButton = self.PropGetBehavior( "energizedOnButton" )
+	rtk_panel energizedSelectionList = self.PropGetPanel( "energizedSelectionList" )
+
+	self.AutoSubscribe( energizedContainerButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, energizedSelectionList ) {
+		bool isOpen = energizedSelectionList.IsVisible()
+		energizedSelectionList.SetActiveAndVisible( !isOpen )
+	} )
+
+	self.AutoSubscribe( energizedOffButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, energizedSelectionList ) {
+		RTKWeaponPlayground_SetEnergizedState( self, false )
+		energizedSelectionList.SetActiveAndVisible( false )
+		RTKWeaponPlayground_UpdateStats( self )
+	} )
+
+	self.AutoSubscribe( energizedOnButton, "onPressed", function( rtk_behavior button, int keycode, int prevState ) : ( self, energizedSelectionList ) {
+		RTKWeaponPlayground_SetEnergizedState( self, true )
+		energizedSelectionList.SetActiveAndVisible( false )
+		RTKWeaponPlayground_UpdateStats( self )
+	} )
+}
+
+void function RTKWeaponPlayground_ToggleEnergizedSelector( rtk_behavior self, bool setOpen )
+{
+	rtk_panel energizedSelectionList = self.PropGetPanel( "energizedSelectionList" )
+	energizedSelectionList.SetActiveAndVisible( setOpen )
+}
+
+void function RTKWeaponPlayground_ToggleAllCategoryAttachmentSelectors( rtk_behavior self, bool setOpen, array<rtk_panel> excludedPanels )
+{
+	rtk_panel attachmentPanel = self.PropGetPanel( "weaponAttachmentPanel" )
+	array<rtk_panel> categoryPanels = attachmentPanel.GetChildren()
+
+	foreach ( rtk_panel categoryPanel in categoryPanels )
+	{
+		if ( excludedPanels.contains( categoryPanel ) )
+			continue
+
+		rtk_panel attachmentListScrollPanel = categoryPanel.FindChildByName( "AttachmentScrollList" )
+
+		
+		attachmentListScrollPanel.SetActiveAndVisible( setOpen )
+		
+		attachmentListScrollPanel.SetActive( true )
+	}
+}
+
+
+void function RTKWeaponPlayground_OnAttachmentButtonClick( rtk_behavior self, int newAttachmentIndex, int newCategoryIndex )
+{
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+	rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, newCategoryIndex )
+	rtk_array attachments = RTKStruct_GetArray( categoryData, "attachments" )
+
+	rtk_struct newActiveAttachment = RTKArray_GetStruct( attachments, newAttachmentIndex )
+	rtk_struct previousActiveAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+
+	RTKWeaponPlayground_UpdateWeaponAttachmentEquipped( self, categoryData, attachmentCategories, newActiveAttachment, previousActiveAttachment )
+	RTKWeaponPlayground_UpdateStats( self )
+
+	RTKWeaponPlayground_ToggleAllCategoryAttachmentSelectors( self, false, [] )
+	EmitUISound( "ui_menu_accept" )
+}
+
+void function RTKWeaponPlayground_UpdateWeaponAttachmentSelection( rtk_behavior self, int newCategoryIndex, int newAttachmentIndex )
+{
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+	rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, newCategoryIndex )
+	rtk_array attachments = RTKStruct_GetArray( categoryData, "attachments" )
+
+	rtk_struct newActiveAttachment = RTKArray_GetStruct( attachments, newAttachmentIndex )
+	rtk_struct previousActiveAttachment = RTKStruct_GetStruct( categoryData, "activeAttachment" )
+
+	string newAttachmentRef = RTKStruct_GetString( newActiveAttachment, "ref" )
+
+	rtk_struct previousEquippedAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+	string previousEquippedAttachmentRef = RTKStruct_GetString( previousEquippedAttachment, "ref" )
+
+	if ( !RTKWeaponPlayground_CanEquipAttachment( newAttachmentRef, previousEquippedAttachmentRef ) )
+		return
+
+	RTKStruct_SetStruct( categoryData, "activeAttachment", newActiveAttachment )
+}
+
+void function RTKWeaponPlayground_UpdateWeaponAttachmentEquipped( rtk_behavior self, rtk_struct categoryData, rtk_array attachmentCategories, rtk_struct newActiveAttachment, rtk_struct previousActiveAttachment )
+{
+	string newAttachmentRef = RTKStruct_GetString( newActiveAttachment, "ref" )
+	string previousAttachmentRef = RTKStruct_GetString( previousActiveAttachment, "ref" )
+
+	if ( newAttachmentRef == previousAttachmentRef )
+	{
+		RTKStruct_SetStruct( categoryData, "activeAttachment", newActiveAttachment )
+		return
+	}
+
+	
+	if ( RTKWeaponPlayground_IsCorruptedAttachment( newAttachmentRef ) )
+	{
+		RTKWeaponPlayground_UnequipAllCorruptedAttachments( attachmentCategories )
+	}
+
+	RTKStruct_SetStruct( categoryData, "equippedAttachment", newActiveAttachment )
+	RTKStruct_SetStruct( categoryData, "activeAttachment", newActiveAttachment )
+}
+
+void function RTKWeaponPlayground_UnequipAllCorruptedAttachments( rtk_array attachmentCategories )
+{
+	for ( int i = 0; i < RTKArray_GetCount(attachmentCategories); i++ )
+	{
+		rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, i )
+		rtk_struct equippedAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+
+		if ( RTKWeaponPlayground_IsCorruptedAttachment( RTKStruct_GetString( equippedAttachment, "ref" ) ) )
+		{
+			rtk_array attachments = RTKStruct_GetArray( categoryData, "attachments" )
+			if ( RTKArray_GetCount( attachments ) <= 0 )
+				continue
+
+			rtk_struct defaultAttachment = RTKArray_GetStruct( attachments, 0 )
+
+			RTKStruct_SetStruct( categoryData, "equippedAttachment", defaultAttachment )
+			RTKStruct_SetStruct( categoryData, "activeAttachment", defaultAttachment )
+		}
+	}
+}
+
+
+void function RTKWeaponPlayground_UpdateWeaponInfoData( rtk_behavior self )
+{
+	PrivateData p
+	self.Private( p )
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+
+	RTKWeaponPlaygroundData data
+	data.weaponName = WeaponItemFlavor_GetLongName( p.activeWeapon )
+	data.tags = RTKWeaponPlayground_GetTagsForWeapon( p.activeWeapon )
+	data.optimalRange = RTKWeaponPlayground_GetOptimalRangeForWeapon( p.activeWeapon )
+	data.attachmentCategories = RTKWeaponPlayground_GetAttachmentCategoriesForWeapon( p.attachmentCatalogWeaponEntry, p.activeWeapon )
+	data.fireModeData = RTKWeaponPlayground_GetFireModeDataForWeapon( p.activeWeapon )
+	data.ammoTypeData = RTKWeaponPlayground_GetAmmoTypeDataForWeapon( p.activeWeapon )
+	data.akimboData = RTKWeaponPlayground_GetAkimboDataForWeapon( p.activeWeapon )
+	data.energizedData = RTKWeaponPlayground_GetEnergizedDataForWeapon( p.activeWeapon )
+
+	RTKStruct_SetValue( screenWeaponPlaygroundModel, data )
+}
+
+void function RTKWeaponPlayground_UpdateWeaponPreview( rtk_behavior self, int level )
+{
+	PrivateData p
+	self.Private( p )
+
+	bool isCrateWeapon = WeaponItemFlavor_GetStatsCategory( p.activeWeapon ) == WEAPON_STAT_CATEGORY_CRATE_WEAPON
+
+	int tier = isCrateWeapon ? eRarityTier.MYTHIC : eRarityTier.RARE
+	RunClientScript( "UIToClient_OverviewWeapon", ItemFlavor_GetGUID( p.activeWeaponSkin ) )
+	RunClientScript( "UIToClient_SetWeaponsOverviewBackgroundSkin", tier )
+}
+
+void function RTKWeaponPlayground_UpdateStats( rtk_behavior self ) 
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array mainStatsData = RTKStruct_GetArray( screenWeaponPlaygroundModel, "mainStatsData" )
+	rtk_array secondaryStatsData = RTKStruct_GetArray( screenWeaponPlaygroundModel, "secondaryStatsData" )
+	rtk_array extraStatsData = RTKStruct_GetArray( screenWeaponPlaygroundModel, "extraStatsData" )
+
+	array<string> activeAttachments = RTKWeaponPlayground_GetActiveAttachments()
+
+	
+	if ( p.isAkimboModActive )
+	{
+		activeAttachments.append( AKIMBO_ACTIVE_MOD )
+	}
+	else if ( p.isEnergizedModActive )
+	{
+		activeAttachments.append( ENERGIZED_ACTIVE_MOD )
+	}
+
+	RTKArray_SetValue( mainStatsData, RTKWeaponPlayground_GetMainStatsDataForAttachments( p.activeWeapon, activeAttachments ) )
+	RTKArray_SetValue( secondaryStatsData, RTKWeaponPlayground_GetSecondaryStatsDataForAttachments( p.activeWeapon, activeAttachments ) )
+	RTKArray_SetValue( extraStatsData, RTKWeaponPlayground_GetExtraStatsForAttachments( activeAttachments ) )
+}
+
+void function RTKWeaponPlayground_SetAkimboState( rtk_behavior self, bool isAkimboOn )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_struct akimboDataModel = RTKStruct_GetStruct( screenWeaponPlaygroundModel, "akimboData" )
+
+	RTKWeaponPlaygroundAkimboData akimboData 
+	RTKStruct_GetValue( akimboDataModel, akimboData )
+
+	if ( !akimboData.hasAkimbo )
+		return
+
+	akimboData.activeData = isAkimboOn ? akimboData.akimboOn : akimboData.akimboOff
+
+	RTKStruct_SetValue( akimboDataModel, akimboData )
+
+	p.isAkimboModActive = isAkimboOn
+}
+
+void function RTKWeaponPlayground_SetEnergizedState( rtk_behavior self, bool isEnergizeOn )
+{
+	PrivateData p
+	self.Private( p )
+
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_struct energizedDataModel = RTKStruct_GetStruct( screenWeaponPlaygroundModel, "energizedData" )
+
+	RTKWeaponPlaygroundEnergizedData energizedData 
+	RTKStruct_GetValue( energizedDataModel, energizedData )
+
+	if ( !energizedData.hasEnergized )
+		return
+
+	energizedData.activeData = isEnergizeOn ? energizedData.energizedOn : energizedData.energizedOff
+	energizedData.isEnergizedActive = isEnergizeOn
+	RTKStruct_SetValue( energizedDataModel, energizedData )
+
+	p.isEnergizedModActive = isEnergizeOn
+}
+
+void function RTKWeaponPlayground_InitActiveAttachments()
+{
+	
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+
+	for ( int i = 0; i < RTKArray_GetCount( attachmentCategories ); i++ )
+	{
+		rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, i )
+		rtk_array attachments = RTKStruct_GetArray( categoryData, "attachments" )
+		if ( RTKArray_GetCount( attachments ) <= 0 )
+			continue
+
+		RTKStruct_SetStruct( categoryData, "activeAttachment", RTKArray_GetStruct( attachments, 0 ) )
+		RTKStruct_SetStruct( categoryData, "equippedAttachment", RTKArray_GetStruct( attachments, 0 ) )
+	}
+}
+
+void function RTKWeaponPlayground_SortAttachmentsEntries( table< string, array<string> > attachmentCatalogWeaponEntry )
+{
+    table< string, array<string> > sortedAttachmentCatalogWeaponEntry
+
+    foreach ( string categoryRef in WEAPON_ATTACHMENT_SORT_ORDER )
+    {
+        if ( !(categoryRef in attachmentCatalogWeaponEntry) )
+            continue
+
+        array<string> sortedRefs = attachmentCatalogWeaponEntry[ categoryRef ]
+        sortedRefs.sort( int function( string a, string b )
+        {
+            LootData lootA = SURVIVAL_Loot_GetLootDataByRef( a )
+            LootData lootB = SURVIVAL_Loot_GetLootDataByRef( b )
+
+            if ( lootA.tier < lootB.tier )
+                return -1
+            if ( lootA.tier > lootB.tier )
+                return 1
+
+            return 0
+        } )
+    }
+}
+
+void function RTKWeaponPlayground_FilterAttachmentEntries( table< string, array<string> > attachmentCatalogWeaponEntry )
+{
+	table< string, bool > disabledAttachmentRefTable
+
+	foreach ( string ref in split( GetCurrentPlaylistVarString( "attachment_catalog_force_remove_attachment", "hopup_ultimate_accelerator"), WHITESPACE_CHARACTERS ) )
+	{
+		if ( ref == "" )
+			continue
+
+		disabledAttachmentRefTable[ ref ] <- true
+	}
+
+	if ( disabledAttachmentRefTable.len() <= 0 )
+		return
+
+	foreach ( string categoryRef in WEAPON_ATTACHMENT_SORT_ORDER )
+	{
+		if ( !(categoryRef in attachmentCatalogWeaponEntry) )
+			continue
+
+		array<string> filteredAttachmentRefs
+		foreach ( string attachmentRef in attachmentCatalogWeaponEntry[categoryRef] )
+		{
+			if ( attachmentRef in disabledAttachmentRefTable )
+				continue
+
+			filteredAttachmentRefs.append( attachmentRef )
+		}
+
+		attachmentCatalogWeaponEntry[categoryRef] = filteredAttachmentRefs
+	}
+}
+
+
+array<RTKWeaponPlaygroundAttachmentCategoryData> function RTKWeaponPlayground_GetAttachmentCategoriesForWeapon( table< string, array<string> > attachmentCatalogWeaponEntry, ItemFlavor weapon )
+{
+	array<RTKWeaponPlaygroundAttachmentCategoryData> categoryDataList
+	foreach ( string categoryRef in WEAPON_ATTACHMENT_SORT_ORDER )
+	{
+		if ( !(categoryRef in attachmentCatalogWeaponEntry) )
+			continue
+
+		RTKWeaponPlaygroundAttachmentCategoryData categoryData
+		categoryData.ref = categoryRef
+
+		array<string> attachmentRefs = attachmentCatalogWeaponEntry[categoryRef]
+		if ( attachmentRefs.len() <= 0 )
+			continue
+
+		string weaponRef = WeaponItemFlavor_GetResolvedClassname( weapon )
+		if ( RTKWeaponPlayground_ShouldAddEmptyAttachmentSlot( categoryRef, weaponRef ) )
+		{
+			categoryData.attachments.append( RTKWeaponPlayground_GetEmptyAttachmentData( categoryRef, weaponRef ) )
+		}
+
+		if ( WeaponItemFlavor_GetStatsCategory( weapon ) == WEAPON_STAT_CATEGORY_CRATE_WEAPON )
+		{
+			categoryData.attachments.extend( RTKWeaponPlayground_GetCrateWeaponAttachmentsForCategory( weaponRef, categoryRef, attachmentRefs ) )
+		}
+		else
+		{
+			categoryData.attachments.extend( RTKWeaponPlayground_GetAttachmentsForCategory( categoryRef, attachmentRefs ) )
+		}
+
+		categoryDataList.append( categoryData )
+	}
+
+	return categoryDataList
+}
+
+bool function RTKWeaponPlayground_ShouldAddEmptyAttachmentSlot( string categoryRef, string weaponRef )
+{
+	if ( SURVIVAL_IsAttachmentPointLocked( weaponRef, categoryRef ) )
+		return false
+
+	return true
+}
+
+array<RTKWeaponPlaygroundAttachmentData> function RTKWeaponPlayground_GetCrateWeaponAttachmentsForCategory( string weaponRef, string categoryRef, array<string> attachmentRefs )
+{
+	array<RTKWeaponPlaygroundAttachmentData> attachments
+	LootData weapon = SURVIVAL_Loot_GetLootDataByRef( weaponRef )
+
+	foreach ( string attachmentRef in attachmentRefs )
+	{
+		if ( !SURVIVAL_Loot_IsRefValid( attachmentRef ) )
+			continue
+
+		bool isSightCategory = categoryRef == ATTACHMENT_POINT_SIGHT_REF
+		if ( !isSightCategory ) 
+		{
+			if ( !weapon.baseMods.contains( attachmentRef ) ) 
+				continue
+		}
+
+		RTKWeaponPlaygroundAttachmentData attachmentData = RTKWeaponPlayground_GetAttachmentData( categoryRef, attachmentRef, true )
+		attachments.append( attachmentData )
+	}
+
+	return attachments
+}
+
+array<RTKWeaponPlaygroundAttachmentData> function RTKWeaponPlayground_GetAttachmentsForCategory( string categoryRef, array<string> attachmentRefs )
+{
+	array<RTKWeaponPlaygroundAttachmentData> attachments
+	foreach ( string attachmentRef in attachmentRefs )
+	{
+		if ( !SURVIVAL_Loot_IsRefValid( attachmentRef ) )
+			continue
+
+		RTKWeaponPlaygroundAttachmentData attachmentData = RTKWeaponPlayground_GetAttachmentData( categoryRef,attachmentRef, false )
+		attachments.append( attachmentData )
+	}
+
+	return attachments
+}
+
+RTKWeaponPlaygroundAttachmentData function RTKWeaponPlayground_GetAttachmentData( string categoryRef, string attachmentRef, bool isCrateWeapon )
+{
+	RTKWeaponPlaygroundAttachmentData attachmentData	
+	LootData attachmentLootData = clone SURVIVAL_Loot_GetLootDataByRef( attachmentRef )
+
+	attachmentData.name = attachmentLootData.pickupString
+	attachmentData.description = RTKWeaponPlayground_GetDescriptionForAttachment( attachmentRef )
+	attachmentData.icon = attachmentLootData.hudIcon
+
+	attachmentLootData.tier = attachmentLootData.tier - 1 
+
+	attachmentData.buttonTier = attachmentLootData.tier
+	if ( isCrateWeapon )
+	{
+		bool isSightCategory = categoryRef == ATTACHMENT_POINT_SIGHT_REF
+		if ( !isSightCategory ) 
+		{
+			attachmentData.buttonTier = eRarityTier.MYTHIC
+		}
+	}
+
+	attachmentData.tier = attachmentLootData.tier
+	attachmentData.subTitle = RTKWeaponPlayground_GetSubTitleForAttachment( categoryRef, attachmentLootData, isCrateWeapon )
+	attachmentData.actionText = RTKWeaponPlayground_GetActionTextForAttachment( attachmentRef )
+	attachmentData.ref = attachmentRef
+
+	return attachmentData
+}
+
+string function RTKWeaponPlayground_GetActionTextForAttachment( string attachmentRef )
+{
+	return RTKWeaponPlayground_IsCorruptedAttachment( attachmentRef ) ? Localize( "#WEAPON_PLAYGROUND_SWAP" ) : Localize( "#WEAPON_PLAYGROUND_EQUIP" )
+}
+
+string function RTKWeaponPlayground_GetSubTitleForAttachment( string categoryRef, LootData attachmentLootData, bool isCrateWeapon )
+{
+	string attachmentTypeString = Localize( GetAttachmentPointName( categoryRef ) ).toupper()
+	string rarityString = Localize( "#HUD_LEVEL_N", attachmentLootData.tier + 1 ) 
+
+	if ( RTKWeaponPlayground_IsCorruptedAttachment( attachmentLootData.ref ) )
+	{
+		rarityString = Localize( "#CORRUPTED" )
+	}
+
+	if ( attachmentLootData.attachmentType == eWeaponAttachmentType.HOPUP )
+	{
+		if ( isCrateWeapon )
+		{
+			rarityString = Localize( "#ACTIVE" )
+		}
+		else
+		{
+			rarityString = (attachmentLootData.tier) == eRarityTier.LEGENDARY ? Localize( "#ACTIVE" ) : Localize( "#INACTIVE" )
+		}
+	}
+
+	return Localize( "#N_BAR_N_ALT", attachmentTypeString, rarityString ).toupper()
+}
+
+string function RTKWeaponPlayground_GetDescriptionForAttachment( string attachmentRef )
+{
+	string description = SURVIVAL_Loot_GetLootDataByRef( attachmentRef ).desc
+
+	if ( DormantHopups_HopupIsDormantVersion( attachmentRef ) )
+	{
+		int points = DormantHopups_GetTotalPointsForHopUp( attachmentRef )
+
+		return  Localize( description, DormantHopups_GetTotalPointsForHopUp( attachmentRef ) )
+	}
+
+	return Localize (description )
+}
+
+RTKWeaponPlaygroundAttachmentData function RTKWeaponPlayground_GetEmptyAttachmentData( string categoryRef, string weaponRef )
+{
+	RTKWeaponPlaygroundAttachmentData attachmentData	
+	attachmentData.icon = RTKWeaponPlayground_GetEmptyAttachmentSlotImageForCategory( categoryRef, weaponRef )
+
+	return attachmentData
+}
+
+int function RTKWeaponPlayground_GetOptimalRangeForWeapon( ItemFlavor weapon )
+{
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	return int( GetWeaponInfoFileKeyField_GlobalFloat( baseClassName, "stat_range" ) )
+}
+
+array<string> function RTKWeaponPlayground_GetTagsForWeapon( ItemFlavor weapon )
+{
+	array<string> tags
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	for ( int i = 1; i <= MAX_NUMBER_OF_TAGS; i++ )
+	{
+		string weaponTag = IsWeaponKeyFieldDefined( baseClassName, WEAPON_TAG_KEY_BASE + i ) ? GetWeaponInfoFileKeyField_GlobalString( baseClassName, WEAPON_TAG_KEY_BASE + i ) : ""
+		if ( weaponTag != "" )
+		{
+			tags.append( Localize( weaponTag ) )
+		}
+	}
+
+	return tags
+}
+
+array<RTKWeaponPlaygroundMainStatData> function RTKWeaponPlayground_GetMainStatsDataForAttachments( ItemFlavor weapon, array<string> attachmentRefs )
+{
+	array<RTKWeaponPlaygroundMainStatData> statDataArray
+
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	array<WeaponStatData> weaponStatData = WeaponStatData_GetDefaultStatsForWeaponWithAttachments( baseClassName, attachmentRefs, MAIN_DISPLAY_STATS )
+
+	foreach ( stat in weaponStatData )
+	{
+		RTKWeaponPlaygroundMainStatData mainStatData
+		mainStatData.name = stat.statShortName
+		mainStatData.value = stat.newStatValue
+		mainStatData.previousVal = stat.previousStatValue
+		mainStatData.isHighlighted = HIGHLIGHTED_STATS.contains( stat.statRef )
+		mainStatData.showDecimal = DECIMAL_SHOWING_STATS.contains( stat.statRef )
+		mainStatData.tooltip = RTKWeaponPlayground_GetStatTooltip( stat )
+
+		statDataArray.append( mainStatData )
+	}
+
+	return statDataArray
+}
+
+array<RTKWeaponPlaygroundSecondaryStatData> function RTKWeaponPlayground_GetSecondaryStatsDataForAttachments( ItemFlavor weapon, array<string> attachmentRefs )
+{
+	array<RTKWeaponPlaygroundSecondaryStatData> statDataArray
+
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	array<WeaponStatData> weaponStatData = WeaponStatData_GetDefaultStatsForWeaponWithAttachments( baseClassName, attachmentRefs, SECONDARY_DISPLAY_STATS )
+
+	foreach ( stat in weaponStatData )
+	{
+		RTKWeaponPlaygroundSecondaryStatData secondaryStatData
+		secondaryStatData.name = Localize( stat.statName )
+		secondaryStatData.unitShortLocKey = stat.statUnitShortLocKey
+
+		secondaryStatData.tooltip = RTKWeaponPlayground_GetStatTooltip( stat )
+
+		secondaryStatData.previousVal = stat.previousStatValue
+		secondaryStatData.showDecimal = DECIMAL_SHOWING_STATS.contains( stat.statRef )
+		secondaryStatData.newVal = stat.newStatValue
+		secondaryStatData.linearPreviousVal = stat.linearPreviousVal
+		secondaryStatData.linearNewVal = stat.linearNewVal
+		secondaryStatData.isNegative = stat.linearStatValAdded < 0
+
+		statDataArray.append( secondaryStatData )
+	}
+
+	return statDataArray
+}
+
+array<RTKWeaponPlaygroundExtraStatData> function RTKWeaponPlayground_GetExtraStatsForAttachments( array<string> attachmentRefs )
+{
+	array<RTKWeaponPlaygroundExtraStatData> extraStatsData
+
+	foreach ( string attachmentRef in attachmentRefs )
+	{
+		AttachmentStatData extraStat = AttachmentStatData_GetExtraStatForAttachmentRef( attachmentRef )
+
+		if ( extraStat.statRef != "" )
+		{
+			RTKWeaponPlaygroundExtraStatData extraStatData
+			extraStatData.name = extraStat.statName
+			extraStatData.isStatImproved = extraStat.isStatImproved
+
+			extraStatsData.append( extraStatData )
+		}
+	}
+
+	return extraStatsData
+}
+
+RTKWeaponPlaygroundFireModeData function RTKWeaponPlayground_GetFireModeDataForWeapon( ItemFlavor weapon )
+{
+	RTKWeaponPlaygroundFireModeData fireModeData
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	string fireMode1 = IsWeaponKeyFieldDefined( baseClassName, "fire_mode_1" ) ? GetWeaponInfoFileKeyField_GlobalString( baseClassName, "fire_mode_1" ) : ""
+	string fireMode2 = IsWeaponKeyFieldDefined( baseClassName, "fire_mode_2" ) ? GetWeaponInfoFileKeyField_GlobalString( baseClassName, "fire_mode_2" ) : ""
+
+	fireModeData.hasToggleableFireMode = fireMode1 != "" && fireMode2 != ""
+
+	if ( fireModeData.hasToggleableFireMode )
+		fireModeData.fireModes = Localize( "#WEAPON_PLAYGROUND_FIRE_MODES_N_N", Localize( fireMode1 ), Localize( fireMode2 ) )
+	else if ( fireMode1 != "" )
+		fireModeData.fireModes = Localize( "#WEAPON_PLAYGROUND_FIRE_MODE_N", Localize( fireMode1 ) )
+	else
+		fireModeData.fireModes = ""
+
+	return fireModeData
+}
+
+RTKWeaponPlaygroundAmmoTypeData function RTKWeaponPlayground_GetAmmoTypeDataForWeapon( ItemFlavor weapon )
+{
+	RTKWeaponPlaygroundAmmoTypeData ammoTypeData
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+	LootData weaponLootData = SURVIVAL_Loot_GetLootDataByRef( baseClassName )
+
+	ammoTypeData.isCrateWeapon = WeaponItemFlavor_GetStatsCategory( weapon ) == WEAPON_STAT_CATEGORY_CRATE_WEAPON
+
+	if ( weaponLootData.ammoType in eAmmoPoolType )
+	{
+		ammoTypeData.ammoType = eAmmoPoolType[ weaponLootData.ammoType ]
+	}
+	else 
+	{
+		ammoTypeData.ammoType = WeaponItemFlavor_GetAmmoTypes( weapon ).len() > 0 ? WeaponItemFlavor_GetAmmoTypes( weapon )[0] : 0
+	}
+
+	if ( weaponLootData.secondaryAmmoType == "" )
+	{
+		ammoTypeData.name = RTKMutator_GetAmmoName( ammoTypeData.ammoType, ammoTypeData.isCrateWeapon )
+		ammoTypeData.description =  RTKMutator_GetAmmoDescription( ammoTypeData.ammoType, ammoTypeData.isCrateWeapon )
+		ammoTypeData.secondaryAmmoType = -1
+	}
+	else if ( !ammoTypeData.isCrateWeapon )
+	{
+		ammoTypeData.secondaryAmmoType = eAmmoPoolType[ weaponLootData.secondaryAmmoType ]
+		string mainAmmoName = Localize( RTKMutator_GetAmmoName( ammoTypeData.ammoType, ammoTypeData.isCrateWeapon ) )
+		string secondaryAmmoName = Localize( RTKMutator_GetAmmoName( ammoTypeData.secondaryAmmoType, ammoTypeData.isCrateWeapon ) )
+
+		ammoTypeData.name = Localize( "#WEAPON_PLAYGROUND_DUAL_AMMO_TYPE_TOOLTIP", mainAmmoName, secondaryAmmoName )
+		ammoTypeData.description = Localize( "#WEAPON_PLAYGROUND_DUAL_AMMO_TYPE_TOOLTIP_DESC", mainAmmoName, secondaryAmmoName )
+	}
+
+	return ammoTypeData
+}
+
+RTKWeaponPlaygroundAkimboData function RTKWeaponPlayground_GetAkimboDataForWeapon( ItemFlavor weapon )
+{
+	RTKWeaponPlaygroundAkimboData akimboData
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+
+	akimboData.hasAkimbo = CanWeaponAkimbo( baseClassName )
+
+	if ( akimboData.hasAkimbo )
+	{
+		akimboData.akimboOn.icon = GetAkimboWeaponIcon( baseClassName )
+		akimboData.akimboOn.name = "#FIRE_MODE_AKIMBO"
+		akimboData.akimboOn.subTitle = Localize( "#N_BAR_N_ALT", Localize( "#WEAPON_PLAYGROUND_FIRE_MODE" ), Localize( "#FIRE_MODE_AKIMBO" ) ).toupper()
+		akimboData.akimboOn.description = "#WEAPON_PLAYGROUND_AKIMBO_DESC"
+
+		akimboData.akimboOff.icon = GetEmptyAkimboWeaponIcon( baseClassName )
+		akimboData.akimboOff.name = "#FIRE_MODE_SINGLE"
+		akimboData.akimboOff.subTitle = Localize( "#N_BAR_N_ALT", Localize( "#WEAPON_PLAYGROUND_FIRE_MODE" ), Localize( "#FIRE_MODE_SINGLE" ) ).toupper()
+		akimboData.akimboOff.description = "#WEAPON_PLAYGROUND_SINGLE_FIRE_DESC"
+
+		akimboData.activeData = akimboData.akimboOff
+	}
+
+	return akimboData
+}
+
+RTKWeaponPlaygroundEnergizedData function RTKWeaponPlayground_GetEnergizedDataForWeapon( ItemFlavor weapon )
+{
+	RTKWeaponPlaygroundEnergizedData energizedData
+	string baseClassName = WeaponItemFlavor_GetResolvedClassname( weapon )
+
+	energizedData.hasEnergized = bool( GetWeaponInfoFileKeyField_GlobalInt_WithDefault( baseClassName, "has_energized", 0 ) )
+
+	if ( energizedData.hasEnergized )
+	{
+		string energizedConsumableData = GetWeaponInfoFileKeyField_GlobalString ( baseClassName, "energized_consumable" )
+		LootData ordanenceData = SURVIVAL_Loot_GetLootDataByRef ( energizedConsumableData )
+
+		energizedData.hasSelection = WeaponItemFlavor_IsEnergizedAffectingStats( weapon )
+
+		energizedData.energizedOn.icon = ordanenceData.hudIcon
+		energizedData.energizedOn.name = ordanenceData.pickupString 
+		energizedData.energizedOn.subTitle = Localize( "#N_BAR_N_ALT", Localize( "#WEAPON_PLAYGROUND_ENERGIZER_ITEM" ), Localize( "#WEAPON_PLAYGROUND_ENERGIZED" ) ).toupper()
+		energizedData.energizedOn.description = WeaponItemFlavor_GetEnergizedDescription( weapon )
+
+		energizedData.energizedOff.icon = ordanenceData.hudIcon
+		energizedData.energizedOff.name = ordanenceData.pickupString
+		energizedData.energizedOff.subTitle = Localize( "#N_BAR_N_ALT", Localize( "#WEAPON_PLAYGROUND_ENERGIZER_ITEM" ), Localize( "#INACTIVE" ) ).toupper()
+		energizedData.energizedOff.description = energizedData.energizedOn.description
+
+		energizedData.isEnergizedActive = !energizedData.hasSelection
+		energizedData.activeData = energizedData.hasSelection ? energizedData.energizedOff : energizedData.energizedOn
+	}
+
+	return energizedData
+}
+
+asset function RTKWeaponPlayground_GetEmptyAttachmentSlotImageForCategory( string categoryRef, string weaponRef )
+{
+	string attachmentStyle = categoryRef
+
+	if ( attachmentStyle == "mag" )
+	{
+		LootData weaponData = SURVIVAL_Loot_GetLootDataByRef( weaponRef )
+		switch ( weaponData.ammoType )
+		{
+			case BULLET_AMMO:
+				attachmentStyle = "mag_straight"
+				break
+			case SPECIAL_AMMO:
+			case ARROWS_AMMO:
+				attachmentStyle = "mag_energy"
+				break
+			case SHOTGUN_AMMO:
+				attachmentStyle = "mag_shotgun"
+				break
+			case SNIPER_AMMO:
+				attachmentStyle = "mag_sniper"
+				break
+		}
+
+		if ( weaponData.ref == "mp_weapon_car" )
+		{
+			attachmentStyle = "mag_car"
+		}
+
+
+
+
+
+
+	}
+	else if ( attachmentStyle == "barrel" )
+	{
+		
+		array<string> barrelAttachments = AttachmentsCatalog_GetWeaponAttachmentCategoryByRef( weaponRef, "barrel" )
+		if ( barrelAttachments.len() > 0 )
+		{
+			string firstBarrelAttachmentRef = barrelAttachments[0]
+			if ( SURVIVAL_Loot_IsRefValid( firstBarrelAttachmentRef ) )
+			{
+				LootData barrelAttachmentData = SURVIVAL_Loot_GetLootDataByRef( firstBarrelAttachmentRef )
+				attachmentStyle = barrelAttachmentData.attachmentStyle
+			}
+		}
+	}
+	else if ( attachmentStyle == "grip" )
+	{
+		LootData weaponData = SURVIVAL_Loot_GetLootDataByRef( weaponRef )
+		if ( weaponData.lootTags.contains( "sniper" ) || weaponData.lootTags.contains( "marksman" ) )
+		{
+			attachmentStyle = "stock_sniper"
+		}
+	}
+
+	return emptyAttachmentSlotImages[ attachmentStyle ]
+}
+
+array<string> function RTKWeaponPlayground_GetActiveAttachments()
+{
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+
+	array<string> activeAttachments
+	for ( int i = 0; i < RTKArray_GetCount( attachmentCategories ); i++ )
+	{
+		rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, i )
+		rtk_struct activeAttachment = RTKStruct_GetStruct( categoryData, "activeAttachment" )
+		string attachmentRef = RTKStruct_GetString( activeAttachment, "ref" )
+
+		if ( attachmentRef == "" )
+			continue
+
+		activeAttachments.append( attachmentRef )
+	}
+
+	return activeAttachments
+}
+
+array<string> function RTKWeaponPlayground_GetEquippedAttachments()
+{
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+
+	array<string> equippedAttachments
+	for ( int i = 0; i < RTKArray_GetCount( attachmentCategories ); i++ )
+	{
+		rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, i )
+		rtk_struct equippedAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+		string attachmentRef = RTKStruct_GetString( equippedAttachment, "ref" )
+
+		if ( attachmentRef == "" )
+			continue
+
+		equippedAttachments.append( attachmentRef )
+	}
+
+	return equippedAttachments
+}
+
+RTKWeaponPlaygroundStatTooltip function RTKWeaponPlayground_GetStatTooltip( WeaponStatData stat )
+{
+	RTKWeaponPlaygroundStatTooltip tooltip
+
+	tooltip.name = stat.statName
+	tooltip.description = stat.statDescription
+
+	return tooltip
+}
+
+bool function RTKWeaponPlayground_IsCorruptedAttachment( string attachmentRef )
+{
+	return attachmentRef.find( CORRUPTED_ATTACHMENT_REF_SUBSTRING ) != -1
+}
+
+bool function RTKWeaponPlayground_IsCorruptedAttachmentEquipped()
+{
+	rtk_struct screenWeaponPlaygroundModel = RTKDataModelType_GetOrCreateStruct( RTK_MODELTYPE_MENUS, WEAPON_PLAYGROUND_ROOT_PATH, "RTKWeaponPlaygroundData" )
+	rtk_array attachmentCategories = RTKStruct_GetArray( screenWeaponPlaygroundModel, "attachmentCategories" )
+
+	for ( int i = 0; i < RTKArray_GetCount( attachmentCategories ); i++ )
+	{
+		rtk_struct categoryData = RTKArray_GetStruct( attachmentCategories, i )
+		rtk_struct equippedAttachment = RTKStruct_GetStruct( categoryData, "equippedAttachment" )
+		string attachmentRef = RTKStruct_GetString( equippedAttachment, "ref" )
+
+		if ( RTKWeaponPlayground_IsCorruptedAttachment( attachmentRef ) )
+			return true
+	}
+
+	return false
+}
+
+bool function RTKWeaponPlayground_CanEquipAttachment( string attachmentRef, string previousAttachmentRef )
+{
+	if ( attachmentRef == previousAttachmentRef )
+		return true
+
+	if ( !RTKWeaponPlayground_IsCorruptedAttachment( attachmentRef ) )
+		return true
+
+	return !RTKWeaponPlayground_IsCorruptedAttachmentEquipped()
+}
