@@ -111,7 +111,7 @@ All game names, trademarks, source material, and other intellectual property rem
 
 ---
 
-## 📚 Purpose
+## Purpose
 
 This project exists primarily for:
 
@@ -122,7 +122,7 @@ It is intended to make the recovered material easier for researchers and develop
 Please respect the rights of the original developers and publishers when using material from this repository.
 ---
 
-## ⚖️ Disclaimer
+## Disclaimer
 
 This repository contains material recovered through reverse-engineering and decompilation.
 
